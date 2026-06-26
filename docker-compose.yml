@@ -1,0 +1,132 @@
+# ============================================================
+# YouDub Replica — Docker Compose
+# Frontend (Vite + React + Nginx) + Backend (Spring Boot) + VoxCPM TTS
+# ============================================================
+
+services:
+  # ── VoxCPM TTS 服务 ─────────────────────────────────────
+  voxcpm:
+    build:
+      context: ./docker/voxcpm
+      dockerfile: Dockerfile
+    image: youdub-voxcpm:latest
+    container_name: youdub-voxcpm
+    ports:
+      - "8001:8001"
+    environment:
+      - VOXCPM_MODEL=${VOXCPM_MODEL:-OpenBMB/VoxCPM2}
+      - VOXCPM_LOAD_DENOISER=${VOXCPM_LOAD_DENOISER:-false}
+      - VOXCPM_CFG_VALUE=${VOXCPM_CFG_VALUE:-2.0}
+      - VOXCPM_INFERENCE_TIMESTEPS=${VOXCPM_INFERENCE_TIMESTEPS:-10}
+      - MODEL_CACHE_DIR=/app/data/modelscope
+    volumes:
+      - youdub-models:/app/data/modelscope
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - youdub-network
+    # VoxCPM 需要 GPU 才能高效运行
+    # 取消注释以下行以启用 GPU
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+
+  # ── Audio Separator API ────────────────────────────────
+  audio-separator:
+    build:
+      context: ./docker/audio-separator
+      dockerfile: Dockerfile
+    image: youdub-audio-separator:latest
+    container_name: youdub-audio-separator
+    ports:
+      - "8002:8001"
+    environment:
+      - SEPARATOR_MODEL=${SEPARATOR_MODEL:-UVR-MDX-NET-Inst_HQ_3.onnx}
+      - MODEL_DIR=/app/models
+    volumes:
+      - youdub-separator-models:/app/models
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - youdub-network
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # ── Java 后端 ──────────────────────────────────────────
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: youdub-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - APP_TTS_PROVIDER=${TTS_PROVIDER:-voxcpm}
+      - APP_TTS_VOXCPM_SERVICE_URL=${VOXCPM_SERVICE_URL:-http://voxcpm:8001}
+      - APP_OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      - APP_OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - APP_OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - APP_TRANSLATE_MODEL=${TRANSLATE_MODEL:-gpt-4o-mini}
+      - APP_TRANSLATE_CONCURRENCY=${TRANSLATE_CONCURRENCY:-50}
+      - APP_WORKFOLDER=/app/workfolder
+      - APP_DATA_DIR=/app/data
+      - APP_COOKIE_DIR=/app/data/cookies
+      - APP_LOG_DIR=/app/data/logs
+      - APP_DB_PATH=/app/data/youdub.sqlite
+      - APP_YTDLP_PROXY_HOST=${YTDLP_PROXY_HOST:-}
+      - APP_YTDLP_PROXY_PORT=${YTDLP_PROXY_PORT:-}
+    volumes:
+      - youdub-data:/app/data
+      - youdub-workfolder:/app/workfolder
+    depends_on:
+      - voxcpm
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - youdub-network
+
+  # ── 前端 (Nginx) ───────────────────────────────────────
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: youdub-frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - youdub-network
+
+volumes:
+  youdub-data:
+  youdub-workfolder:
+  youdub-models:
+  youdub-separator-models:
+
+networks:
+  youdub-network:
+    driver: bridge

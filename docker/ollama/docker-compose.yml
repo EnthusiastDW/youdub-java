@@ -1,0 +1,27 @@
+version: "3.8"
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      # 模型持久化（下载一次，重启不丢）
+      - ollama-models:/root/.ollama
+    environment:
+      # 并发请求数（CPU 场景建议调低，避免 OOM）
+      - OLLAMA_NUM_PARALLEL=1
+      # 最大加载模型数
+      - OLLAMA_MAX_LOADED_MODELS=1
+      # 保持模型常驻内存（避免频繁换入换出）
+      - OLLAMA_KEEP_ALIVE=5m
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+volumes:
+  ollama-models:

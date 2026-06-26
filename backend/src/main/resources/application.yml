@@ -1,0 +1,100 @@
+server:
+  port: 8000
+
+spring:
+  application:
+    name: youdub-replica
+  datasource:
+    url: jdbc:sqlite:${app.db-path:data/youdub.sqlite}
+    driver-class-name: org.sqlite.JDBC
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+  servlet:
+    multipart:
+      max-file-size: 4GB
+      max-request-size: 4GB
+
+app:
+  workfolder: ${APP_WORKFOLDER:workfolder}
+  data-dir: ${APP_DATA_DIR:data}
+  cookie-dir: ${APP_COOKIE_DIR:data/cookies}
+  log-dir: ${APP_LOG_DIR:data/logs}
+  db-path: ${APP_DB_PATH:./data/youdub.sqlite}
+  device: ${APP_DEVICE:auto}
+  cors-allow-origins: ${APP_CORS_ORIGINS:http://localhost:5173}
+  upload-max-bytes: ${APP_UPLOAD_MAX_BYTES:4294967296}
+  subtitle-max-bytes: ${APP_SUBTITLE_MAX_BYTES:20971520}
+
+  ytdlp:
+    proxy: ${APP_YTDLP_PROXY:http://dengwei.local:7890}
+
+  asr:
+    provider: ${APP_ASR_PROVIDER:whisper-api}
+
+  tts:
+    provider: ${APP_TTS_PROVIDER:edge-tts}
+
+  translate:
+    provider: ${APP_TRANSLATE_PROVIDER:local-llm}
+
+  separate:
+    provider: ${APP_SEPARATE_PROVIDER:ffmpeg-simple}
+    model: ${APP_SEPARATE_MODEL:htdemucs_ft}
+
+  audio:
+    sample-rate: ${APP_AUDIO_SAMPLE_RATE:44100}
+    segment-sample-rate: ${APP_AUDIO_SEGMENT_SAMPLE_RATE:22050}
+    channels: ${APP_AUDIO_CHANNELS:2}
+    segment-channels: ${APP_AUDIO_SEGMENT_CHANNELS:1}
+
+  ffmpeg:
+    path: ${APP_FFMPEG_PATH:ffmpeg}
+    probe-path: ${APP_FFPROBE_PATH:ffprobe}
+    encoder: ${APP_FFMPEG_ENCODER:}         # 可选：nvenc / qsv / amf / videotoolbox，留空则自动检测
+
+  download:
+    output-filename: ${APP_DOWNLOAD_OUTPUT_FILENAME:video_source.mp4}
+    timeout-ms: ${APP_DOWNLOAD_TIMEOUT_MS:300000}
+
+  device-config:
+    demucs: ${APP_DEVICE_DEMUCS:}
+    whisper: ${APP_DEVICE_WHISPER:}
+
+
+whisper:
+  openai:
+    url: ${WHISPER_URL:http://192.168.1.2:9000/v1/audio/transcriptions} #本地不需要选择模型和key
+    api-key: ${WHISPER_API_KEY:skxxx}
+    model: ${WHISPER_MODEL:whisper-1}
+  cpp:
+    model: ${WHISPER_MODEL:ggml-large-v3-turbo.bin}
+
+
+translate:
+  ollama:
+    url: ${TRANSLATE_URL:http://192.168.1.2:11434/api/chat} #本地不需要key
+    model: ${TRANSLATE_MODEL:qwen2.5:7b}
+    concurrency: 1
+  openai:
+    url: ${APP_OPENAI_URL:https://api.openai.com/v1/chat/completions}
+    api-key: ${APP_OPENAI_API_KEY:}
+    model: ${APP_OPENAI_MODEL:gpt-4o-mini}
+    concurrency: 50
+
+
+tts:
+  edge:
+    path: ${EDGE_TTS_PATH:edge-tts}
+    voice: ${EDGE_TTS_VOICE:zh-CN-YunyangNeural}
+  open-api:
+    url: ${TTS_OPENAI_URL:https://api.openai.com/v1/audio/speech}
+    api-key: ${TTS_OPENAI_API_KEY:skxxx}
+    model: ${TTS_OPENAI_MODEL:tts-1}
+    voice: ${TTS_OPENAI_VOICE:alloy}
+  voxcpm:
+    service-url: ${TTS_VOXCPM_SERVICE_URL:http://192.168.1.2:8001/v1/tts}
+
+
+

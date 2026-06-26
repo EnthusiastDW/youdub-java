@@ -1,0 +1,59 @@
+spring:
+  datasource:
+    url: "jdbc:sqlite:file::memory:?cache=shared"
+    driver-class-name: org.sqlite.JDBC
+    hikari:
+      maximum-pool-size: 1
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:schema.sql
+
+app:
+  workfolder: target/test-workfolder
+  data-dir: target/test-data
+  cookie-dir: target/test-data/cookies
+  log-dir: target/test-data/logs
+  db-path: target/test-data/youdub.sqlite
+  device: cpu
+  cors-allow-origins: http://localhost:5173
+  upload-max-bytes: 1048576
+  subtitle-max-bytes: 1048576
+
+  openai:
+    base-url: https://api.openai.com/v1
+    api-key: ""
+    model: gpt-4o-mini
+
+  ytdlp:
+    proxy-port: ""
+
+  asr:
+    provider: openai-whisper-api
+    model: whisper-1
+
+  tts:
+    provider: edge-tts
+    model: edge-tts
+    voice: zh-CN-XiaoxiaoNeural
+    openai-model: tts-1
+    openai-voice: alloy
+
+  translate:
+    provider: openai
+    model: gpt-4o-mini
+    concurrency: 50
+
+  separate:
+    provider: demucs
+    model: htdemucs_ft
+
+  audio:
+    sample-rate: 44100
+    segment-sample-rate: 22050
+    channels: 2
+    segment-channels: 1
+
+  ffmpeg:
+    path: ffmpeg
+    probe-path: ffprobe
