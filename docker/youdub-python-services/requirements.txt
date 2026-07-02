@@ -1,0 +1,22 @@
+# ============================================================
+# Unified Python Services - Combined Dependencies
+# Merged from: audio-separator, faster-whisper, voxcpm
+# ============================================================
+
+# --- Core Web Framework ---
+fastapi>=0.115.0
+uvicorn[standard]>=0.34.0
+python-multipart>=0.0.20
+
+# --- Audio Separation (audio-separator) ---
+audio-separator>=0.44.0
+aiofiles>=24.1.0
+
+# --- Speech Recognition (faster-whisper) ---
+faster-whisper>=1.0.0
+
+# --- Text-to-Speech (VoxCPM) ---
+voxcpm
+soundfile>=0.12.0
+pydub>=0.25.1
+modelscope>=1.15.0

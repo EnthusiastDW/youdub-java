@@ -2,26 +2,17 @@ package com.youdub.replica.dto;
 
 import lombok.Data;
 
+import java.util.Map;
+
 /**
  * 设置保存请求。
  */
 @Data
 public class SettingsRequest {
 
-    private OpenAiSettings openai = new OpenAiSettings();
     private YtdlpSettings ytdlp = new YtdlpSettings();
     private YoutubeCookieSettings youtubeCookie = new YoutubeCookieSettings();
     private ProviderSelections providers;
-
-    @Data
-    public static class OpenAiSettings {
-        private String baseUrl;
-        private String apiKey;
-        /** 是否清除已保存的 API key */
-        private boolean clearApiKey;
-        private String model;
-        private Integer translateConcurrency;
-    }
 
     @Data
     public static class YtdlpSettings {
@@ -40,5 +31,7 @@ public class SettingsRequest {
         private String tts;
         private String translate;
         private String separate;
+        /** Provider-specific config overrides: key = "step.provider.field", value = "..." */
+        private Map<String, String> providerConfigs;
     }
 }

@@ -32,16 +32,45 @@ app:
 
   asr:
     provider: ${APP_ASR_PROVIDER:whisper-api}
+    whisper-api:
+      base-url: ${WHISPER_BASE_URL:http://192.168.1.2:8001}
+      url: ${WHISPER_URL:http://192.168.1.2:8001/v1/audio/transcriptions}
+      api-key: ${WHISPER_API_KEY:skxxx}
+      model: ${WHISPER_MODEL:whisper-1}
+    whisper-cpp:
+      model: ${WHISPER_CPP_MODEL:ggml-large-v3-turbo.bin}
 
   tts:
     provider: ${APP_TTS_PROVIDER:edge-tts}
+    edge-tts:
+      path: ${EDGE_TTS_PATH:edge-tts}
+      voice: ${EDGE_TTS_VOICE:zh-CN-YunyangNeural} # edge-tts --list-voices | findstr zh-CN
+    openai-tts:
+      url: ${TTS_OPENAI_URL:https://api.openai.com/v1/audio/speech}
+      api-key: ${TTS_OPENAI_API_KEY:skxxx}
+      model: ${TTS_OPENAI_MODEL:tts-1}
+      voice: ${TTS_OPENAI_VOICE:alloy}
+    voxcpm:
+      service-url: ${TTS_VOXCPM_SERVICE_URL:http://192.168.1.2:8001/v1/tts}
 
   translate:
-    provider: ${APP_TRANSLATE_PROVIDER:local-llm}
+    provider: ${APP_TRANSLATE_PROVIDER:openai}
+    ollama:
+      base-url: ${TRANSLATE_BASE_URL:http://192.168.1.2:11434}
+      model: ${TRANSLATE_MODEL:qwen2.5:7b}
+      concurrency: 1
+    openai:
+      chat-url: ${TRANSLATE_OPENAI_URL:https://api.openai.com/v1/chat/completions}
+      api-key: ${TRANSLATE_OPENAI_API_KEY:}
+      model: ${TRANSLATE_OPENAI_MODEL:gpt-4o-mini}
+      concurrency: 50
 
   separate:
-    provider: ${APP_SEPARATE_PROVIDER:ffmpeg-simple}
-    model: ${APP_SEPARATE_MODEL:htdemucs_ft}
+    provider: ${APP_SEPARATE_PROVIDER:audio-separator-api}
+    demucs:
+      model: ${APP_SEPARATE_MODEL:htdemucs_ft}
+    audio-separator-api:
+      service-url: ${AUDIO_SEPARATOR_SERVICE_URL:http://192.168.1.2:8001}
 
   audio:
     sample-rate: ${APP_AUDIO_SAMPLE_RATE:44100}
@@ -61,40 +90,3 @@ app:
   device-config:
     demucs: ${APP_DEVICE_DEMUCS:}
     whisper: ${APP_DEVICE_WHISPER:}
-
-
-whisper:
-  openai:
-    url: ${WHISPER_URL:http://192.168.1.2:9000/v1/audio/transcriptions} #本地不需要选择模型和key
-    api-key: ${WHISPER_API_KEY:skxxx}
-    model: ${WHISPER_MODEL:whisper-1}
-  cpp:
-    model: ${WHISPER_MODEL:ggml-large-v3-turbo.bin}
-
-
-translate:
-  ollama:
-    url: ${TRANSLATE_URL:http://192.168.1.2:11434/api/chat} #本地不需要key
-    model: ${TRANSLATE_MODEL:qwen2.5:7b}
-    concurrency: 1
-  openai:
-    url: ${APP_OPENAI_URL:https://api.openai.com/v1/chat/completions}
-    api-key: ${APP_OPENAI_API_KEY:}
-    model: ${APP_OPENAI_MODEL:gpt-4o-mini}
-    concurrency: 50
-
-
-tts:
-  edge:
-    path: ${EDGE_TTS_PATH:edge-tts}
-    voice: ${EDGE_TTS_VOICE:zh-CN-YunyangNeural}
-  open-api:
-    url: ${TTS_OPENAI_URL:https://api.openai.com/v1/audio/speech}
-    api-key: ${TTS_OPENAI_API_KEY:skxxx}
-    model: ${TTS_OPENAI_MODEL:tts-1}
-    voice: ${TTS_OPENAI_VOICE:alloy}
-  voxcpm:
-    service-url: ${TTS_VOXCPM_SERVICE_URL:http://192.168.1.2:8001/v1/tts}
-
-
-

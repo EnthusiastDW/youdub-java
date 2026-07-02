@@ -47,14 +47,6 @@ export interface TaskListResponse {
   tasks: Task[];
 }
 
-export interface OpenAISettings {
-  baseUrl: string;
-  apiKey: string;
-  hasApiKey: boolean;
-  model: string;
-  translateConcurrency: string;
-}
-
 export interface YtdlpSettings {
   proxy: string;
 }
@@ -81,20 +73,12 @@ export interface ProvidersData {
 }
 
 export interface Settings {
-  openai: OpenAISettings;
   ytdlp: YtdlpSettings;
   youtubeCookie: YouTubeCookieInfo;
   providers: ProvidersData;
 }
 
 export interface SettingsRequest {
-  openai?: {
-    baseUrl?: string;
-    apiKey?: string;
-    clearApiKey?: boolean;
-    model?: string;
-    translateConcurrency?: string;
-  };
   ytdlp?: {
     proxy?: string;
   };
@@ -107,6 +91,7 @@ export interface SettingsRequest {
     translate?: string;
     separate?: string;
   };
+  providerConfigs?: Record<string, string>;
 }
 
 export interface OpenAIModelsResponse {

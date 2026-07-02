@@ -3,12 +3,11 @@ package com.youdub.replica.service.adapter.tts;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -33,21 +32,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Component("openai-tts")
 @RequiredArgsConstructor
 public class OpenAiTtsProvider implements TtsProvider {
-    @Data
-    @Component
-    @ConfigurationProperties(prefix = "tts.open-api")
-    static class TtsOpenApiConfig {
-        private String url;
-        private String apiKey;
-        private String model;
-        private String voice;
-    }
 
     private static final int CONCURRENCY = 8;
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
-    private final TtsOpenApiConfig config;
+    private final AppProperties.Tts.OpenaiTts config;
 
     @Qualifier("virtualExecutor")
     private final ExecutorService virtualExecutor;

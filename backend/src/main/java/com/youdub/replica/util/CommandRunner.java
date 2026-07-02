@@ -85,7 +85,12 @@ public final class CommandRunner {
         if (cmd.workDir() != null) {
             pb.directory(cmd.workDir().toFile());
         }
-        pb.redirectErrorStream(true);
+        ProcessBuilder.Redirect errRedirect = cmd.errorRedirect();
+        if (errRedirect != null) {
+            pb.redirectError(errRedirect);
+        } else {
+            pb.redirectErrorStream(true);
+        }
 
         Instant start = Instant.now();
 
@@ -180,5 +185,83 @@ public final class CommandRunner {
         }
 
         return new CommandResult(exitCode, fullOutput.toString(), List.copyOf(lines), elapsed);
+    }
+
+    /**
+     * 执行命令并捕获 stdout 原始字节（适用于 ffmpeg 等二进制输出）。
+     * <p>
+     * 与 {@link #run(Command)} 的区别：
+     * <ul>
+     *   <li>按 {@link Command#errorRedirect()} 设置 stderr 重定向（默认丢弃）</li>
+     *   <li>stdout 以字节流读取，不涉及字符编码</li>
+     *   <li>返回 {@link BinaryResult}（exitCode + byte[]）</li>
+     * </ul>
+     *
+     * @param cmd 命令配置
+     * @return 二进制执行结果
+     */
+    public static BinaryResult runBinary(Command cmd) {
+        ProcessBuilder pb = new ProcessBuilder(cmd.args());
+        if (cmd.workDir() != null) {
+            pb.directory(cmd.workDir().toFile());
+        }
+        ProcessBuilder.Redirect errRedirect = cmd.errorRedirect();
+        if (errRedirect != null) {
+            pb.redirectError(errRedirect);
+        } else {
+            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
+        }
+
+        Process process;
+        try {
+            process = pb.start();
+        } catch (IOException e) {
+            throw new RuntimeException("启动二进制进程失败: " + String.join(" ", cmd.args()), e);
+        }
+
+        // 虚拟线程读取 stdout 字节
+        byte[][] outputRef = new byte[1][];
+        Thread reader = Thread.ofVirtual().name("bin-reader").start(() -> {
+            try (var is = process.getInputStream()) {
+                outputRef[0] = is.readAllBytes();
+            } catch (IOException e) {
+                // 进程销毁时流关闭，属于正常情况
+            }
+        });
+
+        // 等待进程完成（带超时）
+        boolean finished;
+        try {
+            if (cmd.timeoutMs() > 0) {
+                finished = process.waitFor(cmd.timeoutMs(), TimeUnit.MILLISECONDS);
+            } else {
+                process.waitFor();
+                finished = true;
+            }
+        } catch (InterruptedException e) {
+            process.destroyForcibly();
+            Thread.currentThread().interrupt();
+            throw new RuntimeException("二进制进程被中断: " + String.join(" ", cmd.args()), e);
+        }
+
+        if (!finished) {
+            process.destroyForcibly();
+            throw new RuntimeException("二进制进程超时(" + cmd.timeoutMs() + "ms): "
+                    + String.join(" ", cmd.args()));
+        }
+
+        try {
+            reader.join();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+
+        int exitCode = process.exitValue();
+
+        if (cmd.throwOnNonZero() && exitCode != 0) {
+            throw new RuntimeException("二进制进程退出码 " + exitCode + "，命令：" + String.join(" ", cmd.args()));
+        }
+
+        return new BinaryResult(exitCode, outputRef[0] != null ? outputRef[0] : new byte[0]);
     }
 }

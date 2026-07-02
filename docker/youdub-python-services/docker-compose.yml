@@ -1,0 +1,87 @@
+# ============================================================
+# Python Services — Standalone Docker Compose
+# Combines: Audio Separator + Faster-Whisper + VoxCPM TTS
+# Use this file to run the Python services independently:
+#   docker compose -f docker/python-services/docker-compose.yml up -d
+# ============================================================
+
+services:
+  python-services:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        # Build-time proxy for apt / git (llama.cpp-omni clone)
+        - HTTP_PROXY=${HTTP_PROXY:-}
+        - HTTPS_PROXY=${HTTPS_PROXY:-}
+        - NO_PROXY=${NO_PROXY:-}
+    image: youdub-python-services:latest
+    container_name: youdub-python-services
+    ports:
+      - "8001:8001"
+    environment:
+      # ── Audio Separator ────────────────────────────────
+      - SEPARATOR_MODEL=${SEPARATOR_MODEL:-UVR-MDX-NET-Inst_HQ_3.onnx}
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-6}
+      - MODEL_DIR=/app/models
+
+      # ── Faster-Whisper ─────────────────────────────────
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - WHISPER_DEVICE=${WHISPER_DEVICE:-cpu}
+      - WHISPER_COMPUTE_TYPE=${WHISPER_COMPUTE_TYPE:-int8}
+      - WHISPER_CPU_THREADS=${WHISPER_CPU_THREADS:-6}
+
+      # ── VoxCPM TTS ────────────────────────────────────
+      # 后端选择：auto（有 GPU 用原生 voxcpm，无 GPU 用 llama.cpp-omni）、voxcpm、llamacpp
+      - VOXCPM_BACKEND=${VOXCPM_BACKEND:-auto}
+      - VOXCPM_MODEL=${VOXCPM_MODEL:-OpenBMB/VoxCPM2}
+      # 是否加载降噪器。VoxCPM 生成音频后，会用额外的降噪模型处理一遍来提升音质，但会增加加载耗时和显存占用。false 表示不加载，启动更快、占内存更少。
+      - VOXCPM_LOAD_DENOISER=${VOXCPM_LOAD_DENOISER:-false}
+      # Classifier-Free Guidance (CFG) 系数，控制生成结果对输入文本的遵从程度：
+      #     - 值越小（如 1.0）：模型自由发挥，跟文本可能不太像
+      #     - 值越大（如 3.0~5.0）：严格按文本生成，但可能声音不自然
+      #     - 2.0：平衡值，默认推荐
+      - VOXCPM_CFG_VALUE=${VOXCPM_CFG_VALUE:-1.5}
+      # 推理步数。VoxCPM 是扩散模型，需要多步迭代生成音频：
+      #     - 步数越多：质量越好，但生成越慢（线性增长）
+      #     - 步数越少：生成快，但音质可能下降
+      #     - 10：默认值，速度和质量的平衡点。如果追求极致音质可以调到 20~50，追求速度可以降到 5
+      - VOXCPM_INFERENCE_TIMESTEPS=${VOXCPM_INFERENCE_TIMESTEPS:-5}
+      - MODEL_CACHE_DIR=/app/data/modelscope
+      - PRELOAD_MODELS=${PRELOAD_MODELS:-true}
+      # llama.cpp-omni GGUF 模型配置（CPU fallback）
+      - VOXCPM_LLAMACPP_DIR=/app/llama.cpp-omni
+      - VOXCPM_LLAMACPP_BASELM=${VOXCPM_LLAMACPP_BASELM:-VoxCPM2-BaseLM-Q8_0.gguf}
+      - VOXCPM_LLAMACPP_ACOUSTIC=${VOXCPM_LLAMACPP_ACOUSTIC:-VoxCPM2-Acoustic-F16.gguf}
+      - VOXCPM_LLAMACPP_REPO=${VOXCPM_LLAMACPP_REPO:-DennisHuang/VoxCPM2-GGUF}
+      - VOXCPM_LLAMACPP_THREADS=${VOXCPM_LLAMACPP_THREADS:-4}
+      # 参考音频 prompt-text 来源：auto=Whisper 自动转录，empty=空字符串，none=不传 prompt-text
+      - VOXCPM_LLAMACPP_PROMPT_TEXT_MODE=${VOXCPM_LLAMACPP_PROMPT_TEXT_MODE:-auto}
+
+      # ── General ────────────────────────
+      - CUDA_DEVICE=${CUDA_DEVICE:-}
+      - SERVICE_PORT=8001
+      # 走代理直连 huggingface.co，避免 hf-mirror 308 重定向问题
+      - HTTP_PROXY=${HTTP_PROXY:-}
+      - HTTPS_PROXY=${HTTPS_PROXY:-}
+      - NO_PROXY=${NO_PROXY:-}
+    volumes:
+      - ./models:/app/data/modelscope
+      - ./separator-models:/app/models
+      - ./server.py:/app/server.py:ro
+    command: uvicorn server:app --host 0.0.0.0 --port 8001 --log-level info --reload
+    restart: unless-stopped
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    # ── GPU Support (uncomment for NVIDIA GPU) ─────────
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+

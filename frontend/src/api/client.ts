@@ -118,8 +118,8 @@ export function redoStage(taskId: string, stageName: string) {
   });
 }
 
-export async function getTaskLog(taskId: string): Promise<string> {
-  const response = await fetch(`${API_BASE}/api/tasks/${taskId}/log`, {
+export async function getTaskLog(taskId: string, offset = 0): Promise<string> {
+  const response = await fetch(`${API_BASE}/api/tasks/${taskId}/log?offset=${offset}`, {
     cache: "no-store",
   });
   if (!response.ok) {

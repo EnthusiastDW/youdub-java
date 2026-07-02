@@ -11,6 +11,8 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 
+import java.util.Map;
+
 import static org.junit.jupiter.api.Assertions.*;
 
 /**
@@ -28,65 +30,9 @@ class SettingsControllerE2ETest {
 
         assertEquals(200, resp.getStatusCode().value());
         assertNotNull(resp.getBody());
-        assertNotNull(resp.getBody().getOpenai());
         assertNotNull(resp.getBody().getYtdlp());
         assertNotNull(resp.getBody().getYoutubeCookie());
         assertEquals("", resp.getBody().getYoutubeCookie().getContent());
-    }
-
-    @Test
-    void saveSettings_shouldPersistAndReturn() {
-        SettingsRequest request = new SettingsRequest();
-        SettingsRequest.OpenAiSettings openai = new SettingsRequest.OpenAiSettings();
-        openai.setBaseUrl("https://api.example.com/v1");
-        openai.setApiKey("sk-test-key-1234567890abcdef");
-        openai.setModel("gpt-4o");
-        openai.setTranslateConcurrency(100);
-        request.setOpenai(openai);
-
-        SettingsRequest.YtdlpSettings ytdlp = new SettingsRequest.YtdlpSettings();
-        ytdlp.setProxyPort("7890");
-        request.setYtdlp(ytdlp);
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<SettingsRequest> entity = new HttpEntity<>(request, headers);
-
-        ResponseEntity<SettingsResponse> resp = restTemplate.postForEntity("/api/settings", entity, SettingsResponse.class);
-
-        assertEquals(200, resp.getStatusCode().value());
-        assertNotNull(resp.getBody());
-        assertEquals("https://api.example.com/v1", resp.getBody().getOpenai().getBaseUrl());
-        assertTrue(resp.getBody().getOpenai().isHasApiKey());
-        assertTrue(resp.getBody().getOpenai().getApiKey().contains("***"));
-        assertEquals("gpt-4o", resp.getBody().getOpenai().getModel());
-        assertEquals(100, resp.getBody().getOpenai().getTranslateConcurrency());
-        assertEquals("7890", resp.getBody().getYtdlp().getProxyPort());
-    }
-
-    @Test
-    void saveSettings_clearApiKey_shouldRemoveKey() {
-        // 先保存一个 key
-        SettingsRequest saveReq = new SettingsRequest();
-        SettingsRequest.OpenAiSettings openai = new SettingsRequest.OpenAiSettings();
-        openai.setApiKey("sk-to-be-cleared-123456");
-        saveReq.setOpenai(openai);
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<SettingsRequest> saveEntity = new HttpEntity<>(saveReq, headers);
-        restTemplate.postForEntity("/api/settings", saveEntity, SettingsResponse.class);
-
-        // 清除 key
-        SettingsRequest clearReq = new SettingsRequest();
-        SettingsRequest.OpenAiSettings clearOpenai = new SettingsRequest.OpenAiSettings();
-        clearOpenai.setClearApiKey(true);
-        clearReq.setOpenai(clearOpenai);
-        HttpEntity<SettingsRequest> clearEntity = new HttpEntity<>(clearReq, headers);
-
-        ResponseEntity<SettingsResponse> resp = restTemplate.postForEntity("/api/settings", clearEntity, SettingsResponse.class);
-
-        assertEquals(200, resp.getStatusCode().value());
-        assertFalse(resp.getBody().getOpenai().isHasApiKey());
     }
 
     @Test
@@ -109,21 +55,43 @@ class SettingsControllerE2ETest {
     }
 
     @Test
-    void listOpenAiModels_withoutApiKey_shouldReturn400() {
-        // 先清除 API key
-        SettingsRequest clearReq = new SettingsRequest();
-        SettingsRequest.OpenAiSettings clearOpenai = new SettingsRequest.OpenAiSettings();
-        clearOpenai.setClearApiKey(true);
-        clearReq.setOpenai(clearOpenai);
+    void saveSettings_providerConfigs_shouldPersist() {
+        SettingsRequest request = new SettingsRequest();
+        SettingsRequest.ProviderSelections providers = new SettingsRequest.ProviderSelections();
+        providers.setTranslate("openai");
+        providers.setAsr("whisper-api");
+        providers.setTts("edge-tts");
+        providers.setSeparate("demucs");
+        Map<String, String> configs = new java.util.HashMap<>();
+        configs.put("translate.openai.chatUrl", "https://api.example.com/v1/chat/completions");
+        configs.put("translate.openai.apiKey", "api-key-from-ui");
+        configs.put("asr.whisper-api.baseUrl", "https://whisper.example.com");
+        configs.put("tts.edge-tts.voice", "zh-CN-XiaoxiaoNeural");
+        providers.setProviderConfigs(configs);
+        request.setProviders(providers);
+
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<SettingsRequest> clearEntity = new HttpEntity<>(clearReq, headers);
-        restTemplate.postForEntity("/api/settings", clearEntity, SettingsResponse.class);
+        HttpEntity<SettingsRequest> entity = new HttpEntity<>(request, headers);
 
-        // 请求模型列表（不提供 apiKey）
+        ResponseEntity<SettingsResponse> resp = restTemplate.postForEntity("/api/settings", entity, SettingsResponse.class);
+
+        assertEquals(200, resp.getStatusCode().value());
+        assertNotNull(resp.getBody());
+        assertEquals("openai", resp.getBody().getProviders().getTranslate().getCurrent());
+        assertEquals("https://api.example.com/v1/chat/completions", resp.getBody().getProviders().getTranslate().getOptions().get("openai").get("chatUrl"));
+        assertEquals("https://whisper.example.com", resp.getBody().getProviders().getAsr().getOptions().get("whisper-api").get("baseUrl"));
+        assertEquals("zh-CN-XiaoxiaoNeural", resp.getBody().getProviders().getTts().getOptions().get("edge-tts").get("voice"));
+        assertEquals("true", resp.getBody().getProviders().getTranslate().getOptions().get("openai").get("hasApiKey"));
+    }
+
+    @Test
+    void listOpenAiModels_withoutApiKey_shouldReturn400() {
         com.youdub.replica.dto.OpenAiModelsRequest modelsReq = new com.youdub.replica.dto.OpenAiModelsRequest();
         modelsReq.setBaseUrl("https://api.openai.com/v1");
         modelsReq.setApiKey("");
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
         HttpEntity<com.youdub.replica.dto.OpenAiModelsRequest> entity = new HttpEntity<>(modelsReq, headers);
 
         ResponseEntity<java.util.Map> resp = restTemplate.postForEntity("/api/settings/openai/models", entity, java.util.Map.class);

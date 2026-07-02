@@ -12,20 +12,9 @@ import java.util.Map;
 @Data
 public class SettingsResponse {
 
-    private OpenAiSettings openai = new OpenAiSettings();
     private YtdlpSettings ytdlp = new YtdlpSettings();
     private YoutubeCookieInfo youtubeCookie = new YoutubeCookieInfo();
     private ProvidersData providers = new ProvidersData();
-
-    @Data
-    public static class OpenAiSettings {
-        private String baseUrl;
-        /** 脱敏后的 API key（如 sk-***...***） */
-        private String apiKey;
-        private boolean hasApiKey;
-        private String model;
-        private Integer translateConcurrency;
-    }
 
     @Data
     public static class YtdlpSettings {

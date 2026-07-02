@@ -6,11 +6,9 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -36,19 +34,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 @RequiredArgsConstructor
 public class OpenAiTranslator implements Translator {
 
-    @Data
-    @Component
-    @ConfigurationProperties(prefix = "translate.openai")
-    static class TranslateOpenAiConfig {
-        private String url ;
-        private String apiKey;
-        private String model;
-        private int concurrency;
-    }
-
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
-    private final TranslateOpenAiConfig config;
+    private final AppProperties.Translate.Openai config;
 
     @Qualifier("virtualExecutor")
     private final ExecutorService virtualExecutor;
@@ -72,7 +60,7 @@ public class OpenAiTranslator implements Translator {
         }
 
         String apiKey = config.getApiKey();
-        String chatUrl = config.getUrl();
+        String chatUrl = config.getChatUrl();
         String useModel = config.getModel();
         int useConcurrency = config.getConcurrency() <= 0 ? 1 : config.getConcurrency();
 
@@ -162,9 +150,14 @@ public class OpenAiTranslator implements Translator {
         ArrayNode translationArray = objectMapper.createArrayNode();
         for (int i = 0; i < items.size(); i++) {
             Utterance item = items.get(i);
+            String dst = translations.get(i);
+            if (dst.isBlank()) {
+                dst = item.text;
+                log.warn("翻译结果为空，使用原文：{}", item.text);
+            }
             ObjectNode entry = objectMapper.createObjectNode();
             entry.put("src", item.text);
-            entry.put("dst", translations.get(i));
+            entry.put("dst", dst);
             entry.put("src_lang", srcLang);
             entry.put("dst_lang", dstLang);
             entry.put("start_time", item.startTime);
@@ -229,6 +222,23 @@ public class OpenAiTranslator implements Translator {
         return result;
     }
 
+    private static final List<String> REFUSAL_PHRASES = List.of(
+            "很抱歉",
+            "没有足够的上下文",
+            "无法回答",
+            "无法提供",
+            "i'm sorry",
+            "i apologize",
+            "don't have enough context",
+            "cannot answer",
+            "cannot provide"
+    );
+
+    private static boolean isRefusal(String content) {
+        String lower = content.toLowerCase();
+        return REFUSAL_PHRASES.stream().anyMatch(lower::contains);
+    }
+
     /**
      * 调用 OpenAI Chat Completions API 翻译单句。
      */
@@ -255,9 +265,18 @@ public class OpenAiTranslator implements Translator {
         messages.add(userMsg);
         requestBody.set("messages", messages);
 
-        String response = callChatApi(apiKey, chatUrl, model, requestBody);
-        JsonNode root = objectMapper.readTree(response);
-        return root.path("choices").path(0).path("message").path("content").asText(text).trim();
+        // 重试最多 3 次，避免 LLM 偶发返回空内容或拒绝回答
+        for (int attempt = 1; attempt <= 3; attempt++) {
+            String response = callChatApi(apiKey, chatUrl, model, requestBody);
+            JsonNode root = objectMapper.readTree(response);
+            String content = root.path("choices").path(0).path("message").path("content").asText("").trim();
+            if (!content.isEmpty() && !isRefusal(content)) {
+                return content;
+            }
+            log.warn("翻译结果无效（第 {}/3 次），原文='{}'，返回='{}'", attempt, text, content);
+        }
+        // 3 次重试均无效，回退到原文
+        return text;
     }
 
     /**

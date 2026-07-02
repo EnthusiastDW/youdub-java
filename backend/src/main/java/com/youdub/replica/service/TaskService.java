@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -261,9 +262,12 @@ public class TaskService {
     }
 
     /**
-     * 获取任务日志（纯文本）。
+     * 获取任务日志（纯文本），支持字节偏移增量读取。
+     *
+     * @param offset 字节偏移量，从该位置开始读取；0 或负数表示从头读取
+     * @return 从 offset 到文件末尾的文本内容
      */
-    public String getTaskLog(String id) {
+    public String getTaskLog(String id, long offset) {
         Task task = taskRepository.findById(id);
         if (task == null) {
             throw new NoSuchElementException("任务不存在：" + id);
@@ -273,7 +277,10 @@ public class TaskService {
             return "";
         }
         try {
-            return Files.readString(logFile);
+            byte[] all = Files.readAllBytes(logFile);
+            if (offset >= all.length) return "";
+            long start = Math.max(0, offset);
+            return new String(all, (int) start, (int) (all.length - start), StandardCharsets.UTF_8);
         } catch (IOException e) {
             log.warn("读取日志失败：{}", e.getMessage());
             return "";

@@ -85,8 +85,10 @@ public class TaskController {
     }
 
     @GetMapping(value = "/{id}/log", produces = MediaType.TEXT_PLAIN_VALUE)
-    public String getTaskLog(@PathVariable String id) {
-        return taskService.getTaskLog(id);
+    public String getTaskLog(
+            @PathVariable String id,
+            @RequestParam(value = "offset", defaultValue = "0") long offset) {
+        return taskService.getTaskLog(id, offset);
     }
 
     @GetMapping("/{id}/artifact/final-video")

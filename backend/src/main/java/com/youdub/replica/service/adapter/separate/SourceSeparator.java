@@ -5,8 +5,7 @@ import java.nio.file.Path;
 
 /**
  * 音源分离适配器接口。
- * 原方案：DemucsSeparator（通过 Demucs 子进程，HTDemucs-FT 模型）
- * 替代方案：SpleeterSeparator（通过 Spleeter 子进程）
+ * 当前方案：FfmpegSimpleSeparator（FFmpeg 频率滤波）、DemucsSeparator（本地 Python 模型）、AudioSeparatorApiSeparator（Docker 容器服务）
  */
 public interface SourceSeparator {
     String getName();

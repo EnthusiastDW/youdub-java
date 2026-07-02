@@ -1,12 +1,16 @@
 package com.youdub.replica.service;
 
+import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.dto.SettingsRequest;
 import com.youdub.replica.dto.SettingsResponse;
+import com.youdub.replica.repository.SettingsRepository;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -20,67 +24,91 @@ class SettingsServiceE2ETest {
     @Autowired
     private SettingsService settingsService;
 
+    @Autowired
+    private AppProperties appProperties;
+
+    @Autowired
+    private SettingsRepository settingsRepository;
+
     @Test
     void getSettings_shouldReturnDefaults() {
         SettingsResponse resp = settingsService.getSettings();
 
         assertNotNull(resp);
-        assertNotNull(resp.getOpenai());
         assertNotNull(resp.getYtdlp());
         assertNotNull(resp.getYoutubeCookie());
         assertEquals("", resp.getYoutubeCookie().getContent());
     }
 
     @Test
-    void saveSettings_shouldPersistOpenAiSettings() {
-        SettingsRequest request = new SettingsRequest();
-        SettingsRequest.OpenAiSettings openai = new SettingsRequest.OpenAiSettings();
-        openai.setBaseUrl("https://api.example.com/v1");
-        openai.setApiKey("sk-test-key-1234567890abcdef");
-        openai.setModel("gpt-4o");
-        openai.setTranslateConcurrency(100);
-        request.setOpenai(openai);
-
-        SettingsResponse resp = settingsService.saveSettings(request);
-
-        assertNotNull(resp);
-        assertEquals("https://api.example.com/v1", resp.getOpenai().getBaseUrl());
-        assertTrue(resp.getOpenai().isHasApiKey());
-        assertTrue(resp.getOpenai().getApiKey().contains("***"));
-        assertEquals("gpt-4o", resp.getOpenai().getModel());
-        assertEquals(100, resp.getOpenai().getTranslateConcurrency());
-    }
-
-    @Test
-    void saveSettings_clearApiKey_shouldRemoveKey() {
-        // 先保存一个 key
-        SettingsRequest saveReq = new SettingsRequest();
-        SettingsRequest.OpenAiSettings openai = new SettingsRequest.OpenAiSettings();
-        openai.setApiKey("sk-to-be-cleared-123456");
-        saveReq.setOpenai(openai);
-        settingsService.saveSettings(saveReq);
-
-        // 清除 key
-        SettingsRequest clearReq = new SettingsRequest();
-        SettingsRequest.OpenAiSettings clearOpenai = new SettingsRequest.OpenAiSettings();
-        clearOpenai.setClearApiKey(true);
-        clearReq.setOpenai(clearOpenai);
-
-        SettingsResponse resp = settingsService.saveSettings(clearReq);
-
-        assertFalse(resp.getOpenai().isHasApiKey());
-    }
-
-    @Test
     void saveSettings_ytdlpProxy_shouldPersist() {
         SettingsRequest request = new SettingsRequest();
         SettingsRequest.YtdlpSettings ytdlp = new SettingsRequest.YtdlpSettings();
-        ytdlp.setProxyPort("7890");
+        ytdlp.setProxy("http://127.0.0.1:7890");
         request.setYtdlp(ytdlp);
 
         SettingsResponse resp = settingsService.saveSettings(request);
 
-        assertEquals("7890", resp.getYtdlp().getProxyPort());
+        assertEquals("http://127.0.0.1:7890", resp.getYtdlp().getProxy());
+    }
+
+    @Test
+    void saveSettings_providerConfigs_shouldPersist() {
+        SettingsRequest request = new SettingsRequest();
+        SettingsRequest.ProviderSelections providers = new SettingsRequest.ProviderSelections();
+        providers.setTranslate("openai");
+        providers.setAsr("whisper-api");
+        providers.setTts("edge-tts");
+        providers.setSeparate("demucs");
+        Map<String, String> configs = new HashMap<>();
+        configs.put("translate.openai.chatUrl", "https://saved.example.com/v1/chat/completions");
+        configs.put("translate.openai.apiKey", "saved-key");
+        configs.put("asr.whisper-api.baseUrl", "https://saved-whisper.example.com");
+        configs.put("tts.edge-tts.voice", "saved-voice");
+        providers.setProviderConfigs(configs);
+        request.setProviders(providers);
+
+        SettingsResponse resp = settingsService.saveSettings(request);
+
+        assertEquals("openai", resp.getProviders().getTranslate().getCurrent());
+        assertEquals("https://saved.example.com/v1/chat/completions", resp.getProviders().getTranslate().getOptions().get("openai").get("chatUrl"));
+        assertEquals("https://saved-whisper.example.com", resp.getProviders().getAsr().getOptions().get("whisper-api").get("baseUrl"));
+        assertEquals("saved-voice", resp.getProviders().getTts().getOptions().get("edge-tts").get("voice"));
+        // API key 脱敏返回，不直接比较原值
+        assertEquals("true", resp.getProviders().getTranslate().getOptions().get("openai").get("hasApiKey"));
+    }
+
+    @Test
+    void mergeFromDb_shouldOverrideAppPropertiesAndAdapterConfigs() {
+        // 先保存配置到 DB
+        SettingsRequest request = new SettingsRequest();
+        SettingsRequest.ProviderSelections providers = new SettingsRequest.ProviderSelections();
+        providers.setTranslate("openai");
+        Map<String, String> configs = new HashMap<>();
+        configs.put("translate.openai.chatUrl", "https://db.example.com/v1/chat/completions");
+        configs.put("translate.openai.apiKey", "db-api-key");
+        configs.put("translate.openai.model", "db-model");
+        configs.put("translate.openai.concurrency", "7");
+        configs.put("asr.whisper-api.baseUrl", "https://db-whisper.example.com");
+        configs.put("tts.edge-tts.voice", "db-voice");
+        configs.put("separate.demucs.model", "db-demucs");
+        configs.put("ytdlp.proxy", "http://db.proxy:7890");
+        providers.setProviderConfigs(configs);
+        request.setProviders(providers);
+        settingsService.saveSettings(request);
+
+        // 重新触发 DB -> AppProperties 合并（模拟重启）
+        appProperties.mergeFromDb(settingsRepository);
+
+        // 验证 AppProperties 被覆盖
+        assertEquals("https://db.example.com/v1/chat/completions", appProperties.getTranslate().getOpenai().getChatUrl());
+        assertEquals("db-api-key", appProperties.getTranslate().getOpenai().getApiKey());
+        assertEquals("db-model", appProperties.getTranslate().getOpenai().getModel());
+        assertEquals(7, appProperties.getTranslate().getOpenai().getConcurrency());
+        assertEquals("https://db-whisper.example.com", appProperties.getAsr().getWhisperApi().getBaseUrl());
+        assertEquals("db-voice", appProperties.getTts().getEdgeTts().getVoice());
+        assertEquals("db-demucs", appProperties.getSeparate().getDemucs().getModel());
+        assertEquals("http://db.proxy:7890", appProperties.getYtdlp().getProxy());
     }
 
     @Test
@@ -114,14 +142,6 @@ class SettingsServiceE2ETest {
 
     @Test
     void getOpenAiModels_withoutApiKey_shouldThrow() {
-        // 先清除 API key
-        SettingsRequest clearReq = new SettingsRequest();
-        SettingsRequest.OpenAiSettings clearOpenai = new SettingsRequest.OpenAiSettings();
-        clearOpenai.setClearApiKey(true);
-        clearReq.setOpenai(clearOpenai);
-        settingsService.saveSettings(clearReq);
-
-        // 请求模型列表（不提供 apiKey）
         assertThrows(IllegalArgumentException.class, () ->
                 settingsService.getOpenAiModels("https://api.openai.com/v1", ""));
     }

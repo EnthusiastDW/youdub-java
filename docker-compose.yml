@@ -4,54 +4,47 @@
 # ============================================================
 
 services:
-  # ── VoxCPM TTS 服务 ─────────────────────────────────────
-  voxcpm:
+  # ── Python Services (TTS + Audio Separation + Whisper) ─
+  python-services:
     build:
-      context: ./docker/voxcpm
+      context: docker/youdub-python-services
       dockerfile: Dockerfile
-    image: youdub-voxcpm:latest
-    container_name: youdub-voxcpm
+      args:
+        # Build-time proxy for apt / git (llama.cpp-omni clone)
+        - HTTP_PROXY=${HTTP_PROXY:-}
+        - HTTPS_PROXY=${HTTPS_PROXY:-}
+        - NO_PROXY=${NO_PROXY:-}
+    image: youdub-python-services:latest
+    container_name: youdub-python-services
     ports:
-      - "8001:8001"
+      - "8002:8001"
     environment:
+      - SEPARATOR_MODEL=${SEPARATOR_MODEL:-UVR-MDX-NET-Inst_HQ_3.onnx}
+      - SEPARATOR_NUM_PROCESSES=${SEPARATOR_NUM_PROCESSES:-4}
+      - OMP_NUM_THREADS=${OMP_NUM_THREADS:-4}
+      - MODEL_DIR=/app/models
+      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - WHISPER_DEVICE=${WHISPER_DEVICE:-cpu}
+      # VoxCPM 后端：auto=根据 GPU 自动选择，voxcpm=强制原生 PyTorch，llamacpp=强制 llama.cpp-omni
+      - VOXCPM_BACKEND=${VOXCPM_BACKEND:-auto}
       - VOXCPM_MODEL=${VOXCPM_MODEL:-OpenBMB/VoxCPM2}
       - VOXCPM_LOAD_DENOISER=${VOXCPM_LOAD_DENOISER:-false}
       - VOXCPM_CFG_VALUE=${VOXCPM_CFG_VALUE:-2.0}
       - VOXCPM_INFERENCE_TIMESTEPS=${VOXCPM_INFERENCE_TIMESTEPS:-10}
       - MODEL_CACHE_DIR=/app/data/modelscope
+      - PRELOAD_MODELS=${PRELOAD_MODELS:-true}
+      # llama.cpp-omni CPU fallback 配置
+      - VOXCPM_LLAMACPP_DIR=/app/llama.cpp-omni
+      - VOXCPM_LLAMACPP_BASELM=${VOXCPM_LLAMACPP_BASELM:-VoxCPM2-BaseLM-Q8_0.gguf}
+      - VOXCPM_LLAMACPP_ACOUSTIC=${VOXCPM_LLAMACPP_ACOUSTIC:-VoxCPM2-Acoustic-F16.gguf}
+      - VOXCPM_LLAMACPP_REPO=${VOXCPM_LLAMACPP_REPO:-DennisHuang/VoxCPM2-GGUF}
+      - VOXCPM_LLAMACPP_THREADS=${VOXCPM_LLAMACPP_THREADS:-4}
+      - VOXCPM_LLAMACPP_PROMPT_TEXT_MODE=${VOXCPM_LLAMACPP_PROMPT_TEXT_MODE:-auto}
+      - HTTP_PROXY=http://dengwei.local:7890
+      - HTTPS_PROXY=http://dengwei.local:7890
+      - NO_PROXY=localhost,127.0.0.1,dengwei.local
     volumes:
       - youdub-models:/app/data/modelscope
-    restart: unless-stopped
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "10m"
-        max-file: "3"
-    networks:
-      - youdub-network
-    # VoxCPM 需要 GPU 才能高效运行
-    # 取消注释以下行以启用 GPU
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
-
-  # ── Audio Separator API ────────────────────────────────
-  audio-separator:
-    build:
-      context: ./docker/audio-separator
-      dockerfile: Dockerfile
-    image: youdub-audio-separator:latest
-    container_name: youdub-audio-separator
-    ports:
-      - "8002:8001"
-    environment:
-      - SEPARATOR_MODEL=${SEPARATOR_MODEL:-UVR-MDX-NET-Inst_HQ_3.onnx}
-      - MODEL_DIR=/app/models
-    volumes:
       - youdub-separator-models:/app/models
     restart: unless-stopped
     logging:
@@ -79,10 +72,8 @@ services:
       - "8000:8000"
     environment:
       - APP_TTS_PROVIDER=${TTS_PROVIDER:-voxcpm}
-      - APP_TTS_VOXCPM_SERVICE_URL=${VOXCPM_SERVICE_URL:-http://voxcpm:8001}
-      - APP_OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
-      - APP_OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - APP_OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - APP_TTS_VOXCPM_SERVICE_URL=${VOXCPM_SERVICE_URL:-http://python-services:8001}
+      - APP_SEPARATE_AUDIO_SEPARATOR_API_SERVICE_URL=${AUDIO_SEPARATOR_SERVICE_URL:-http://python-services:8001}
       - APP_TRANSLATE_MODEL=${TRANSLATE_MODEL:-gpt-4o-mini}
       - APP_TRANSLATE_CONCURRENCY=${TRANSLATE_CONCURRENCY:-50}
       - APP_WORKFOLDER=/app/workfolder
@@ -96,7 +87,7 @@ services:
       - youdub-data:/app/data
       - youdub-workfolder:/app/workfolder
     depends_on:
-      - voxcpm
+      - python-services
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]

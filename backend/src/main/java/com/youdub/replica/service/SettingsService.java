@@ -22,7 +22,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import org.springframework.core.env.Environment;
 
 /**
  * 设置服务。
@@ -33,38 +32,18 @@ import org.springframework.core.env.Environment;
 @RequiredArgsConstructor
 public class SettingsService {
 
-    private static final String KEY_OPENAI_BASE_URL = "openai.baseUrl";
-    private static final String KEY_OPENAI_API_KEY = "openai.apiKey";
-    private static final String KEY_OPENAI_MODEL = "openai.model";
-    private static final String KEY_OPENAI_CONCURRENCY = "openai.translateConcurrency";
-    private static final String KEY_YTDLP_PROXY_PORT = "ytdlp.proxyPort";
     private static final String YOUTUBE_COOKIE_FILE = "youtube.txt";
 
     private final SettingsRepository settingsRepository;
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
-    private final Environment environment;
 
     /**
      * 获取所有设置（从 DB + 环境变量合并）。
      */
     public SettingsResponse getSettings() {
         SettingsResponse resp = new SettingsResponse();
-
-        SettingsResponse.OpenAiSettings openai = new SettingsResponse.OpenAiSettings();
-        openai.setBaseUrl(settingsRepository.get(KEY_OPENAI_BASE_URL, appProperties.getOpenai().getBaseUrl()));
-        String apiKey = settingsRepository.get(KEY_OPENAI_API_KEY, appProperties.getOpenai().getApiKey());
-        openai.setHasApiKey(apiKey != null && !apiKey.isBlank());
-        openai.setApiKey(maskApiKey(apiKey));
-        openai.setModel(settingsRepository.get(KEY_OPENAI_MODEL, appProperties.getOpenai().getModel()));
-        String concurrencyStr = settingsRepository.get(KEY_OPENAI_CONCURRENCY, "50");
-        try {
-            openai.setTranslateConcurrency(Integer.parseInt(concurrencyStr));
-        } catch (NumberFormatException e) {
-            openai.setTranslateConcurrency(50);
-        }
-        resp.setOpenai(openai);
 
         SettingsResponse.YtdlpSettings ytdlp = new SettingsResponse.YtdlpSettings();
         ytdlp.setProxy(settingsRepository.get("ytdlp.proxy", appProperties.getYtdlp().getProxy()));
@@ -79,25 +58,17 @@ public class SettingsService {
      * 保存设置到 DB。
      */
     public SettingsResponse saveSettings(SettingsRequest request) {
-        if (request.getOpenai() != null) {
-            SettingsRequest.OpenAiSettings openai = request.getOpenai();
-            if (openai.getBaseUrl() != null) {
-                settingsRepository.set(KEY_OPENAI_BASE_URL, openai.getBaseUrl());
-                appProperties.getOpenai().setBaseUrl(openai.getBaseUrl());
-            }
-            if (openai.isClearApiKey()) {
-                settingsRepository.set(KEY_OPENAI_API_KEY, "");
-                appProperties.getOpenai().setApiKey("");
-            } else if (openai.getApiKey() != null && !openai.getApiKey().isBlank()) {
-                settingsRepository.set(KEY_OPENAI_API_KEY, openai.getApiKey());
-                appProperties.getOpenai().setApiKey(openai.getApiKey());
-            }
-            if (openai.getModel() != null) {
-                settingsRepository.set(KEY_OPENAI_MODEL, openai.getModel());
-                appProperties.getOpenai().setModel(openai.getModel());
-            }
-            if (openai.getTranslateConcurrency() != null) {
-                settingsRepository.set(KEY_OPENAI_CONCURRENCY, String.valueOf(openai.getTranslateConcurrency()));
+        if (request.getProviders() != null) {
+            SettingsRequest.ProviderSelections p = request.getProviders();
+            if (p.getAsr() != null) settingsRepository.set("asr.provider", p.getAsr());
+            if (p.getTts() != null) settingsRepository.set("tts.provider", p.getTts());
+            if (p.getTranslate() != null) settingsRepository.set("translate.provider", p.getTranslate());
+            if (p.getSeparate() != null) settingsRepository.set("separate.provider", p.getSeparate());
+
+            if (p.getProviderConfigs() != null) {
+                for (Map.Entry<String, String> entry : p.getProviderConfigs().entrySet()) {
+                    settingsRepository.set(entry.getKey(), entry.getValue());
+                }
             }
         }
 
@@ -109,22 +80,6 @@ public class SettingsService {
             saveYouTubeCookie(request.getYoutubeCookie().getContent());
         }
 
-        if (request.getProviders() != null) {
-            SettingsRequest.ProviderSelections p = request.getProviders();
-            if (p.getAsr() != null) {
-                settingsRepository.set("asr.provider", p.getAsr());
-            }
-            if (p.getTts() != null) {
-                settingsRepository.set("tts.provider", p.getTts());
-            }
-            if (p.getTranslate() != null) {
-                settingsRepository.set("translate.provider", p.getTranslate());
-            }
-            if (p.getSeparate() != null) {
-                settingsRepository.set("separate.provider", p.getSeparate());
-            }
-        }
-
         return getSettings();
     }
 
@@ -133,10 +88,11 @@ public class SettingsService {
      */
     public List<String> getOpenAiModels(String baseUrl, String apiKey) {
         if (baseUrl == null || baseUrl.isBlank()) {
-            baseUrl = settingsRepository.get(KEY_OPENAI_BASE_URL, appProperties.getOpenai().getBaseUrl());
+            String chatUrl = settingsRepository.get("translate.openai.chatUrl", appProperties.getTranslate().getOpenai().getChatUrl());
+            baseUrl = normalizeBaseUrl(chatUrl.replace("/chat/completions", ""));
         }
         if (apiKey == null || apiKey.isBlank()) {
-            apiKey = settingsRepository.get(KEY_OPENAI_API_KEY, appProperties.getOpenai().getApiKey());
+            apiKey = settingsRepository.get("translate.openai.apiKey", appProperties.getTranslate().getOpenai().getApiKey());
         }
         if (apiKey == null || apiKey.isBlank()) {
             throw new IllegalArgumentException("未配置 OpenAI API key");
@@ -217,7 +173,7 @@ public class SettingsService {
     }
 
     /**
-     * 从 YAML / 环境加载所有 provider 配置。
+     * 从 AppProperties 加载所有 provider 配置。
      */
     private SettingsResponse.ProvidersData buildProvidersData() {
         SettingsResponse.ProvidersData data = new SettingsResponse.ProvidersData();
@@ -225,54 +181,69 @@ public class SettingsService {
         // ASR
         SettingsResponse.ProviderGroup asr = data.getAsr();
         asr.setCurrent(settingsRepository.get("asr.provider", appProperties.getAsr().getProvider()));
-        Map<String, String> whisperOpenai = new LinkedHashMap<>();
-        whisperOpenai.put("url", environment.getProperty("whisper.openai.url", ""));
-        whisperOpenai.put("apiKey", environment.getProperty("whisper.openai.api-key", ""));
-        whisperOpenai.put("model", environment.getProperty("whisper.openai.model", ""));
-        asr.getOptions().put("whisper-api", whisperOpenai);
+
+        Map<String, String> whisperApi = new LinkedHashMap<>();
+        whisperApi.put("baseUrl", settingsRepository.get("asr.whisper-api.baseUrl", appProperties.getAsr().getWhisperApi().getBaseUrl()));
+        whisperApi.put("url", settingsRepository.get("asr.whisper-api.url", appProperties.getAsr().getWhisperApi().getUrl()));
+        whisperApi.put("apiKey", settingsRepository.get("asr.whisper-api.apiKey", appProperties.getAsr().getWhisperApi().getApiKey()));
+        whisperApi.put("model", settingsRepository.get("asr.whisper-api.model", appProperties.getAsr().getWhisperApi().getModel()));
+        asr.getOptions().put("whisper-api", whisperApi);
+
         Map<String, String> whisperCpp = new LinkedHashMap<>();
-        whisperCpp.put("model", environment.getProperty("whisper.cpp.model", ""));
+        whisperCpp.put("model", settingsRepository.get("asr.whisper-cpp.model", appProperties.getAsr().getWhisperCpp().getModel()));
         asr.getOptions().put("whisper-cpp", whisperCpp);
 
         // TTS
         SettingsResponse.ProviderGroup tts = data.getTts();
         tts.setCurrent(settingsRepository.get("tts.provider", appProperties.getTts().getProvider()));
+
         Map<String, String> ttsEdge = new LinkedHashMap<>();
-        ttsEdge.put("path", environment.getProperty("tts.edge.path", ""));
-        ttsEdge.put("voice", environment.getProperty("tts.edge.voice", ""));
+        ttsEdge.put("path", settingsRepository.get("tts.edge-tts.path", appProperties.getTts().getEdgeTts().getPath()));
+        ttsEdge.put("voice", settingsRepository.get("tts.edge-tts.voice", appProperties.getTts().getEdgeTts().getVoice()));
         tts.getOptions().put("edge-tts", ttsEdge);
-        Map<String, String> ttsOpenApi = new LinkedHashMap<>();
-        ttsOpenApi.put("url", environment.getProperty("tts.open-api.url", ""));
-        ttsOpenApi.put("apiKey", environment.getProperty("tts.open-api.api-key", ""));
-        ttsOpenApi.put("model", environment.getProperty("tts.open-api.model", ""));
-        ttsOpenApi.put("voice", environment.getProperty("tts.open-api.voice", ""));
-        tts.getOptions().put("openai-tts", ttsOpenApi);
+
+        Map<String, String> ttsOpenai = new LinkedHashMap<>();
+        ttsOpenai.put("url", settingsRepository.get("tts.openai-tts.url", appProperties.getTts().getOpenaiTts().getUrl()));
+        ttsOpenai.put("apiKey", settingsRepository.get("tts.openai-tts.apiKey", appProperties.getTts().getOpenaiTts().getApiKey()));
+        ttsOpenai.put("model", settingsRepository.get("tts.openai-tts.model", appProperties.getTts().getOpenaiTts().getModel()));
+        ttsOpenai.put("voice", settingsRepository.get("tts.openai-tts.voice", appProperties.getTts().getOpenaiTts().getVoice()));
+        tts.getOptions().put("openai-tts", ttsOpenai);
+
         Map<String, String> ttsVoxcpm = new LinkedHashMap<>();
-        ttsVoxcpm.put("serviceUrl", environment.getProperty("tts.voxcpm.service-url", ""));
+        ttsVoxcpm.put("serviceUrl", settingsRepository.get("tts.voxcpm.serviceUrl", appProperties.getTts().getVoxcpm().getServiceUrl()));
         tts.getOptions().put("voxcpm", ttsVoxcpm);
 
         // Translate
         SettingsResponse.ProviderGroup translate = data.getTranslate();
         translate.setCurrent(settingsRepository.get("translate.provider", appProperties.getTranslate().getProvider()));
+
         Map<String, String> translateOllama = new LinkedHashMap<>();
-        translateOllama.put("url", environment.getProperty("translate.ollama.url", ""));
-        translateOllama.put("model", environment.getProperty("translate.ollama.model", ""));
-        translateOllama.put("concurrency", environment.getProperty("translate.ollama.concurrency", "1"));
-        translate.getOptions().put("local-llm", translateOllama);
+        translateOllama.put("baseUrl", settingsRepository.get("translate.ollama.baseUrl", appProperties.getTranslate().getOllama().getBaseUrl()));
+        translateOllama.put("model", settingsRepository.get("translate.ollama.model", appProperties.getTranslate().getOllama().getModel()));
+        translateOllama.put("concurrency", settingsRepository.get("translate.ollama.concurrency", String.valueOf(appProperties.getTranslate().getOllama().getConcurrency())));
+        translate.getOptions().put("ollama", translateOllama);
+
         Map<String, String> translateOpenai = new LinkedHashMap<>();
-        translateOpenai.put("url", environment.getProperty("translate.openai.url", ""));
-        String apiKeyVal = environment.getProperty("translate.openai.api-key", "");
-        translateOpenai.put("hasApiKey", String.valueOf(apiKeyVal != null && !apiKeyVal.isBlank()));
-        translateOpenai.put("model", environment.getProperty("translate.openai.model", ""));
-        translateOpenai.put("concurrency", environment.getProperty("translate.openai.concurrency", "50"));
+        translateOpenai.put("chatUrl", settingsRepository.get("translate.openai.chatUrl", appProperties.getTranslate().getOpenai().getChatUrl()));
+        String apiKey = settingsRepository.get("translate.openai.apiKey", appProperties.getTranslate().getOpenai().getApiKey());
+        translateOpenai.put("hasApiKey", String.valueOf(apiKey != null && !apiKey.isBlank()));
+        translateOpenai.put("model", settingsRepository.get("translate.openai.model", appProperties.getTranslate().getOpenai().getModel()));
+        translateOpenai.put("concurrency", settingsRepository.get("translate.openai.concurrency", String.valueOf(appProperties.getTranslate().getOpenai().getConcurrency())));
         translate.getOptions().put("openai", translateOpenai);
 
         // Separate
         SettingsResponse.ProviderGroup separate = data.getSeparate();
         separate.setCurrent(settingsRepository.get("separate.provider", appProperties.getSeparate().getProvider()));
-        Map<String, String> separateCfg = new LinkedHashMap<>();
-        separateCfg.put("model", environment.getProperty("app.separate.model", ""));
-        separate.getOptions().put(appProperties.getSeparate().getProvider(), separateCfg);
+
+        separate.getOptions().put("ffmpeg-simple", new LinkedHashMap<>());
+
+        Map<String, String> separateDemucs = new LinkedHashMap<>();
+        separateDemucs.put("model", settingsRepository.get("separate.demucs.model", appProperties.getSeparate().getDemucs().getModel()));
+        separate.getOptions().put("demucs", separateDemucs);
+
+        Map<String, String> separateApi = new LinkedHashMap<>();
+        separateApi.put("serviceUrl", settingsRepository.get("separate.audio-separator-api.serviceUrl", appProperties.getSeparate().getAudioSeparatorApi().getServiceUrl()));
+        separate.getOptions().put("audio-separator-api", separateApi);
 
         return data;
     }

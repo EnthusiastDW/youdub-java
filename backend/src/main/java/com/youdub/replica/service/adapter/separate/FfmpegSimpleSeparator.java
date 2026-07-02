@@ -3,7 +3,6 @@ package com.youdub.replica.service.adapter.separate;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.util.Command;
 import com.youdub.replica.util.CommandRunner;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -18,8 +17,7 @@ import java.util.List;
  */
 @Slf4j
 @Component("ffmpeg-simple")
-@RequiredArgsConstructor
-public class FfmpegSimpleSeparator implements SourceSeparator {
+public class FfmpegSimpleSeparator extends BaseSourceSeparator {
 
     private static final long TIMEOUT_MS = 120_000L;
 
@@ -30,9 +28,14 @@ public class FfmpegSimpleSeparator implements SourceSeparator {
 
     @Override
     public void separate(Task task, Path audioPath, Path outputDir, String device) throws Exception {
+        long tTotal = System.currentTimeMillis();
+
         if (audioPath == null || !Files.exists(audioPath)) {
             throw new IllegalArgumentException("音频文件不存在：" + audioPath);
         }
+
+        long inputSize = Files.size(audioPath);
+        log.info("FFmpeg 分离开始：task={}, input={}, size={}MB", task.getId(), audioPath, inputSize / (1024 * 1024));
 
         Files.createDirectories(outputDir);
 
@@ -43,30 +46,14 @@ public class FfmpegSimpleSeparator implements SourceSeparator {
             return;
         }
 
-        Path tempWav = outputDir.resolve("temp_audio.wav");
-        if (!Files.exists(tempWav)) {
-            List<String> extractCmd = new ArrayList<>();
-            extractCmd.add("ffmpeg");
-            extractCmd.add("-i");
-            extractCmd.add(audioPath.toString());
-            extractCmd.add("-vn");
-            extractCmd.add("-acodec");
-            extractCmd.add("pcm_s16le");
-            extractCmd.add("-ar");
-            extractCmd.add("44100");
-            extractCmd.add("-ac");
-            extractCmd.add("2");
-            extractCmd.add("-y");
-            extractCmd.add(tempWav.toString());
+        Path wavPath = extractAudio(task, audioPath, outputDir);
+        boolean isTemp = !wavPath.equals(audioPath);
 
-            log.info("提取音频：task={}", task.getId());
-            CommandRunner.run(Command.builder().add(extractCmd).timeout(TIMEOUT_MS).workDir(outputDir).build());
-        }
-
+        long t0 = System.currentTimeMillis();
         List<String> vocalsCmd = new ArrayList<>();
         vocalsCmd.add("ffmpeg");
         vocalsCmd.add("-i");
-        vocalsCmd.add(tempWav.toString());
+        vocalsCmd.add(wavPath.toString());
         vocalsCmd.add("-af");
         vocalsCmd.add("highpass=f=200");
         vocalsCmd.add("-y");
@@ -74,11 +61,13 @@ public class FfmpegSimpleSeparator implements SourceSeparator {
 
         log.info("FFmpeg 提取人声：task={}", task.getId());
         CommandRunner.run(Command.builder().add(vocalsCmd).timeout(TIMEOUT_MS).workDir(outputDir).build());
+        log.info("人声过滤完成：task={}, duration={}ms, output={}", task.getId(), System.currentTimeMillis() - t0, vocalsOut);
 
+        t0 = System.currentTimeMillis();
         List<String> bgmCmd = new ArrayList<>();
         bgmCmd.add("ffmpeg");
         bgmCmd.add("-i");
-        bgmCmd.add(tempWav.toString());
+        bgmCmd.add(wavPath.toString());
         bgmCmd.add("-af");
         bgmCmd.add("lowpass=f=300");
         bgmCmd.add("-y");
@@ -86,8 +75,16 @@ public class FfmpegSimpleSeparator implements SourceSeparator {
 
         log.info("FFmpeg 提取背景音乐：task={}", task.getId());
         CommandRunner.run(Command.builder().add(bgmCmd).timeout(TIMEOUT_MS).workDir(outputDir).build());
+        log.info("背景音乐过滤完成：task={}, duration={}ms, output={}", task.getId(), System.currentTimeMillis() - t0, bgmOut);
 
-        Files.deleteIfExists(tempWav);
-        log.info("分离完成（简易模式）：task={}, vocals={}, bgm={}", task.getId(), vocalsOut, bgmOut);
+        if (isTemp) {
+            Files.deleteIfExists(wavPath);
+        }
+
+        long vocalSize = Files.size(vocalsOut);
+        long bgmSize = Files.size(bgmOut);
+        log.info("FFmpeg 分离完成：task={}, total={}ms, vocals={}MB, bgm={}MB",
+                task.getId(), System.currentTimeMillis() - tTotal,
+                vocalSize / (1024 * 1024), bgmSize / (1024 * 1024));
     }
 }

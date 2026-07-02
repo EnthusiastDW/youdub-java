@@ -6,7 +6,9 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
+import com.youdub.replica.util.BinaryResult;
 import com.youdub.replica.util.Command;
+import com.youdub.replica.util.CommandResult;
 import com.youdub.replica.util.CommandRunner;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -24,6 +26,7 @@ import java.nio.ShortBuffer;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -39,9 +42,11 @@ public class FfmpegAudioProcessor implements AudioProcessor {
     private static final long TIMEOUT_MS = 300_000L;
     private static final long PRE_PADDING_MS = 80L;
     private static final long POST_PADDING_MS = 160L;
+    private static final int SILENCE_THRESHOLD = 200;          // 静音检测振幅阈值
+    private static final long MIN_TRAILING_SILENCE_MS = 80L;    // 裁剪后保留的最小尾部空白（ms）
 
     private final ObjectMapper objectMapper;
-    private final AppProperties appProperties;
+    private final AppProperties.Ffmpeg ffmpegConfig;
 
     @Override
     public String getName() {
@@ -68,7 +73,7 @@ public class FfmpegAudioProcessor implements AudioProcessor {
             return;
         }
 
-        String ffmpegPath = appProperties.getFfmpeg().getPath();
+        String ffmpegPath = ffmpegConfig.getPath();
 
         int index = 0;
         for (JsonNode item : translation) {
@@ -143,7 +148,7 @@ public class FfmpegAudioProcessor implements AudioProcessor {
                     .forEach(ttsFiles::add);
         }
 
-        String ffmpegPath = appProperties.getFfmpeg().getPath();
+        String ffmpegPath = ffmpegConfig.getPath();
         int sampleRate = 24000;
         int bytesPerMs = sampleRate * 2 / 1000; // 16-bit mono: 48 bytes/ms
 
@@ -162,12 +167,8 @@ public class FfmpegAudioProcessor implements AudioProcessor {
             }
 
             if (text.isBlank()) {
-                // 空片段：填充静音到 endMs
-                if (endMs > currentMs) {
-                    int gapBytes = (int) ((endMs - currentMs) * bytesPerMs);
-                    fullAudio.write(new byte[gapBytes]);
-                    currentMs = endMs;
-                }
+                // 空片段：跳过，后续非空片段会自动通过 startMs > currentMs 逻辑填充静音
+                // 避免使用 asr_fix 膨胀后的 end_time 引入多余的静音
                 continue;
             }
 
@@ -186,21 +187,28 @@ public class FfmpegAudioProcessor implements AudioProcessor {
             }
 
             // 将 TTS 片段解码为 PCM（16-bit mono 24000Hz）
-            ProcessBuilder pb = new ProcessBuilder(ffmpegPath, "-y", "-i", ttsFile.toAbsolutePath().toString(),
-                    "-f", "s16le", "-ac", "1", "-ar", String.valueOf(sampleRate), "-");
-            pb.redirectErrorStream(false);
-            pb.redirectError(ProcessBuilder.Redirect.DISCARD);
-            Process p = pb.start();
-            byte[] pcmData;
-            try (var is = p.getInputStream()) {
-                pcmData = is.readAllBytes();
+            Command decodeCmd = Command.builder()
+                    .add(ffmpegPath, "-y", "-i", ttsFile.toAbsolutePath().toString(),
+                            "-f", "s16le", "-ac", "1", "-ar", String.valueOf(sampleRate), "-")
+                    .timeout(30_000)
+                    .throwOnNonZero(false)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .build();
+            BinaryResult decodeResult;
+            try {
+                decodeResult = CommandRunner.runBinary(decodeCmd);
+            } catch (RuntimeException e) {
+                log.warn("TTS 解码异常: {}, {}", ttsFile, e.getMessage());
+                long durMs = endMs - startMs;
+                fullAudio.write(new byte[(int) (durMs * bytesPerMs)]);
+                currentMs = endMs;
+                continue;
             }
-            int exitCode = p.waitFor();
-            p.destroyForcibly();
+            int exitCode = decodeResult.exitCode();
+            byte[] pcmData = decodeResult.data();
 
             if (exitCode != 0 || pcmData.length == 0) {
                 log.warn("TTS 片段解码失败: {}, exit={}", ttsFile, exitCode);
-                // 用等长静音替代
                 long durMs = endMs - startMs;
                 fullAudio.write(new byte[(int) (durMs * bytesPerMs)]);
                 currentMs = endMs;
@@ -221,8 +229,42 @@ public class FfmpegAudioProcessor implements AudioProcessor {
                 sb.put(s, (short) (sb.get(s) * gain));
             }
 
-            fullAudio.write(pcmData);
             long actualDurationMs = (long) pcmData.length / bytesPerMs;
+            long targetDurationMs = endMs - startMs;
+
+            if (actualDurationMs < targetDurationMs) {
+                // 实际 < 目标：不拉伸，保留原始音质；空隙由后续静音填充
+                log.debug("片段 {}: actual={}ms < target={}ms，不拉伸", segIdx - 1, actualDurationMs, targetDurationMs);
+            } else if (actualDurationMs > targetDurationMs && targetDurationMs > 50) {
+                long excessMs = actualDurationMs - targetDurationMs;
+
+                // 优先裁剪尾部空白，避免变速导致的音质损失
+                long trailingSilenceMs = detectTrailingSilenceMs(pcmData, sampleRate);
+                long trimableMs = Math.max(0, trailingSilenceMs - MIN_TRAILING_SILENCE_MS);
+                long trimMs = Math.min(excessMs, trimableMs);
+
+                if (trimMs > 0) {
+                    int trimBytes = (int) (trimMs * bytesPerMs);
+                    trimBytes = Math.min(trimBytes, pcmData.length);
+                    pcmData = Arrays.copyOf(pcmData, pcmData.length - trimBytes);
+                    actualDurationMs = (long) pcmData.length / bytesPerMs;
+                    excessMs = actualDurationMs - targetDurationMs;
+                    log.debug("片段 {}: 裁剪尾部空白 {}ms，剩余超出 {}ms", segIdx - 1, trimMs, Math.max(0, excessMs));
+                }
+
+                // 裁剪后仍然超出，用 atempo 加速（仅加速，不减速）
+                if (excessMs > 50 && targetDurationMs > 200) {
+                    double speed = Math.clamp((double) actualDurationMs / targetDurationMs, 1.0, 2.0);
+                    try {
+                        pcmData = applyAtempo(ffmpegPath, pcmData, sampleRate, speed);
+                        actualDurationMs = (long) pcmData.length / bytesPerMs;
+                    } catch (Exception e) {
+                        log.warn("时间压缩失败 (speed={}): {}", speed, e.getMessage());
+                    }
+                }
+            }
+
+            fullAudio.write(pcmData);
             currentMs = startMs + actualDurationMs;
 
             ObjectNode newItem = item.deepCopy();
@@ -248,6 +290,20 @@ public class FfmpegAudioProcessor implements AudioProcessor {
     }
 
     /**
+     * 检测 PCM 16-bit mono 数据尾部连续静音的时长（毫秒）。
+     */
+    private long detectTrailingSilenceMs(byte[] pcmData, int sampleRate) {
+        ShortBuffer sb = ByteBuffer.wrap(pcmData).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer();
+        int totalSamples = sb.remaining();
+        int idx = totalSamples - 1;
+        while (idx >= 0 && Math.abs(sb.get(idx)) < SILENCE_THRESHOLD) {
+            idx--;
+        }
+        int silentSamples = totalSamples - 1 - idx;
+        return (long) silentSamples * 1000 / sampleRate;
+    }
+
+    /**
      * 将毫秒格式化为 HH:MM:SS.mmm 格式。
      */
     private String formatTime(long milliseconds) {
@@ -257,5 +313,58 @@ public class FfmpegAudioProcessor implements AudioProcessor {
         long minutes = (totalSeconds % 3600) / 60;
         long seconds = totalSeconds % 60;
         return String.format("%02d:%02d:%02d.%03d", hours, minutes, seconds, ms);
+    }
+
+    /**
+     * 对 PCM 音频施加 FFmpeg atempo 变速滤波。
+     * 使用临时文件而非管道，避免 stdin/stdout 缓冲区死锁。
+     */
+    private byte[] applyAtempo(String ffmpegPath, byte[] pcmData, int sampleRate, double speed) throws Exception {
+        Path tmpInput = Files.createTempFile("atempo_in_", ".pcm");
+        Path tmpOutput = Files.createTempFile("atempo_out_", ".pcm");
+        try {
+            Files.write(tmpInput, pcmData);
+
+            String filter = buildAtempoFilter(speed);
+            CommandResult result = CommandRunner.run(Command.builder()
+                    .add(ffmpegPath, "-y",
+                            "-f", "s16le", "-ac", "1", "-ar", String.valueOf(sampleRate),
+                            "-i", tmpInput.toAbsolutePath().toString(),
+                            "-filter:a", filter,
+                            "-f", "s16le", "-ac", "1", "-ar", String.valueOf(sampleRate),
+                            tmpOutput.toAbsolutePath().toString())
+                    .timeout(30_000)
+                    .throwOnNonZero(false)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .build());
+
+            if (result.exitCode() != 0 || Files.size(tmpOutput) == 0) {
+                throw new RuntimeException("atempo 失败: exit=" + result.exitCode());
+            }
+            return Files.readAllBytes(tmpOutput);
+        } finally {
+            Files.deleteIfExists(tmpInput);
+            Files.deleteIfExists(tmpOutput);
+        }
+    }
+
+    /**
+     * 构建 atempo 滤波参数字符串，支持 0.5x-2.0x 范围。
+     */
+    private String buildAtempoFilter(double speed) {
+        if (speed >= 0.5 && speed <= 2.0) {
+            return String.format("atempo=%.6f", speed);
+        }
+        List<String> filters = new ArrayList<>();
+        while (speed > 2.0) {
+            filters.add("atempo=2.0");
+            speed /= 2.0;
+        }
+        while (speed < 0.5) {
+            filters.add("atempo=0.5");
+            speed /= 0.5;
+        }
+        filters.add(String.format("atempo=%.6f", speed));
+        return String.join(",", filters);
     }
 }

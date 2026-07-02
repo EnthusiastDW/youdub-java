@@ -27,7 +27,7 @@ public class YtDlpDownloader implements Downloader {
 
     private final TaskRepository taskRepository;
     private final ObjectMapper objectMapper;
-    private final AppProperties appProperties;
+    private final AppProperties.Download downloadConfig;
 
     @Override
     public String getName() {
@@ -45,7 +45,7 @@ public class YtDlpDownloader implements Downloader {
         Files.createDirectories(mediaDir);
         Files.createDirectories(metadataDir);
 
-        String outputFilename = appProperties.getDownload().getOutputFilename();
+        String outputFilename = downloadConfig.getOutputFilename();
         if (outputFilename == null || outputFilename.isBlank()) {
             outputFilename = "video_source.mp4";
         }
@@ -84,7 +84,7 @@ public class YtDlpDownloader implements Downloader {
         try {
             output = CommandRunner.run(Command.builder()
                     .add(command)
-                    .timeout(appProperties.getDownload().getTimeoutMs())
+                    .timeout(downloadConfig.getTimeoutMs())
                     .workDir(workFolder)
                     .build()).output();
         } catch (RuntimeException e) {

@@ -4,12 +4,12 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.util.Command;
 import com.youdub.replica.util.CommandRunner;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Files;
@@ -29,8 +29,7 @@ public class WhisperCppRecognizer implements SpeechRecognizer {
     private static final long TIMEOUT_MS = 600_000L;
 
     private final ObjectMapper objectMapper;
-    @Value("${whisper.cpp.model}")
-    private String model;
+    private final AppProperties.Asr.WhisperCpp whisperCppConfig;
 
     @Override
     public String getName() {
@@ -55,7 +54,7 @@ public class WhisperCppRecognizer implements SpeechRecognizer {
         List<String> command = new ArrayList<>();
         command.add("whisper-cli");
         command.add("-m");
-        command.add(model);
+        command.add(whisperCppConfig.getModel());
         command.add("-f");
         command.add(audioPath.toString());
         command.add("-oj");

@@ -9,7 +9,6 @@ import com.youdub.replica.util.CommandRunner;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Files;
@@ -35,10 +34,7 @@ public class EdgeTtsProvider implements TtsProvider {
     private static final String DEFAULT_VOICE = "zh-CN-XiaoxiaoNeural";
 
     private final ObjectMapper objectMapper;
-    @Value("${tts.edge.path}")
-    private String edgePath;
-    @Value("${tts.edge.voice}")
-    private String voice;
+    private final AppProperties.Tts.EdgeTts edgeTtsConfig;
 
     @Qualifier("virtualExecutor")
     private final ExecutorService virtualExecutor;
@@ -57,6 +53,8 @@ public class EdgeTtsProvider implements TtsProvider {
         Path ttsDir = outputDir.resolve("tts");
         Files.createDirectories(ttsDir);
 
+        String edgePath = edgeTtsConfig.getPath();
+        String voice = edgeTtsConfig.getVoice();
         String useVoice = (voice == null || voice.isBlank()) ? DEFAULT_VOICE : voice;
 
         // 读取翻译结果

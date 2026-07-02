@@ -26,6 +26,7 @@ public final class Command {
     private final Consumer<String> onLine;
     private final List<Consumer<Integer>> onExit;
     private final boolean throwOnNonZero;
+    private final ProcessBuilder.Redirect errorRedirect;
 
     private Command(Builder builder) {
         this.args = List.copyOf(builder.args);
@@ -40,6 +41,7 @@ public final class Command {
                 ? List.of()
                 : List.copyOf(builder.onExit);
         this.throwOnNonZero = builder.throwOnNonZero;
+        this.errorRedirect = builder.errorRedirect;
     }
 
     public static Builder builder() {
@@ -58,6 +60,7 @@ public final class Command {
     public Consumer<String> onLine() { return onLine; }
     public List<Consumer<Integer>> onExit() { return onExit; }
     public boolean throwOnNonZero() { return throwOnNonZero; }
+    public ProcessBuilder.Redirect errorRedirect() { return errorRedirect; }
 
     // ---- Builder ----
 
@@ -72,6 +75,7 @@ public final class Command {
         private Consumer<String> onLine;
         private final List<Consumer<Integer>> onExit = new ArrayList<>();
         private boolean throwOnNonZero = true;
+        private ProcessBuilder.Redirect errorRedirect;
 
         /** 添加一个或多个参数，忽略 null 和空字符串。 */
         public Builder add(String... args) {
@@ -158,6 +162,12 @@ public final class Command {
         /** 非零退出码是否抛异常（默认 true）。 */
         public Builder throwOnNonZero(boolean throwOnNonZero) {
             this.throwOnNonZero = throwOnNonZero;
+            return this;
+        }
+
+        /** 设置 stderr 重定向。null 表示使用默认行为（合并到 stdout）。 */
+        public Builder redirectError(ProcessBuilder.Redirect redirect) {
+            this.errorRedirect = redirect;
             return this;
         }
 

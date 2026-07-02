@@ -6,10 +6,8 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
-import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
@@ -32,7 +30,7 @@ public class WhisperApiRecognizer implements SpeechRecognizer {
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
-    private final WhisperApiConfig config;
+    private final AppProperties.Asr.WhisperApi config;
 
     @Override
     public String getName() {
@@ -52,16 +50,22 @@ public class WhisperApiRecognizer implements SpeechRecognizer {
             return;
         }
 
-        String apiKey = config.apiKey;
+        String apiKey = config.getApiKey();
         if (apiKey.isBlank()) {
             throw new RuntimeException("未配置 WHISPER_API_KEY 环境变量");
         }
 
         byte[] audioBytes = Files.readAllBytes(audioPath);
 
+        String resolvedUrl = config.getUrl();
+        if (config.getBaseUrl() != null && !config.getBaseUrl().isBlank()) {
+            String normBase = config.getBaseUrl().endsWith("/") ? config.getBaseUrl().substring(0, config.getBaseUrl().length() - 1) : config.getBaseUrl();
+            resolvedUrl = normBase + "/v1/audio/transcriptions";
+        }
+
         // 构建 URL（含查询参数），避免 multipart 编码导致二进制损坏
-        StringBuilder urlBuilder = new StringBuilder(config.url);
-        urlBuilder.append("?model=").append(URLEncoder.encode(config.model, StandardCharsets.UTF_8));
+        StringBuilder urlBuilder = new StringBuilder(resolvedUrl);
+        urlBuilder.append("?model=").append(URLEncoder.encode(config.getModel(), StandardCharsets.UTF_8));
         urlBuilder.append("&response_format=").append(URLEncoder.encode("verbose_json", StandardCharsets.UTF_8));
         if (language != null && !language.isBlank()) {
             urlBuilder.append("&language=").append(URLEncoder.encode(language, StandardCharsets.UTF_8));
@@ -75,7 +79,7 @@ public class WhisperApiRecognizer implements SpeechRecognizer {
                 .POST(HttpRequest.BodyPublishers.ofByteArray(audioBytes))
                 .build();
 
-        log.info("调用 OpenAI Whisper API：task={}, audio={}", task.getId(), audioPath);
+        log.info("调用 OpenAI Whisper API：task={}, audio={}, url={}", task.getId(), audioPath, urlBuilder);
         HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
         if (response.statusCode() != 200) {
@@ -131,12 +135,4 @@ public class WhisperApiRecognizer implements SpeechRecognizer {
         return result;
     }
 
-    @Data
-    @Component
-    @ConfigurationProperties(prefix = "whisper.openai")
-    public static class WhisperApiConfig{
-        private String url;
-        private String apiKey;
-        private String model;
-    }
 }

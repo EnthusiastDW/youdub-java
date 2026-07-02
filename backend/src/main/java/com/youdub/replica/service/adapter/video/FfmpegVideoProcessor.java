@@ -29,7 +29,7 @@ public class FfmpegVideoProcessor implements VideoProcessor {
 
     private static final long TIMEOUT_MS = -1L;
     private static final double DUBBING_VOLUME = 1.0;
-    private static final double BGM_VOLUME = 0.30;
+    private static final double BGM_VOLUME = 1.0;
 
     private volatile String videoEncoder;
     private volatile List<String> encoderArgs;
@@ -45,7 +45,7 @@ public class FfmpegVideoProcessor implements VideoProcessor {
     };
 
     private final ObjectMapper objectMapper;
-    private final AppProperties appProperties;
+    private final AppProperties.Ffmpeg ffmpegConfig;
     private final TaskRepository taskRepository;
 
     @Override
@@ -65,7 +65,7 @@ public class FfmpegVideoProcessor implements VideoProcessor {
      */
     private String detectEncoder() {
         // 配置覆盖：nvenc / qsv / amf / videotoolbox / software
-        String override = appProperties.getFfmpeg().getEncoder();
+        String override = ffmpegConfig.getEncoder();
         if (override != null && !override.isBlank()) {
             String lower = override.toLowerCase();
             for (int i = 0; i < HW_ENCODERS.length; i++) {
@@ -82,7 +82,7 @@ public class FfmpegVideoProcessor implements VideoProcessor {
             return videoEncoder;
         }
 
-        String ffmpegPath = appProperties.getFfmpeg().getPath();
+        String ffmpegPath = ffmpegConfig.getPath();
         if (ffmpegPath == null || ffmpegPath.isBlank()) {
             videoEncoder = "libx264";
             encoderArgs = List.of("-preset", "fast", "-crf", "23");
@@ -219,7 +219,7 @@ public class FfmpegVideoProcessor implements VideoProcessor {
             return;
         }
 
-        String ffmpegPath = appProperties.getFfmpeg().getPath();
+        String ffmpegPath = ffmpegConfig.getPath();
 
         // 步骤1：生成 SRT 字幕文件
         Path srtFile = outputDir.resolve("subtitles.srt");

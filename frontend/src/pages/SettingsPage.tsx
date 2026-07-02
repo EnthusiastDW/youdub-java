@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, Save, Loader2, RefreshCw, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Save, Loader2, CheckCircle2 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button, buttonVariants } from "@/components/ui/button";
@@ -10,67 +10,90 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useI18n } from "@/i18n/index";
-import { getSettings, saveSettings, getOpenAIModels } from "@/api/client";
+import { getSettings, saveSettings } from "@/api/client";
 import { formatDateTime, formatFileSize } from "@/lib/utils";
 import type { ProvidersData, Settings, SettingsRequest } from "@/types";
 
 type SectionKey = "translate" | "tts" | "asr" | "separate";
 
-const SAVED_API_KEY_MASK = "********";
-const DEFAULT_BASE_URL = "https://api.openai.com/v1";
-const DEFAULT_MODEL = "gpt-4o-mini";
-const DEFAULT_CONCURRENCY = "50";
+type FieldType = "text" | "password" | "number";
 
-/** Render read-only config fields from providersData. */
-function ProviderOptions({
-  options,
-  t,
-}: {
-  options: Record<string, string> | undefined;
-  t: Record<string, string>;
-}) {
-  if (!options || Object.keys(options).length === 0) {
-    return <p className="text-xs text-muted-foreground italic">No additional config</p>;
-  }
-  return (
-    <div className="space-y-1.5">
-      {Object.entries(options).map(([key, value]) => {
-        const label = t[key] || key;
-        if (key === "hasApiKey") {
-          return (
-            <div key={key} className="flex items-center gap-2 text-xs">
-              <span className="text-muted-foreground">{t.hasApiKey}:</span>
-              <span>{value === "true" ? "✓" : "✗"}</span>
-            </div>
-          );
-        }
-        return (
-          <div key={key} className="text-xs">
-            <span className="text-muted-foreground">{label}: </span>
-            <span className="font-mono">{value || "—"}</span>
-          </div>
-        );
-      })}
-    </div>
-  );
+interface FieldDef {
+  key: string;
+  type: FieldType;
+  i18nKey?: string;
 }
 
-/** Provider selection card with dropdown and read-only options. */
+const PROVIDER_FIELDS: Record<string, Record<string, FieldDef[]>> = {
+  asr: {
+    "whisper-api": [
+      { key: "baseUrl", type: "text" },
+      { key: "url", type: "text" },
+      { key: "apiKey", type: "password" },
+      { key: "model", type: "text" },
+    ],
+    "whisper-cpp": [
+      { key: "model", type: "text" },
+    ],
+  },
+  tts: {
+    "edge-tts": [
+      { key: "path", type: "text" },
+      { key: "voice", type: "text" },
+    ],
+    "openai-tts": [
+      { key: "url", type: "text" },
+      { key: "apiKey", type: "password" },
+      { key: "model", type: "text" },
+      { key: "voice", type: "text" },
+    ],
+    voxcpm: [
+      { key: "serviceUrl", type: "text" },
+    ],
+  },
+  translate: {
+    "ollama": [
+      { key: "baseUrl", type: "text" },
+      { key: "model", type: "text" },
+      { key: "concurrency", type: "number" },
+    ],
+    openai: [
+      { key: "chatUrl", type: "text" },
+      { key: "apiKey", type: "password" },
+      { key: "model", type: "text" },
+      { key: "concurrency", type: "number" },
+    ],
+  },
+  separate: {
+    "ffmpeg-simple": [],
+    demucs: [
+      { key: "model", type: "text" },
+    ],
+    "audio-separator-api": [
+      { key: "serviceUrl", type: "text" },
+    ],
+  },
+};
+
+/** Provider selection card with dropdown and dynamic editable fields. */
 function ProviderCard({
   sectionKey,
   providersData,
   current,
   onProviderChange,
-  children,
+  configValues,
+  onConfigChange,
   t,
 }: {
   sectionKey: SectionKey;
   providersData: ProvidersData | null;
   current: string;
   onProviderChange: (value: string) => void;
-  children?: React.ReactNode;
+  configValues: Record<string, string>;
+  onConfigChange: (key: string, value: string) => void;
   t: Record<string, string>;
 }) {
+  const fields = PROVIDER_FIELDS[sectionKey]?.[current] ?? [];
   const group = providersData?.[sectionKey];
   const options = group?.options?.[current];
 
@@ -80,6 +103,7 @@ function ProviderCard({
         <CardTitle className="text-base">{t[`${sectionKey}Section`] || sectionKey}</CardTitle>
       </CardHeader>
       <CardContent className="space-y-3">
+        {/* Provider Dropdown */}
         <div className="space-y-1.5">
           <Label className="text-xs">{t.currentProvider}</Label>
           <Select value={current} onChange={(e) => onProviderChange(e.target.value)}>
@@ -93,14 +117,37 @@ function ProviderCard({
           </Select>
         </div>
 
-        {children}
-
-        <div className="border-t pt-2">
-          <p className="text-xs font-medium text-muted-foreground mb-1">
-            Config (read-only):
-          </p>
-          <ProviderOptions options={options} t={t} />
-        </div>
+        {/* Editable Fields */}
+        {fields.length > 0 && (
+          <div className="space-y-3">
+            {fields.map((field) => {
+              const configKey = `${sectionKey}.${current}.${field.key}`;
+              const value = configValues[configKey] ?? options?.[field.key] ?? "";
+              return (
+                <div key={configKey} className="space-y-1.5">
+                  <Label htmlFor={configKey} className="text-xs">
+                    {t[field.key] || field.key}
+                  </Label>
+                  {field.type === "number" ? (
+                    <Input
+                      id={configKey}
+                      type="number"
+                      value={value}
+                      onChange={(e) => onConfigChange(configKey, e.target.value)}
+                    />
+                  ) : (
+                    <Input
+                      id={configKey}
+                      type={field.type}
+                      value={value}
+                      onChange={(e) => onConfigChange(configKey, e.target.value)}
+                    />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -119,13 +166,10 @@ export default function SettingsPage() {
   const [translateProvider, setTranslateProvider] = useState("openai");
   const [ttsProvider, setTtsProvider] = useState("edge-tts");
   const [asrProvider, setAsrProvider] = useState("whisper-api");
-  const [separateProvider, setSeparateProvider] = useState("ffmpeg-simple");
+  const [separateProvider, setSeparateProvider] = useState("audio-separator-api");
 
-  // OpenAI translate overrides (savable)
-  const [baseUrl, setBaseUrl] = useState(DEFAULT_BASE_URL);
-  const [apiKey, setApiKey] = useState("");
-  const [model, setModel] = useState(DEFAULT_MODEL);
-  const [translateConcurrency, setTranslateConcurrency] = useState(DEFAULT_CONCURRENCY);
+  // Provider config values (key format: "step.provider.field")
+  const [configValues, setConfigValues] = useState<Record<string, string>>({});
 
   // Proxy (savable)
   const [proxy, setProxy] = useState("");
@@ -133,13 +177,6 @@ export default function SettingsPage() {
   // Cookie
   const [cookieContent, setCookieContent] = useState("");
   const [cookieDirty, setCookieDirty] = useState(false);
-
-  // Dirty tracking for apiKey
-  const [apiKeyDirty, setApiKeyDirty] = useState(false);
-
-  // Model list
-  const [models, setModels] = useState<string[]>([]);
-  const [loadingModels, setLoadingModels] = useState(false);
 
   useEffect(() => {
     let mounted = true;
@@ -153,20 +190,26 @@ export default function SettingsPage() {
         setTranslateProvider(data.providers?.translate?.current || "openai");
         setTtsProvider(data.providers?.tts?.current || "edge-tts");
         setAsrProvider(data.providers?.asr?.current || "whisper-api");
-        setSeparateProvider(data.providers?.separate?.current || "ffmpeg-simple");
+        setSeparateProvider(data.providers?.separate?.current || "audio-separator-api");
         setProvidersData(data.providers || null);
 
-        // OpenAI translate overrides
-        setBaseUrl(data.openai.baseUrl || DEFAULT_BASE_URL);
-        setApiKey(data.openai.hasApiKey ? data.openai.apiKey || SAVED_API_KEY_MASK : "");
-        setModel(data.openai.model || DEFAULT_MODEL);
-        setTranslateConcurrency(data.openai.translateConcurrency || DEFAULT_CONCURRENCY);
+        // Populate config values from backend data
+        const initialConfigs: Record<string, string> = {};
+        if (data.providers) {
+          for (const [step, group] of Object.entries(data.providers)) {
+            for (const [provider, fields] of Object.entries(group.options)) {
+              for (const [field, value] of Object.entries(fields)) {
+                initialConfigs[`${step}.${provider}.${field}`] = value;
+              }
+            }
+          }
+        }
+        setConfigValues(initialConfigs);
 
         // Proxy
         setProxy(data.ytdlp.proxy || "");
 
         // Reset dirty flags
-        setApiKeyDirty(false);
         setCookieDirty(false);
       } catch (err) {
         if (mounted) setError(err instanceof Error ? err.message : "Failed to load settings");
@@ -179,16 +222,8 @@ export default function SettingsPage() {
     };
   }, []);
 
-  const handleGetModels = async () => {
-    setLoadingModels(true);
-    try {
-      const response = await getOpenAIModels(baseUrl, apiKey === SAVED_API_KEY_MASK ? "" : apiKey);
-      setModels(response.models);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : t.settings.loadModelsError);
-    } finally {
-      setLoadingModels(false);
-    }
+  const handleConfigChange = (key: string, value: string) => {
+    setConfigValues((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleSave = async () => {
@@ -196,24 +231,35 @@ export default function SettingsPage() {
     setError(null);
     setSuccess(false);
     try {
+      // Build providerConfigs for currently selected providers
+      const providerConfigs: Record<string, string> = {};
+      const steps: { step: string; provider: string }[] = [
+        { step: "asr", provider: asrProvider },
+        { step: "tts", provider: ttsProvider },
+        { step: "translate", provider: translateProvider },
+        { step: "separate", provider: separateProvider },
+      ];
+      for (const { step, provider } of steps) {
+        const fields = PROVIDER_FIELDS[step]?.[provider] ?? [];
+        for (const field of fields) {
+          const key = `${step}.${provider}.${field.key}`; // format: "asr.whisper-api.baseUrl"
+          const value = configValues[key] ?? "";
+          // 密码字段为空时不发送，避免覆盖已保存在 DB 中的 key
+          if (field.type === "password" && value === "") continue;
+          providerConfigs[key] = value;
+        }
+      }
+
       const request: SettingsRequest = {
-        openai: {
-          baseUrl,
-          ...(apiKeyDirty
-            ? { apiKey, clearApiKey: !apiKey }
-            : { apiKey: "" }),
-          model,
-          translateConcurrency,
-        },
-        ytdlp: {
-          proxy,
-        },
+        ytdlp: { proxy },
         providers: {
           translate: translateProvider,
           tts: ttsProvider,
           asr: asrProvider,
           separate: separateProvider,
         },
+        providerConfigs:
+          Object.keys(providerConfigs).length > 0 ? providerConfigs : undefined,
       };
       if (cookieDirty) {
         request.youtubeCookie = { content: cookieContent };
@@ -221,9 +267,7 @@ export default function SettingsPage() {
       const data = await saveSettings(request);
       setSettings(data);
       setProvidersData(data.providers || null);
-      setApiKey(data.openai.hasApiKey ? data.openai.apiKey || SAVED_API_KEY_MASK : "");
       setCookieContent("");
-      setApiKeyDirty(false);
       setCookieDirty(false);
       setSuccess(true);
       window.setTimeout(() => setSuccess(false), 3000);
@@ -268,101 +312,10 @@ export default function SettingsPage() {
           providersData={providersData}
           current={translateProvider}
           onProviderChange={setTranslateProvider}
+          configValues={configValues}
+          onConfigChange={handleConfigChange}
           t={t.settings}
-        >
-          {translateProvider === "openai" && (
-            <div className="space-y-3 border-t pt-2">
-              <p className="text-xs font-medium text-muted-foreground">
-                Runtime overrides:
-              </p>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="base-url">{t.settings.baseUrl}</Label>
-                <Input
-                  id="base-url"
-                  value={baseUrl}
-                  onChange={(e) => setBaseUrl(e.target.value)}
-                  placeholder={DEFAULT_BASE_URL}
-                />
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="api-key">{t.settings.apiKey}</Label>
-                <Input
-                  id="api-key"
-                  type="password"
-                  value={apiKey}
-                  onFocus={(e) => {
-                    if (!apiKeyDirty && apiKey === SAVED_API_KEY_MASK) {
-                      e.currentTarget.select();
-                    }
-                  }}
-                  onChange={(e) => {
-                    setApiKeyDirty(true);
-                    setApiKey(e.target.value.replace(SAVED_API_KEY_MASK, ""));
-                  }}
-                  placeholder={t.settings.apiKeyPlaceholder}
-                />
-                {settings?.openai.hasApiKey && !apiKeyDirty && apiKey === SAVED_API_KEY_MASK && (
-                  <p className="text-xs text-muted-foreground">{t.settings.keySaved}</p>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="model">{t.settings.model}</Label>
-                <div className="flex gap-2">
-                  {models.length > 0 ? (
-                    <Select value={model} onChange={(e) => setModel(e.target.value)}>
-                      {models.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </Select>
-                  ) : (
-                    <Input
-                      id="model"
-                      value={model}
-                      onChange={(e) => setModel(e.target.value)}
-                      placeholder={DEFAULT_MODEL}
-                    />
-                  )}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={handleGetModels}
-                    disabled={loadingModels || !baseUrl}
-                  >
-                    {loadingModels ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <RefreshCw className="h-4 w-4" />
-                    )}
-                    {t.settings.getModels}
-                  </Button>
-                </div>
-                {models.length > 0 && (
-                  <p className="text-xs text-muted-foreground">
-                    {models.length} {t.settings.modelsLoaded}
-                  </p>
-                )}
-              </div>
-
-              <div className="space-y-1.5">
-                <Label htmlFor="concurrency">{t.settings.translateConcurrency}</Label>
-                <Input
-                  id="concurrency"
-                  type="number"
-                  min="1"
-                  max="200"
-                  value={translateConcurrency}
-                  onChange={(e) => setTranslateConcurrency(e.target.value)}
-                />
-                <p className="text-xs text-muted-foreground">{t.settings.concurrencyHelp}</p>
-              </div>
-            </div>
-          )}
-        </ProviderCard>
+        />
 
         {/* TTS provider */}
         <ProviderCard
@@ -370,6 +323,8 @@ export default function SettingsPage() {
           providersData={providersData}
           current={ttsProvider}
           onProviderChange={setTtsProvider}
+          configValues={configValues}
+          onConfigChange={handleConfigChange}
           t={t.settings}
         />
 
@@ -379,6 +334,8 @@ export default function SettingsPage() {
           providersData={providersData}
           current={asrProvider}
           onProviderChange={setAsrProvider}
+          configValues={configValues}
+          onConfigChange={handleConfigChange}
           t={t.settings}
         />
 
@@ -388,6 +345,8 @@ export default function SettingsPage() {
           providersData={providersData}
           current={separateProvider}
           onProviderChange={setSeparateProvider}
+          configValues={configValues}
+          onConfigChange={handleConfigChange}
           t={t.settings}
         />
 
@@ -418,7 +377,7 @@ export default function SettingsPage() {
               <CardDescription>
                 <div className="flex flex-wrap items-center gap-3 text-xs">
                   <Badge variant={settings.youtubeCookie.exists ? "success" : "secondary"}>
-                    {t.settings.cookieExists}: {settings.youtubeCookie.exists ? "✓" : "✗"}
+                    {t.settings.cookieExists}: {settings.youtubeCookie.exists ? "\u2713" : "\u2717"}
                   </Badge>
                   {settings.youtubeCookie.exists && (
                     <>

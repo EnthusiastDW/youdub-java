@@ -23,7 +23,6 @@ public class AppProperties {
     private long uploadMaxBytes;
     private long subtitleMaxBytes;
 
-    private Openai openai = new Openai();
     private Ytdlp ytdlp = new Ytdlp();
     private Asr asr = new Asr();
     private Tts tts = new Tts();
@@ -35,24 +34,6 @@ public class AppProperties {
     private Device deviceConfig = new Device();
 
     @Data
-    public static class Openai {
-        /** 完整 Chat Completions URL，如 https://api.openai.com/v1/chat/completions */
-        private String url;
-        /** 基础 URL（用于 TTS、模型列表等），留空时自动从 url 推导 */
-        private String baseUrl;
-        private String apiKey;
-        private String model;
-
-        public String getBaseUrl() {
-            if (baseUrl != null && !baseUrl.isBlank()) return baseUrl;
-            if (url != null && url.endsWith("/chat/completions")) {
-                return url.substring(0, url.length() - "/chat/completions".length());
-            }
-            return "";
-        }
-    }
-
-    @Data
     public static class Ytdlp {
         private String proxy;
     }
@@ -60,29 +41,87 @@ public class AppProperties {
     @Data
     public static class Asr {
         private String provider;
-        private String model;
+        private WhisperApi whisperApi = new WhisperApi();
+        private WhisperCpp whisperCpp = new WhisperCpp();
+
+        @Data
+        public static class WhisperApi {
+            private String baseUrl;
+            private String url;
+            private String apiKey;
+            private String model;
+        }
+
+        @Data
+        public static class WhisperCpp {
+            private String model;
+        }
     }
 
     @Data
     public static class Tts {
         private String provider;
-        private String model;
-        private String voice;
-        private String openaiModel;
-        private String openaiVoice;
-        private String edgeTtsPath;
-        private String voxcpmServiceUrl;
+        private EdgeTts edgeTts = new EdgeTts();
+        private OpenaiTts openaiTts = new OpenaiTts();
+        private Voxcpm voxcpm = new Voxcpm();
+
+        @Data
+        public static class EdgeTts {
+            private String path;
+            private String voice;
+        }
+
+        @Data
+        public static class OpenaiTts {
+            private String url;
+            private String apiKey;
+            private String model;
+            private String voice;
+        }
+
+        @Data
+        public static class Voxcpm {
+            private String serviceUrl;
+        }
     }
 
     @Data
     public static class Translate {
         private String provider;
+        private Ollama ollama = new Ollama();
+        private Openai openai = new Openai();
+
+        @Data
+        public static class Ollama {
+            private String baseUrl;
+            private String model;
+            private int concurrency;
+        }
+
+        @Data
+        public static class Openai {
+            private String chatUrl;
+            private String apiKey;
+            private String model;
+            private int concurrency;
+        }
     }
 
     @Data
     public static class Separate {
         private String provider;
-        private String model;
+        private Demucs demucs = new Demucs();
+        private AudioSeparatorApi audioSeparatorApi = new AudioSeparatorApi();
+
+        @Data
+        public static class Demucs {
+            private String model;
+        }
+
+        @Data
+        public static class AudioSeparatorApi {
+            private String serviceUrl;
+        }
     }
 
     @Data
@@ -114,20 +153,53 @@ public class AppProperties {
 
     /**
      * 启动时调用：从 DB 读取设置，覆盖 AppProperties 中同名值。
-     * DB 中存储的 key 格式如 "openai.baseUrl"、"translate.concurrency"。
+     * DB 中存储的 key 格式如 "asr.provider"、"translate.openai.apiKey" 等。
      */
     public void mergeFromDb(SettingsRepository settingsRepository) {
         Map<String, String> db = settingsRepository.getAll();
-        setIfPresent(db, "asr.provider", asr::setProvider);
-        setIfPresent(db, "asr.model", asr::setModel);
-        setIfPresent(db, "translate.provider", translate::setProvider);
-        setIfPresent(db, "separate.provider", separate::setProvider);
-        setIfPresent(db, "separate.model", separate::setModel);
+
+        // 全局 / 下载 / 设备 / 编码器
+        setIfPresent(db, "ytdlp.proxy", ytdlp::setProxy);
         setIfPresent(db, "download.outputFilename", download::setOutputFilename);
         setLongIfPresent(db, "download.timeoutMs", download::setTimeoutMs);
         setIfPresent(db, "device.demucs", deviceConfig::setDemucs);
         setIfPresent(db, "device.whisper", deviceConfig::setWhisper);
         setIfPresent(db, "ffmpeg.encoder", ffmpeg::setEncoder);
+
+        // Provider 选择
+        setIfPresent(db, "asr.provider", asr::setProvider);
+        setIfPresent(db, "tts.provider", tts::setProvider);
+        setIfPresent(db, "translate.provider", translate::setProvider);
+        setIfPresent(db, "separate.provider", separate::setProvider);
+
+        // ASR 配置
+        setIfPresent(db, "asr.whisper-api.baseUrl", asr.getWhisperApi()::setBaseUrl);
+        setIfPresent(db, "asr.whisper-api.url", asr.getWhisperApi()::setUrl);
+        setIfPresent(db, "asr.whisper-api.apiKey", asr.getWhisperApi()::setApiKey);
+        setIfPresent(db, "asr.whisper-api.model", asr.getWhisperApi()::setModel);
+        setIfPresent(db, "asr.whisper-cpp.model", asr.getWhisperCpp()::setModel);
+
+        // TTS 配置
+        setIfPresent(db, "tts.edge-tts.path", tts.getEdgeTts()::setPath);
+        setIfPresent(db, "tts.edge-tts.voice", tts.getEdgeTts()::setVoice);
+        setIfPresent(db, "tts.openai-tts.url", tts.getOpenaiTts()::setUrl);
+        setIfPresent(db, "tts.openai-tts.apiKey", tts.getOpenaiTts()::setApiKey);
+        setIfPresent(db, "tts.openai-tts.model", tts.getOpenaiTts()::setModel);
+        setIfPresent(db, "tts.openai-tts.voice", tts.getOpenaiTts()::setVoice);
+        setIfPresent(db, "tts.voxcpm.serviceUrl", tts.getVoxcpm()::setServiceUrl);
+
+        // 翻译配置
+        setIfPresent(db, "translate.ollama.baseUrl", translate.getOllama()::setBaseUrl);
+        setIfPresent(db, "translate.ollama.model", translate.getOllama()::setModel);
+        setIntIfPresent(db, "translate.ollama.concurrency", translate.getOllama()::setConcurrency);
+        setIfPresent(db, "translate.openai.chatUrl", translate.getOpenai()::setChatUrl);
+        setIfPresent(db, "translate.openai.apiKey", translate.getOpenai()::setApiKey);
+        setIfPresent(db, "translate.openai.model", translate.getOpenai()::setModel);
+        setIntIfPresent(db, "translate.openai.concurrency", translate.getOpenai()::setConcurrency);
+
+        // 分离配置
+        setIfPresent(db, "separate.demucs.model", separate.getDemucs()::setModel);
+        setIfPresent(db, "separate.audio-separator-api.serviceUrl", separate.getAudioSeparatorApi()::setServiceUrl);
     }
 
     private void setIfPresent(Map<String, String> map, String key, Consumer<String> setter) {

@@ -55,18 +55,19 @@ class AdapterE2ETest {
     @Test
     void separators_shouldBeRegistered() {
         assertNotNull(separators);
+        assertTrue(separators.containsKey("ffmpeg-simple"));
         assertTrue(separators.containsKey("demucs"));
-        assertTrue(separators.containsKey("spleeter"));
+        assertTrue(separators.containsKey("audio-separator-api"));
         assertEquals("demucs", separators.get("demucs").getName());
-        assertEquals("spleeter", separators.get("spleeter").getName());
+        assertEquals("audio-separator-api", separators.get("audio-separator-api").getName());
     }
 
     @Test
     void recognizers_shouldBeRegistered() {
         assertNotNull(recognizers);
-        assertTrue(recognizers.containsKey("openai-whisper-api"));
+        assertTrue(recognizers.containsKey("whisper-api"));
         assertTrue(recognizers.containsKey("whisper-cpp"));
-        assertEquals("openai-whisper-api", recognizers.get("openai-whisper-api").getName());
+        assertEquals("whisper-api", recognizers.get("whisper-api").getName());
         assertEquals("whisper-cpp", recognizers.get("whisper-cpp").getName());
     }
 
@@ -74,9 +75,9 @@ class AdapterE2ETest {
     void translators_shouldBeRegistered() {
         assertNotNull(translators);
         assertTrue(translators.containsKey("openai"));
-        assertTrue(translators.containsKey("local-llm"));
+        assertTrue(translators.containsKey("ollama"));
         assertEquals("openai", translators.get("openai").getName());
-        assertEquals("local-llm", translators.get("local-llm").getName());
+        assertEquals("ollama", translators.get("ollama").getName());
     }
 
     @Test

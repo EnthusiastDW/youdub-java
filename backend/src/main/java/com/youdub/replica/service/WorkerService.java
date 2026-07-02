@@ -6,6 +6,7 @@ import com.youdub.replica.repository.TaskRepository;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.slf4j.MDC;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.stereotype.Service;
@@ -44,6 +45,7 @@ public class WorkerService {
         }
         log.info("入队任务：{}", taskId);
         Future<?> future = taskExecutor.submit(() -> {
+            MDC.put("taskId", taskId);
             try {
                 log.info("开始执行任务：{}", taskId);
                 pipelineOrchestrator.execute(taskId);
@@ -57,6 +59,7 @@ public class WorkerService {
                 }
             } finally {
                 runningTasks.remove(taskId);
+                MDC.remove("taskId");
             }
         });
         runningTasks.put(taskId, future);

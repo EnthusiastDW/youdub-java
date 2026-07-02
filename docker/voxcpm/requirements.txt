@@ -1,7 +1,0 @@
-fastapi>=0.115.0
-uvicorn[standard]>=0.34.0
-python-multipart>=0.0.20
-voxcpm
-soundfile>=0.12.0
-pydub>=0.25.1
-modelscope>=1.15.0

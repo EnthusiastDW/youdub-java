@@ -16,17 +16,21 @@ export function useTask(taskId: string | undefined, pollIntervalMs = 2000): UseT
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  const logOffsetRef = useRef(0);
 
   const load = async () => {
     if (!taskId) return;
     try {
       const [taskData, logData] = await Promise.all([
         getTask(taskId),
-        getTaskLog(taskId).catch(() => ""),
+        getTaskLog(taskId, logOffsetRef.current).catch(() => ""),
       ]);
       if (!mountedRef.current) return;
       setTask(taskData);
-      setLog(logData);
+      if (logData) {
+        setLog((prev) => prev + logData);
+        logOffsetRef.current += new Blob([logData]).size;
+      }
       setError(null);
     } catch (err) {
       if (!mountedRef.current) return;
@@ -38,6 +42,8 @@ export function useTask(taskId: string | undefined, pollIntervalMs = 2000): UseT
 
   useEffect(() => {
     mountedRef.current = true;
+    logOffsetRef.current = 0;
+    setLog("");
     load();
     const interval = window.setInterval(load, pollIntervalMs);
     return () => {
