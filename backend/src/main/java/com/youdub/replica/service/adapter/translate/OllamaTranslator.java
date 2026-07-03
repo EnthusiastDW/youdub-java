@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Slf4j
 @Component("ollama")
 @RequiredArgsConstructor
-public class OllamaTranslator implements Translator {
+public class OllamaTranslator extends AbstractTranslator {
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -89,6 +89,9 @@ public class OllamaTranslator implements Translator {
             return;
         }
 
+        // 合并从句片段，防止 LLM 对不完整句子脑补扩展
+        items = mergeFragments(items);
+
         log.info("Ollama 并发翻译：共 {} 句，并发数={}", items.size(), useConcurrency);
         Semaphore semaphore = new Semaphore(useConcurrency);
         AtomicInteger completed = new AtomicInteger(0);
@@ -100,7 +103,7 @@ public class OllamaTranslator implements Translator {
                 try {
                     semaphore.acquire();
                     try {
-                        String translated = callOllama(chatUrl, config.getModel(), srcLang, dstLang, item.text);
+                        String translated = callOllama(chatUrl, config.getModel(), srcLang, dstLang, item.text());
                         int done = completed.incrementAndGet();
                         if (done % 10 == 0 || done == total) {
                             log.info("翻译进度：{}/{}", done, total);
@@ -113,7 +116,7 @@ public class OllamaTranslator implements Translator {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException("翻译被中断", e);
                 } catch (Exception e) {
-                    throw new RuntimeException("翻译失败：" + item.text, e);
+                    throw new RuntimeException("翻译失败：" + item.text(), e);
                 }
             }, virtualExecutor);
             futures.add(future);
@@ -128,13 +131,13 @@ public class OllamaTranslator implements Translator {
         for (int i = 0; i < items.size(); i++) {
             Utterance item = items.get(i);
             ObjectNode entry = objectMapper.createObjectNode();
-            entry.put("src", item.text);
+            entry.put("src", item.text());
             entry.put("dst", translations.get(i));
             entry.put("src_lang", srcLang);
             entry.put("dst_lang", dstLang);
-            entry.put("start_time", item.startTime);
-            entry.put("end_time", item.endTime);
-            entry.put("speaker", item.speaker);
+            entry.put("start_time", item.startTime());
+            entry.put("end_time", item.endTime());
+            entry.put("speaker", item.speaker());
             translationArray.add(entry);
         }
 
@@ -149,7 +152,9 @@ public class OllamaTranslator implements Translator {
      */
     private String callOllama(String chatUrl, String model, String srcLang, String dstLang, String text) throws Exception {
         String systemPrompt = "You are a professional translator. Translate the user-provided text from " + srcLang +
-                " to " + dstLang + ". Respond with only the translated text, no explanations.";
+                " to " + dstLang + " LITERALLY. Even if the input is an incomplete sentence fragment, " +
+                "translate it literally without adding any explanation, context, or elaboration. " +
+                "Respond with ONLY the exact translated text — no extra words, no explanations, no notes.";
 
         ObjectNode requestBody = objectMapper.createObjectNode();
         requestBody.put("model", model);
@@ -194,6 +199,4 @@ public class OllamaTranslator implements Translator {
         return base + "/api/chat";
     }
 
-    private record Utterance(String text, long startTime, long endTime, String speaker) {
-    }
 }

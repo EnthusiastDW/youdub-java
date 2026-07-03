@@ -32,7 +32,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Slf4j
 @Component("openai")
 @RequiredArgsConstructor
-public class OpenAiTranslator implements Translator {
+public class OpenAiTranslator extends AbstractTranslator {
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
@@ -96,6 +96,9 @@ public class OpenAiTranslator implements Translator {
             return;
         }
 
+        // 合并从句片段，防止 LLM 对不完整句子脑补扩展
+        items = mergeFragments(items);
+
         // 阶段A：全文预处理
         Path preprocessFile = outputDir.resolve("translation_preprocess.json");
         PreprocessResult preprocess;
@@ -121,7 +124,7 @@ public class OpenAiTranslator implements Translator {
                 try {
                     semaphore.acquire();
                     try {
-                        String translated = callTranslate(apiKey, chatUrl, useModel, srcLang, dstLang, item.text, preprocess);
+                        String translated = callTranslate(apiKey, chatUrl, useModel, srcLang, dstLang, item.text(), preprocess);
                         int done = completed.incrementAndGet();
                         if (done % 10 == 0 || done == total) {
                             log.info("翻译进度：{}/{}", done, total);
@@ -134,7 +137,7 @@ public class OpenAiTranslator implements Translator {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException("翻译被中断", e);
                 } catch (Exception e) {
-                    throw new RuntimeException("翻译失败：" + item.text, e);
+                    throw new RuntimeException("翻译失败：" + item.text(), e);
                 }
             }, virtualExecutor);
             futures.add(future);
@@ -152,17 +155,17 @@ public class OpenAiTranslator implements Translator {
             Utterance item = items.get(i);
             String dst = translations.get(i);
             if (dst.isBlank()) {
-                dst = item.text;
-                log.warn("翻译结果为空，使用原文：{}", item.text);
+                dst = item.text();
+                log.warn("翻译结果为空，使用原文：{}", item.text());
             }
             ObjectNode entry = objectMapper.createObjectNode();
-            entry.put("src", item.text);
+            entry.put("src", item.text());
             entry.put("dst", dst);
             entry.put("src_lang", srcLang);
             entry.put("dst_lang", dstLang);
-            entry.put("start_time", item.startTime);
-            entry.put("end_time", item.endTime);
-            entry.put("speaker", item.speaker);
+            entry.put("start_time", item.startTime());
+            entry.put("end_time", item.endTime());
+            entry.put("speaker", item.speaker());
             translationArray.add(entry);
         }
 
@@ -245,8 +248,11 @@ public class OpenAiTranslator implements Translator {
     private String callTranslate(String apiKey, String chatUrl, String model, String srcLang, String dstLang,
                                  String text, PreprocessResult preprocess) throws Exception {
         String systemPrompt = "You are a professional translator. Translate the user-provided text from " + srcLang +
-                " to " + dstLang + ". Respond with only the translated text, no explanations. " +
-                "Context summary: " + preprocess.summary;
+                " to " + dstLang + " LITERALLY. Even if the input is an incomplete sentence fragment, " +
+                "translate it literally without adding any explanation, context, or elaboration. " +
+                "Respond with ONLY the exact translated text — no extra words, no explanations, no notes. " +
+                "Context summary: " + preprocess.summary + "." +
+                " This context is for reference only — do NOT include it in your translation.";
         if (!preprocess.hotwords.isBlank()) {
             systemPrompt += " Hotwords: " + preprocess.hotwords;
         }
@@ -346,8 +352,6 @@ public class OpenAiTranslator implements Translator {
         result.corrections = node.path("corrections").asText("");
         return result;
     }
-
-    private record Utterance(String text, long startTime, long endTime, String speaker) {}
 
     private static class PreprocessResult {
         String summary = "";
