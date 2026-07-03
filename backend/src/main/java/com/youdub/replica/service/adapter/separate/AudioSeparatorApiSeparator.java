@@ -81,7 +81,7 @@ public class AudioSeparatorApiSeparator extends BaseSourceSeparator {
 
             // 流式构建 multipart/form-data，避免将大文件全部读入堆内存
             String boundary = "----WebKitFormBoundary" + UUID.randomUUID().toString().replace("-", "");
-            String filename = audioPath.getFileName().toString();
+            String filename = audioToSend.getFileName().toString();
             byte[] headerBytes = ("--" + boundary + "\r\n"
                     + "Content-Disposition: form-data; name=\"file\"; filename=\"" + filename + "\"\r\n"
                     + "Content-Type: application/octet-stream\r\n\r\n").getBytes(StandardCharsets.UTF_8);

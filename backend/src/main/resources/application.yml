@@ -41,7 +41,7 @@ app:
       model: ${WHISPER_CPP_MODEL:ggml-large-v3-turbo.bin}
 
   tts:
-    provider: ${APP_TTS_PROVIDER:edge-tts}
+    provider: ${APP_TTS_PROVIDER:voxcpm}
     edge-tts:
       path: ${EDGE_TTS_PATH:edge-tts}
       voice: ${EDGE_TTS_VOICE:zh-CN-YunyangNeural} # edge-tts --list-voices | findstr zh-CN

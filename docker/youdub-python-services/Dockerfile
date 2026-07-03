@@ -2,58 +2,20 @@
 # Unified Python Services Docker Image
 # Combines: audio-separator, faster-whisper, voxcpm
 # Base: python:3.11-slim (CPU), GPU optional via runtime
+#
+# voxcpm2-cli 使用预构建的 llamacpp-builder 镜像：
+#   先运行 docker/llamacpp-builder/build.sh --proxy
+#   然后在此 Dockerfile 中 COPY --from 直接引用
 # ============================================================
 
-# -----------------------------------------------------------
-# Stage 1: Build llama.cpp-omni for CPU fallback
-# -----------------------------------------------------------
-FROM python:3.11-slim AS llamacpp-builder
-
-# Build-time proxy support (apt / git)
-ARG HTTP_PROXY
-ARG HTTPS_PROXY
-ARG NO_PROXY
-ENV HTTP_PROXY=${HTTP_PROXY} \
-    HTTPS_PROXY=${HTTPS_PROXY} \
-    NO_PROXY=${NO_PROXY}
-
-RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
-    apt-get update && \
-    apt-get install -y --no-install-recommends \
-        build-essential \
-        cmake \
-        git \
-        libopenblas-dev \
-        && \
-    rm -rf /var/lib/apt/lists/*
-
-# Clone and build llama.cpp-omni (VoxCPM2 CLI target)
-# Use a fixed commit-ish for reproducibility; update if upstream changes.
-ARG LLAMACPP_OMNI_COMMIT=master
-RUN if [ -n "${HTTP_PROXY}" ] || [ -n "${HTTPS_PROXY}" ]; then \
-        git config --global http.proxy "${HTTP_PROXY:-${HTTPS_PROXY}}" && \
-        git config --global https.proxy "${HTTPS_PROXY:-${HTTP_PROXY}}"; \
-    fi && \
-    git clone --depth 1 --branch ${LLAMACPP_OMNI_COMMIT} https://github.com/tc-mb/llama.cpp-omni.git /app/llama.cpp-omni && \
-    cd /app/llama.cpp-omni && \
-    cmake -B build -DCMAKE_BUILD_TYPE=Release && \
-    cmake --build build --target voxcpm2-cli -j$(nproc)
-
-# Verify the binary was produced
-RUN ls -lh /app/llama.cpp-omni/build/bin/voxcpm2-cli
-
-# -----------------------------------------------------------
-# Stage 2: Final Python services image
-# -----------------------------------------------------------
 FROM python:3.11-slim
 
 # -----------------------------------------------------------
 # System Dependencies
 #   - ffmpeg: required by faster-whisper and audio processing
-#   - gcc, g++: required for building some Python packages (voxcpm deps)
+#   - gcc, g++: required for building some Python packages
 #   - git: required for modelscope downloads
 #   - libgomp1, libopenblas0: runtime libs for llama.cpp-omni
-#   - Clean apt cache to reduce image size
 # -----------------------------------------------------------
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && \
@@ -75,20 +37,19 @@ WORKDIR /app
 # -----------------------------------------------------------
 # Model Cache Directories
 # -----------------------------------------------------------
-RUN mkdir -p /app/models /app/data/modelscope
+RUN mkdir -p /app/models /app/data/modelscope /app/voxcpm2
 
 # -----------------------------------------------------------
-# Copy only the voxcpm2-cli binary from builder stage (not the whole source tree)
-RUN mkdir -p /app/llama.cpp-omni/build/bin
-COPY --from=llamacpp-builder /app/llama.cpp-omni/build/bin/voxcpm2-cli /app/tools/voxcpm2-cli
+# Copy voxcpm2-cli + shared libraries from builder image
+# -----------------------------------------------------------
+COPY --from=youdub-llamacpp-builder:latest /app/llama.cpp-omni/build/bin/voxcpm2-cli /app/voxcpm2/voxcpm2-cli
+COPY --from=youdub-llamacpp-builder:latest /app/llama.cpp-omni/build/bin/*.so* /app/voxcpm2/
+ENV LD_LIBRARY_PATH=/app/voxcpm2:${LD_LIBRARY_PATH}
 
 # -----------------------------------------------------------
 # Python Dependencies (cached layer)
 # -----------------------------------------------------------
-
 COPY requirements.txt .
-
-# 构建时安装 Python 依赖（使用内网 Nexus 镜像）
 RUN --mount=type=cache,target=/root/.cache/pip \
     mkdir -p /root/.pip && \
     printf '%s\n' '[global]' \
@@ -109,7 +70,7 @@ RUN chmod +x /app/entrypoint.sh
 EXPOSE 8001
 
 # -----------------------------------------------------------
-# Entrypoint: install dependencies at runtime, then start server
+# Entrypoint
 # -----------------------------------------------------------
 ENTRYPOINT ["/app/entrypoint.sh"]
 CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8001", "--log-level", "info"]

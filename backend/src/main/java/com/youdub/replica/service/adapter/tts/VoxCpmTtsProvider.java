@@ -16,10 +16,7 @@ import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
@@ -67,41 +64,25 @@ public class VoxCpmTtsProvider implements TtsProvider {
 
         Path refDir = outputDir.resolve("vocals");
 
-        // 扫描 translation，构建 speaker → 首段 vocal 索引 的映射
-        // vocal 目录由 splitAudio 按 translation 顺序生成（跳过 endMs <= startMs）
-        Map<String, Integer> speakerFirstVocalIdx = new LinkedHashMap<>();
-        {
-            int vocalIdx = 0;
-            for (JsonNode item : translation) {
-                long startMs = item.path("start_time").asLong(0);
-                long endMs = item.path("end_time").asLong(0);
-                if (endMs <= startMs) continue;
-                String speaker = item.path("speaker").asText("1");
-                speakerFirstVocalIdx.putIfAbsent(speaker, vocalIdx);
-                vocalIdx++;
-            }
-        }
-
-        // 每个 speaker 选取一个固定参考音频
-        Map<String, Path> speakerRefAudio = new HashMap<>();
-        for (var entry : speakerFirstVocalIdx.entrySet()) {
-            String spk = entry.getKey();
-            Path ref = refDir.resolve(String.format("%04d.wav", entry.getValue()));
-            if (Files.exists(ref) && Files.size(ref) > 0) {
-                speakerRefAudio.put(spk, ref);
-                log.info("Speaker {} 固定参考音频: {} ({} bytes)", spk, ref, Files.size(ref));
-            }
-        }
-
-        // 构建 TTS 条目，保留 speaker 信息
         List<TtsItem> items = new ArrayList<>();
+        int vocalIdx = 0;
         for (JsonNode item : translation) {
+            long startMs = item.path("start_time").asLong(0);
+            long endMs = item.path("end_time").asLong(0);
             String text = item.path("dst").asText("").trim();
             if (text.isEmpty()) {
+                // 无声段，vocal 文件会生成但不需要 TTS
+                if (endMs > startMs) {
+                    vocalIdx++;
+                }
+                continue;
+            }
+            if (endMs <= startMs) {
                 continue;
             }
             String speaker = item.path("speaker").asText("1");
-            items.add(new TtsItem(items.size(), text, speaker));
+            items.add(new TtsItem(items.size(), text, speaker, vocalIdx));
+            vocalIdx++;
         }
 
         if (items.isEmpty()) {
@@ -147,9 +128,8 @@ public class VoxCpmTtsProvider implements TtsProvider {
                         bodyBuilder.write(item.text.getBytes(java.nio.charset.StandardCharsets.UTF_8));
                         bodyBuilder.write(crlf);
 
-                        // 使用 speaker 对应的固定参考音频，确保同一 speaker 音色一致
-                        Path refAudio = speakerRefAudio.get(item.speaker);
-                        if (refAudio != null && Files.exists(refAudio) && Files.size(refAudio) > 0) {
+                        Path refAudio = refDir.resolve(String.format("%04d.wav", item.vocalIdx));
+                        if (Files.exists(refAudio) && Files.size(refAudio) > 0) {
                             bodyBuilder.write(boundaryBytes);
                             bodyBuilder.write(crlf);
                             bodyBuilder.write("Content-Disposition: form-data; name=\"ref_audio\"; filename=\"ref.wav\"".getBytes(java.nio.charset.StandardCharsets.UTF_8));
@@ -201,5 +181,5 @@ public class VoxCpmTtsProvider implements TtsProvider {
         log.info("VoxCPM TTS 完成：task={}, dir={}", task.getId(), ttsDir);
     }
 
-    private record TtsItem(int index, String text, String speaker) {}
+    private record TtsItem(int index, String text, String speaker, int vocalIdx) {}
 }

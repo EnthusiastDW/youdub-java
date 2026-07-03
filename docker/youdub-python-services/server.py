@@ -72,7 +72,7 @@ CUDA_DEVICE = os.environ.get("CUDA_DEVICE", "")
 #   voxcpm    -> always use native voxcpm (PyTorch)
 #   llamacpp  -> always use llama.cpp-omni (GGUF, CPU friendly)
 VOXCPM_BACKEND = os.environ.get("VOXCPM_BACKEND", "auto").lower()
-VOXCPM_LLAMACPP_DIR = Path(os.environ.get("VOXCPM_LLAMACPP_DIR", "/app/tools"))
+VOXCPM_LLAMACPP_DIR = Path(os.environ.get("VOXCPM_LLAMACPP_DIR", "/app/voxcpm2"))
 VOXCPM_LLAMACPP_BASELM = os.environ.get("VOXCPM_LLAMACPP_BASELM", "VoxCPM2-BaseLM-Q8_0.gguf")
 VOXCPM_LLAMACPP_ACOUSTIC = os.environ.get("VOXCPM_LLAMACPP_ACOUSTIC", "VoxCPM2-Acoustic-F16.gguf")
 VOXCPM_LLAMACPP_REPO = os.environ.get("VOXCPM_LLAMACPP_REPO", "DennisHuang/VoxCPM2-GGUF")
@@ -227,6 +227,8 @@ def _get_separator(model_filename: str):
         _separator_instance = Separator(
             model_file_dir=str(MODEL_DIR),
             output_format="WAV",
+            # 5 分钟一大块，避免整段加载爆内存，同时把磁盘 I/O 开销控制在 43 块
+            chunk_duration=900,
         )
         _separator_instance.load_model(model_filename=model_filename)
         _separator_instance._loaded_model = model_filename
@@ -259,8 +261,10 @@ async def separate_audio(
     with tempfile.TemporaryDirectory(prefix="audio-sep-") as tmp:
         input_path = Path(tmp) / _safe_filename(file.filename)
         try:
-            content = await file.read()
-            input_path.write_bytes(content)
+            # 流式写入磁盘，避免大文件全量加载到内存
+            with open(input_path, 'wb') as f:
+                while chunk := await file.read(64 * 1024):
+                    f.write(chunk)
         except Exception as exc:
             raise HTTPException(400, f"Failed to read upload: {exc}")
 
@@ -909,7 +913,8 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 60)
 
     # Pre-warm models on startup (optional - can be disabled via env)
-    preload = os.environ.get("PRELOAD_MODELS", "true").lower() == "true"
+    # 12GB 机器无法同时加载三个大模型，默认只懒加载需要用的
+    preload = os.environ.get("PRELOAD_MODELS", "false").lower() == "true"
     if preload:
         logger.info("Pre-loading models on startup...")
         try:

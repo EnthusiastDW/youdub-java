@@ -9,11 +9,6 @@ services:
     build:
       context: docker/youdub-python-services
       dockerfile: Dockerfile
-      args:
-        # Build-time proxy for apt / git (llama.cpp-omni clone)
-        - HTTP_PROXY=${HTTP_PROXY:-}
-        - HTTPS_PROXY=${HTTPS_PROXY:-}
-        - NO_PROXY=${NO_PROXY:-}
     image: youdub-python-services:latest
     container_name: youdub-python-services
     ports:
@@ -34,12 +29,16 @@ services:
       - MODEL_CACHE_DIR=/app/data/modelscope
       - PRELOAD_MODELS=${PRELOAD_MODELS:-true}
       # llama.cpp-omni CPU fallback 配置
-      - VOXCPM_LLAMACPP_DIR=/app/llama.cpp-omni
+      - VOXCPM_LLAMACPP_DIR=/app/voxcpm2
       - VOXCPM_LLAMACPP_BASELM=${VOXCPM_LLAMACPP_BASELM:-VoxCPM2-BaseLM-Q8_0.gguf}
       - VOXCPM_LLAMACPP_ACOUSTIC=${VOXCPM_LLAMACPP_ACOUSTIC:-VoxCPM2-Acoustic-F16.gguf}
       - VOXCPM_LLAMACPP_REPO=${VOXCPM_LLAMACPP_REPO:-DennisHuang/VoxCPM2-GGUF}
       - VOXCPM_LLAMACPP_THREADS=${VOXCPM_LLAMACPP_THREADS:-4}
       - VOXCPM_LLAMACPP_PROMPT_TEXT_MODE=${VOXCPM_LLAMACPP_PROMPT_TEXT_MODE:-auto}
+      # HF 镜像（中国大陆加速，效果参考 ollama 容器配置）
+      - HF_ENDPOINT=https://hf-mirror.com
+      # 强制离线模式：模型已缓存后不再发网络请求校验
+      - HF_HUB_OFFLINE=1
       - HTTP_PROXY=http://dengwei.local:7890
       - HTTPS_PROXY=http://dengwei.local:7890
       - NO_PROXY=localhost,127.0.0.1,dengwei.local
