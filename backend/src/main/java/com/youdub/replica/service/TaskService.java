@@ -23,7 +23,9 @@ import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.UUID;
 
@@ -193,6 +195,13 @@ public class TaskService {
         if (task == null) {
             throw new NoSuchElementException("任务不存在：" + id);
         }
+        // 备份各阶段原始时间戳，供 PipelineOrchestrator 在 adapter 缓存命中时恢复
+        Map<String, String[]> backup = new HashMap<>();
+        for (TaskStage stage : task.getStages()) {
+            backup.put(stage.getName(), new String[]{stage.getStartedAt(), stage.getCompletedAt()});
+        }
+        PipelineOrchestrator.stageTimestampsBackup.put(id, backup);
+
         taskRepository.resetStagesFrom(id, "download");
         taskRepository.updateStatus(id, TaskStatus.QUEUED, 0.0);
         taskRepository.updateField(id, "error_message", "");
@@ -252,6 +261,17 @@ public class TaskService {
         if (task == null) {
             throw new NoSuchElementException("任务不存在：" + id);
         }
+        // 备份从该阶段开始的原始时间戳（后续阶段可能 adapter 缓存命中）
+        Map<String, String[]> backup = new HashMap<>();
+        boolean found = false;
+        for (TaskStage stage : task.getStages()) {
+            if (stage.getName().equals(stageName)) found = true;
+            if (found) {
+                backup.put(stage.getName(), new String[]{stage.getStartedAt(), stage.getCompletedAt()});
+            }
+        }
+        PipelineOrchestrator.stageTimestampsBackup.put(id, backup);
+
         taskRepository.resetStagesFrom(id, stageName);
         taskRepository.updateStatus(id, TaskStatus.QUEUED, task.getProgress());
         taskRepository.updateField(id, "error_message", "");
