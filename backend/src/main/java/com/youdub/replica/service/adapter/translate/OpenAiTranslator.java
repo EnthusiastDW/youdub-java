@@ -102,15 +102,19 @@ public class OpenAiTranslator extends AbstractTranslator {
         // 阶段A：全文预处理
         Path preprocessFile = outputDir.resolve("translation_preprocess.json");
         PreprocessResult preprocess;
+        String fullText = items.stream().map(Utterance::text).reduce("", (a, b) -> a.isEmpty() ? b : a + "\n" + b);
         if (Files.exists(preprocessFile)) {
             log.info("使用缓存的预处理结果：{}", preprocessFile);
             preprocess = loadPreprocess(preprocessFile);
         } else {
             log.info("阶段A：全文预处理，共 {} 句", items.size());
-            String fullText = items.stream().map(Utterance::text).reduce("", (a, b) -> a.isEmpty() ? b : a + "\n" + b);
             preprocess = callPreprocess(apiKey, chatUrl, useModel, srcLang, dstLang, fullText, task);
             savePreprocess(preprocessFile, preprocess);
         }
+
+        // 用英文原文生成中文小结
+        generateSummary(fullText, outputDir, dstLang, (text, lang) ->
+                callSummary(text, apiKey, chatUrl, useModel, lang));
 
         // 阶段B：并发逐句翻译
         log.info("阶段B：并发翻译，并发数={}", useConcurrency);
@@ -283,6 +287,36 @@ public class OpenAiTranslator extends AbstractTranslator {
         }
         // 3 次重试均无效，回退到原文
         return text;
+    }
+
+    /**
+     * 调用 OpenAI Chat 对英文原文生成结构化中文 Markdown 小结。
+     * 单独的方法，便于以后调整 prompt 和参数。
+     */
+    private String callSummary(String fullText, String apiKey, String chatUrl, String model,
+                               String targetLang) throws Exception {
+        String systemPrompt = "You are a professional summarizer. Read the following English transcript " +
+                "and create a structured summary in " + targetLang + " (Markdown format). " +
+                "Include:\n" +
+                "- ## 内容概要 (2-3 sentences overview)\n" +
+                "- ## 核心要点 (bullet points of key ideas)\n" +
+                "- ## 关键术语 (important terms mentioned, if any)";
+        ObjectNode requestBody = objectMapper.createObjectNode();
+        requestBody.put("model", model);
+        requestBody.put("temperature", 0.3);
+        ArrayNode messages = objectMapper.createArrayNode();
+        ObjectNode sysMsg = objectMapper.createObjectNode();
+        sysMsg.put("role", "system");
+        sysMsg.put("content", systemPrompt);
+        messages.add(sysMsg);
+        ObjectNode userMsg = objectMapper.createObjectNode();
+        userMsg.put("role", "user");
+        userMsg.put("content", fullText);
+        messages.add(userMsg);
+        requestBody.set("messages", messages);
+        String response = callChatApi(apiKey, chatUrl, model, requestBody);
+        JsonNode root = objectMapper.readTree(response);
+        return root.path("choices").path(0).path("message").path("content").asText("").trim();
     }
 
     /**

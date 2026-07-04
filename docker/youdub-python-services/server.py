@@ -1,11 +1,11 @@
 """
 Unified Python Services API Server
-Combines Audio Separator, Faster-Whisper ASR, and VoxCPM TTS into one FastAPI application.
+Combines Audio Separator, Faster-Whisper ASR, and native VoxCPM TTS into one FastAPI application.
 
 Endpoints:
   POST /api/v1/separate          - Audio separation (from audio-separator)
   POST /v1/audio/transcriptions  - Whisper ASR (from faster-whisper)
-  POST /v1/tts                   - VoxCPM TTS (voxcpm PyTorch or llama.cpp-omni GGUF)
+  POST /v1/tts                   - VoxCPM TTS (native voxcpm PyTorch)
   POST /v1/tts/batch             - VoxCPM Batch TTS
   GET  /health                   - Unified health check
   GET  /                         - Service info
@@ -22,7 +22,6 @@ import tempfile
 import traceback
 import asyncio
 import zipfile
-import subprocess
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
@@ -46,7 +45,7 @@ logger = logging.getLogger("unified-python-services")
 # ============================================================
 
 # Audio Separator Config
-MODEL_DIR = Path(os.environ.get("MODEL_DIR", "/app/models"))
+MODEL_DIR = Path(os.environ.get("MODEL_DIR", "/app/data/separator-models"))
 MODEL_DIR.mkdir(parents=True, exist_ok=True)
 SEPARATOR_MODEL = os.environ.get("SEPARATOR_MODEL", "UVR-MDX-NET-Inst_HQ_3.onnx")
 SEPARATOR_NUM_PROCESSES = int(os.environ.get("SEPARATOR_NUM_PROCESSES", str(os.cpu_count() or 4)))
@@ -67,21 +66,7 @@ VOXCPM_SERVICE_PORT = int(os.environ.get("VOXCPM_SERVICE_PORT", "8001"))
 MODEL_CACHE_DIR = os.environ.get("MODEL_CACHE_DIR", "/app/data/modelscope")
 CUDA_DEVICE = os.environ.get("CUDA_DEVICE", "")
 
-# VoxCPM backend selection:
-#   auto      -> use native voxcpm when CUDA is available, otherwise llama.cpp-omni GGUF
-#   voxcpm    -> always use native voxcpm (PyTorch)
-#   llamacpp  -> always use llama.cpp-omni (GGUF, CPU friendly)
 VOXCPM_BACKEND = os.environ.get("VOXCPM_BACKEND", "auto").lower()
-VOXCPM_LLAMACPP_DIR = Path(os.environ.get("VOXCPM_LLAMACPP_DIR", "/app/voxcpm2"))
-VOXCPM_LLAMACPP_BASELM = os.environ.get("VOXCPM_LLAMACPP_BASELM", "VoxCPM2-BaseLM-Q8_0.gguf")
-VOXCPM_LLAMACPP_ACOUSTIC = os.environ.get("VOXCPM_LLAMACPP_ACOUSTIC", "VoxCPM2-Acoustic-F16.gguf")
-VOXCPM_LLAMACPP_REPO = os.environ.get("VOXCPM_LLAMACPP_REPO", "DennisHuang/VoxCPM2-GGUF")
-VOXCPM_LLAMACPP_THREADS = int(os.environ.get("VOXCPM_LLAMACPP_THREADS", str(os.cpu_count() or 4)))
-# How to obtain the prompt-text required by llama.cpp-omni continuation voice cloning:
-#   auto   -> transcribe the reference audio with Whisper
-#   empty  -> pass an empty string
-#   none   -> do not pass --prompt-text at all (zero-shot/reference mode)
-VOXCPM_LLAMACPP_PROMPT_TEXT_MODE = os.environ.get("VOXCPM_LLAMACPP_PROMPT_TEXT_MODE", "auto").lower()
 
 # ============================================================
 # Auto-detect devices for all services
@@ -107,13 +92,7 @@ def _is_cuda_available() -> bool:
 
 _HAS_CUDA = _is_cuda_available()
 
-# Determine active TTS backend
-if VOXCPM_BACKEND == "voxcpm":
-    _ACTIVE_TTS_BACKEND = "voxcpm"
-elif VOXCPM_BACKEND == "llamacpp":
-    _ACTIVE_TTS_BACKEND = "llamacpp"
-else:
-    _ACTIVE_TTS_BACKEND = "voxcpm" if _HAS_CUDA else "llamacpp"
+_ACTIVE_TTS_BACKEND = "voxcpm"
 
 # Audio Separator
 SEPARATOR_DEVICE = os.environ.get("SEPARATOR_DEVICE", "") or ("cuda" if _HAS_CUDA else "cpu")
@@ -138,7 +117,7 @@ SERVICE_PORT = int(os.environ.get("SERVICE_PORT", "8001"))
 _separator_instance: Optional[object] = None
 _whisper_model_instance: Optional[object] = None
 _voxcpm_pytorch_model_instance: Optional[object] = None
-_voxcpm_llamacpp_backend_instance: Optional["LlamaCppTtsBackend"] = None
+
 
 # Concurrency locks — Semaphore(1) ensures only one CPU-heavy task runs at a time
 _transcribe_lock = asyncio.Lock()
@@ -178,36 +157,7 @@ def _resolve_voxcpm_model_path() -> str:
     return str(Path(downloaded))
 
 
-def _resolve_llamacpp_model_paths() -> tuple[Path, Path]:
-    """Download or locate the two GGUF files needed by llama.cpp-omni."""
-    cache_dir = Path(MODEL_CACHE_DIR) / "llamacpp"
-    cache_dir.mkdir(parents=True, exist_ok=True)
 
-    baselm_file = cache_dir / VOXCPM_LLAMACPP_BASELM
-    acoustic_file = cache_dir / VOXCPM_LLAMACPP_ACOUSTIC
-
-    if baselm_file.exists() and acoustic_file.exists():
-        logger.info("llama.cpp-omni GGUF cache hit: baselm=%s, acoustic=%s", baselm_file, acoustic_file)
-        return baselm_file, acoustic_file
-
-    logger.info("Downloading VoxCPM2 GGUF models from ModelScope: %s -> %s", VOXCPM_LLAMACPP_REPO, cache_dir)
-    from modelscope import snapshot_download
-    downloaded = snapshot_download(VOXCPM_LLAMACPP_REPO, local_dir=str(cache_dir))
-    downloaded_path = Path(downloaded)
-    return downloaded_path / VOXCPM_LLAMACPP_BASELM, downloaded_path / VOXCPM_LLAMACPP_ACOUSTIC
-
-
-def _find_llamacpp_cli() -> Optional[Path]:
-    """Locate the voxcpm2-cli binary built from llama.cpp-omni."""
-    candidates = [
-        VOXCPM_LLAMACPP_DIR / "build" / "bin" / "voxcpm2-cli",
-        VOXCPM_LLAMACPP_DIR / "voxcpm2-cli",
-        Path("/usr/local/bin/voxcpm2-cli"),
-    ]
-    for candidate in candidates:
-        if candidate.exists() and candidate.is_file():
-            return candidate
-    return shutil.which("voxcpm2-cli")
 
 
 # ============================================================
@@ -490,30 +440,6 @@ async def transcribe_audio(request: Request):
                 logger.warning("Failed to delete temp file: %s, %s", tmp_file, e)
 
 
-# ============================================================
-# VoxCPM TTS Backend Abstraction
-# ============================================================
-
-@dataclass(frozen=True)
-class LlamaCppTtsBackend:
-    """Lightweight holder for llama.cpp-omni voxcpm2-cli configuration."""
-    cli_path: Path
-    baselm_path: Path
-    acoustic_path: Path
-
-
-async def _transcribe_reference_audio(audio_path: str) -> str:
-    """Transcribe a reference audio to obtain prompt-text for continuation voice cloning."""
-    whisper_model = _get_whisper_model()
-    segments, info = await asyncio.to_thread(
-        whisper_model.transcribe,
-        audio=audio_path,
-        beam_size=5,
-    )
-    logger.info("Transcribed reference audio for prompt-text: duration=%.2fs", info.duration)
-    return " ".join(seg.text.strip() for seg in segments)
-
-
 async def _get_voxcpm_pytorch_model():
     """Load the native voxcpm (PyTorch) model."""
     global _voxcpm_pytorch_model_instance
@@ -549,54 +475,15 @@ async def _get_voxcpm_pytorch_model():
         return _voxcpm_pytorch_model_instance
 
 
-async def _get_voxcpm_llamacpp_backend():
-    """Locate or download the GGUF files needed by llama.cpp-omni."""
-    global _voxcpm_llamacpp_backend_instance
-    if _voxcpm_llamacpp_backend_instance is not None:
-        return _voxcpm_llamacpp_backend_instance
-
-    async with _voxcpm_load_lock:
-        if _voxcpm_llamacpp_backend_instance is not None:
-            return _voxcpm_llamacpp_backend_instance
-
-        cli_path = _find_llamacpp_cli()
-        if not cli_path:
-            raise RuntimeError(
-                "voxcpm2-cli not found. Please build llama.cpp-omni "
-                "and set VOXCPM_LLAMACPP_DIR correctly."
-            )
-
-        baselm_path, acoustic_path = await asyncio.to_thread(_resolve_llamacpp_model_paths)
-        if not baselm_path.exists():
-            raise RuntimeError(f"llama.cpp-omni BaseLM model not found: {baselm_path}")
-        if not acoustic_path.exists():
-            raise RuntimeError(f"llama.cpp-omni Acoustic model not found: {acoustic_path}")
-
-        logger.info("Using llama.cpp-omni backend: cli=%s, baselm=%s, acoustic=%s",
-                    cli_path, baselm_path, acoustic_path)
-        _voxcpm_llamacpp_backend_instance = LlamaCppTtsBackend(
-            cli_path=Path(cli_path),
-            baselm_path=baselm_path,
-            acoustic_path=acoustic_path,
-        )
-        return _voxcpm_llamacpp_backend_instance
-
-
 async def _get_voxcpm_model():
-    """Get the active TTS backend/model (lazy loading, thread-safe)."""
-    if _ACTIVE_TTS_BACKEND == "voxcpm":
-        return await _get_voxcpm_pytorch_model()
-    return await _get_voxcpm_llamacpp_backend()
+    """Get the active TTS model (lazy loading, thread-safe)."""
+    return await _get_voxcpm_pytorch_model()
 
 
 def _get_sample_rate() -> int:
-    """Return the output sample rate for the active TTS backend."""
-    if _ACTIVE_TTS_BACKEND == "voxcpm":
-        model = _voxcpm_pytorch_model_instance
-        if model is not None:
-            return getattr(model.tts_model, "sample_rate", 48000)
-        return 48000
-    # llama.cpp-omni VoxCPM2 outputs 48 kHz
+    model = _voxcpm_pytorch_model_instance
+    if model is not None:
+        return getattr(model.tts_model, "sample_rate", 48000)
     return 48000
 
 
@@ -629,62 +516,12 @@ async def _generate_tts_audio_pytorch(text: str, ref_audio_path: Optional[str]) 
         Path(tmp.name).unlink(missing_ok=True)
 
 
-async def _generate_tts_audio_llamacpp(backend: LlamaCppTtsBackend, text: str, ref_audio_path: Optional[str]) -> bytes:
-    """Generate TTS audio using llama.cpp-omni voxcpm2-cli, return WAV bytes."""
-    prompt_text = ""
-    use_reference = ref_audio_path and Path(ref_audio_path).exists()
 
-    if use_reference:
-        if VOXCPM_LLAMACPP_PROMPT_TEXT_MODE == "auto":
-            prompt_text = await _transcribe_reference_audio(ref_audio_path)
-        elif VOXCPM_LLAMACPP_PROMPT_TEXT_MODE == "empty":
-            prompt_text = ""
-        # mode == "none" keeps prompt_text empty and skips --prompt-text below
-
-    with tempfile.TemporaryDirectory(prefix="voxcpm-llamacpp-") as tmp:
-        output_wav = Path(tmp) / "output.wav"
-        cmd: List[str] = [
-            str(backend.cli_path),
-            "-t", text,
-            "-o", str(output_wav),
-            "--threads", str(VOXCPM_LLAMACPP_THREADS),
-        ]
-
-        if use_reference:
-            cmd.extend(["--prompt-wav", ref_audio_path])
-            if VOXCPM_LLAMACPP_PROMPT_TEXT_MODE != "none":
-                cmd.extend(["--prompt-text", prompt_text])
-            # Continuation / reference mode switch. Some builds need -r for continuation.
-            if VOXCPM_LLAMACPP_PROMPT_TEXT_MODE in ("auto", "empty"):
-                cmd.append("-r")
-
-        cmd.extend([str(backend.baselm_path), str(backend.acoustic_path)])
-
-        logger.info("Running voxcpm2-cli: %s", " ".join(cmd))
-        proc = await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stdout, stderr = await proc.communicate()
-        if proc.returncode != 0:
-            err = stderr.decode(errors="replace") if stderr else "(no stderr)"
-            out = stdout.decode(errors="replace") if stdout else "(no stdout)"
-            raise RuntimeError(f"voxcpm2-cli failed (code={proc.returncode}): {err}\nstdout: {out}")
-
-        if not output_wav.exists():
-            raise RuntimeError(f"voxcpm2-cli did not produce output file: {output_wav}")
-
-        return output_wav.read_bytes()
 
 
 async def _generate_tts_audio(text: str, ref_audio_path: Optional[str]) -> bytes:
-    """Generate TTS audio using the active backend, return WAV bytes."""
-    if _ACTIVE_TTS_BACKEND == "voxcpm":
-        return await _generate_tts_audio_pytorch(text, ref_audio_path)
-
-    backend = await _get_voxcpm_llamacpp_backend()
-    return await _generate_tts_audio_llamacpp(backend, text, ref_audio_path)
+    """Generate TTS audio using the native VoxCPM backend, return WAV bytes."""
+    return await _generate_tts_audio_pytorch(text, ref_audio_path)
 
 
 # ============================================================
@@ -828,11 +665,7 @@ async def health_check():
     """Unified health check for all services."""
     separator_loaded = _separator_instance is not None
     whisper_loaded = _whisper_model_instance is not None
-    voxcpm_loaded = (
-        _voxcpm_pytorch_model_instance is not None
-        if _ACTIVE_TTS_BACKEND == "voxcpm"
-        else _voxcpm_llamacpp_backend_instance is not None
-    )
+    voxcpm_loaded = _voxcpm_pytorch_model_instance is not None
 
     all_loaded = separator_loaded and whisper_loaded and voxcpm_loaded
     any_loaded = separator_loaded or whisper_loaded or voxcpm_loaded
@@ -853,9 +686,9 @@ async def health_check():
             },
             "voxcpm_tts": {
                 "status": "ok" if voxcpm_loaded else "loading",
-                "model": VOXCPM_MODEL if _ACTIVE_TTS_BACKEND == "voxcpm" else f"{VOXCPM_LLAMACPP_REPO}/{VOXCPM_LLAMACPP_BASELM}",
-                "device": VOXCPM_DEVICE if _ACTIVE_TTS_BACKEND == "voxcpm" else "cpu",
-                "backend": _ACTIVE_TTS_BACKEND,
+                "model": VOXCPM_MODEL,
+                "device": VOXCPM_DEVICE,
+                "backend": "voxcpm",
             },
         },
     }
@@ -904,12 +737,7 @@ async def lifespan(app: FastAPI):
     logger.info("  Port: %d", SERVICE_PORT)
     logger.info("  Audio Separator Model: %s", SEPARATOR_MODEL)
     logger.info("  Whisper Model: %s (%s, %s)", WHISPER_MODEL, WHISPER_DEVICE, WHISPER_COMPUTE_TYPE)
-    logger.info("  VoxCPM Backend: %s", _ACTIVE_TTS_BACKEND)
-    if _ACTIVE_TTS_BACKEND == "voxcpm":
-        logger.info("  VoxCPM Model: %s", VOXCPM_MODEL)
-    else:
-        logger.info("  llama.cpp-omni BaseLM: %s", VOXCPM_LLAMACPP_BASELM)
-        logger.info("  llama.cpp-omni Acoustic: %s", VOXCPM_LLAMACPP_ACOUSTIC)
+    logger.info("  VoxCPM Model: %s", VOXCPM_MODEL)
     logger.info("=" * 60)
 
     # Pre-warm models on startup (optional - can be disabled via env)
@@ -931,9 +759,9 @@ async def lifespan(app: FastAPI):
 
         try:
             await _get_voxcpm_model()
-            logger.info("VoxCPM backend ready")
+            logger.info("TTS backend ready")
         except Exception as e:
-            logger.warning("VoxCPM pre-load failed: %s", e)
+            logger.warning("TTS pre-load failed: %s", e)
     else:
         logger.info("Lazy loading enabled (PRELOAD_MODELS=false)")
 
@@ -942,18 +770,17 @@ async def lifespan(app: FastAPI):
     # Shutdown cleanup
     logger.info("Shutting down, releasing model resources...")
     global _separator_instance, _whisper_model_instance
-    global _voxcpm_pytorch_model_instance, _voxcpm_llamacpp_backend_instance
+    global _voxcpm_pytorch_model_instance
     _separator_instance = None
     _whisper_model_instance = None
     _voxcpm_pytorch_model_instance = None
-    _voxcpm_llamacpp_backend_instance = None
     logger.info("Shutdown complete")
 
 
 app = FastAPI(
     title="Unified Python Services",
     version="1.1.0",
-    description="Unified API for Audio Separation (audio-separator), Speech Recognition (faster-whisper), and TTS (VoxCPM / llama.cpp-omni)",
+    description="Unified API for Audio Separation (audio-separator), Speech Recognition (faster-whisper), and TTS (VoxCPM)",
     lifespan=lifespan,
 )
 

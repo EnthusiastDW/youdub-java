@@ -140,7 +140,7 @@ QUEUED → RUNNING → SUCCEEDED
 - **FastAPI** (uvicorn)
 - **faster-whisper** (ASR)
 - **audio-separator** (人声分离)
-- **VoxCPM2** + **llama.cpp-omni** (TTS 声音克隆)
+- **VoxCPM2** + **OpenVoice V2** (TTS 声音克隆)
 
 ### 基础设施
 - Docker Compose (3 个容器：后端 + Python 服务 + 前端)
@@ -236,7 +236,7 @@ youdub-java/
 │   │   └── util/                     # 工具类（CommandRunner, DeviceResolver 等）
 │   └── src/test/                     # 集成测试
 ├── docker/
-│   └── youdub-python-services/       # Python 微服务（FastAPI + faster-whisper + audio-separator + VoxCPM）
+│   └── youdub-python-services/       # Python 微服务（FastAPI + faster-whisper + audio-separator + VoxCPM/OpenVoice）
 ├── frontend/                         # React 前端
 │   └── src/
 │       ├── api/                      # API 调用

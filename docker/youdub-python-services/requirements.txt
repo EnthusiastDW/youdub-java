@@ -20,3 +20,4 @@ voxcpm
 soundfile>=0.12.0
 pydub>=0.25.1
 modelscope>=1.15.0
+

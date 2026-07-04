@@ -1,10 +1,10 @@
 # ============================================================
 # YouDub Replica — Docker Compose
-# Frontend (Vite + React + Nginx) + Backend (Spring Boot) + VoxCPM TTS
+# Frontend (Vite + React + Nginx) + Backend (Spring Boot) + Python Services
 # ============================================================
 
 services:
-  # ── Python Services (TTS + Audio Separation + Whisper) ─
+  # ── Python Services (VoxCPM TTS + Audio Separation + Whisper) ─
   python-services:
     build:
       context: docker/youdub-python-services
@@ -14,37 +14,46 @@ services:
     ports:
       - "8002:8001"
     environment:
+      # ── Audio Separator ────────────────────────────────
       - SEPARATOR_MODEL=${SEPARATOR_MODEL:-UVR-MDX-NET-Inst_HQ_3.onnx}
-      - SEPARATOR_NUM_PROCESSES=${SEPARATOR_NUM_PROCESSES:-4}
       - OMP_NUM_THREADS=${OMP_NUM_THREADS:-4}
-      - MODEL_DIR=/app/models
+      - MODEL_DIR=/app/data/separator-models
+
+      # ── Faster-Whisper ─────────────────────────────────
       - WHISPER_MODEL=${WHISPER_MODEL:-base}
       - WHISPER_DEVICE=${WHISPER_DEVICE:-cpu}
-      # VoxCPM 后端：auto=根据 GPU 自动选择，voxcpm=强制原生 PyTorch，llamacpp=强制 llama.cpp-omni
+      - WHISPER_COMPUTE_TYPE=${WHISPER_COMPUTE_TYPE:-int8}
+      - WHISPER_CPU_THREADS=${WHISPER_CPU_THREADS:-6}
+
+      # ── VoxCPM TTS ────────────────────────────────────
       - VOXCPM_BACKEND=${VOXCPM_BACKEND:-auto}
       - VOXCPM_MODEL=${VOXCPM_MODEL:-OpenBMB/VoxCPM2}
+      # 是否加载降噪器。VoxCPM 生成音频后，会用额外的降噪模型处理一遍来提升音质，但会增加加载耗时和显存占用。false 表示不加载，启动更快、占内存更少。
       - VOXCPM_LOAD_DENOISER=${VOXCPM_LOAD_DENOISER:-false}
-      - VOXCPM_CFG_VALUE=${VOXCPM_CFG_VALUE:-2.0}
+      # Classifier-Free Guidance (CFG) 系数，控制生成结果对输入文本的遵从程度：
+      #     - 值越小（如 1.0）：模型自由发挥，跟文本可能不太像
+      #     - 值越大（如 3.0~5.0）：严格按文本生成，但可能声音不自然
+      #     - 2.0：平衡值，默认推荐
+      - VOXCPM_CFG_VALUE=${VOXCPM_CFG_VALUE:-2.5}
+      # 推理步数。VoxCPM 是扩散模型，需要多步迭代生成音频：
+      #     - 步数越多：质量越好，但生成越慢（线性增长）
+      #     - 步数越少：生成快，但音质可能下降
+      #     - 10：默认值，速度和质量的平衡点。如果追求极致音质可以调到 20~50，追求速度可以降到 5
       - VOXCPM_INFERENCE_TIMESTEPS=${VOXCPM_INFERENCE_TIMESTEPS:-10}
       - MODEL_CACHE_DIR=/app/data/modelscope
       - PRELOAD_MODELS=${PRELOAD_MODELS:-true}
-      # llama.cpp-omni CPU fallback 配置
-      - VOXCPM_LLAMACPP_DIR=/app/voxcpm2
-      - VOXCPM_LLAMACPP_BASELM=${VOXCPM_LLAMACPP_BASELM:-VoxCPM2-BaseLM-Q8_0.gguf}
-      - VOXCPM_LLAMACPP_ACOUSTIC=${VOXCPM_LLAMACPP_ACOUSTIC:-VoxCPM2-Acoustic-F16.gguf}
-      - VOXCPM_LLAMACPP_REPO=${VOXCPM_LLAMACPP_REPO:-DennisHuang/VoxCPM2-GGUF}
-      - VOXCPM_LLAMACPP_THREADS=${VOXCPM_LLAMACPP_THREADS:-4}
-      - VOXCPM_LLAMACPP_PROMPT_TEXT_MODE=${VOXCPM_LLAMACPP_PROMPT_TEXT_MODE:-auto}
-      # HF 镜像（中国大陆加速，效果参考 ollama 容器配置）
+
+      # ── General ────────────────────────
+      - CUDA_DEVICE=${CUDA_DEVICE:-}
+      - SERVICE_PORT=8001
       - HF_ENDPOINT=https://hf-mirror.com
-      # 强制离线模式：模型已缓存后不再发网络请求校验
       - HF_HUB_OFFLINE=1
       - HTTP_PROXY=http://dengwei.local:7890
       - HTTPS_PROXY=http://dengwei.local:7890
       - NO_PROXY=localhost,127.0.0.1,dengwei.local
     volumes:
-      - youdub-models:/app/data/modelscope
-      - youdub-separator-models:/app/models
+      - ./data/modelscope:/app/data/modelscope
+      - ./data/separator-models:/app/data/separator-models
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -83,8 +92,8 @@ services:
       - APP_YTDLP_PROXY_HOST=${YTDLP_PROXY_HOST:-}
       - APP_YTDLP_PROXY_PORT=${YTDLP_PROXY_PORT:-}
     volumes:
-      - youdub-data:/app/data
-      - youdub-workfolder:/app/workfolder
+      - ./data/backend:/app/data
+      - ./data/workfolder:/app/workfolder
     depends_on:
       - python-services
     restart: unless-stopped
@@ -110,12 +119,6 @@ services:
     restart: unless-stopped
     networks:
       - youdub-network
-
-volumes:
-  youdub-data:
-  youdub-workfolder:
-  youdub-models:
-  youdub-separator-models:
 
 networks:
   youdub-network:

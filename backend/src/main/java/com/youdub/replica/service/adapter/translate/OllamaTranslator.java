@@ -92,6 +92,11 @@ public class OllamaTranslator extends AbstractTranslator {
         // 合并从句片段，防止 LLM 对不完整句子脑补扩展
         items = mergeFragments(items);
 
+        // 用英文原文生成中文小结
+        String fullText = items.stream().map(Utterance::text).reduce("", (a, b) -> a.isEmpty() ? b : a + "\n" + b);
+        generateSummary(fullText, outputDir, dstLang, (text, lang) ->
+                callOllamaSummary(text, chatUrl, config.getModel(), lang));
+
         log.info("Ollama 并发翻译：共 {} 句，并发数={}", items.size(), useConcurrency);
         Semaphore semaphore = new Semaphore(useConcurrency);
         AtomicInteger completed = new AtomicInteger(0);
@@ -145,6 +150,46 @@ public class OllamaTranslator extends AbstractTranslator {
         root.set("translation", translationArray);
         Files.writeString(translationFile, objectMapper.writeValueAsString(root));
         log.info("翻译完成：task={}, file={}", task.getId(), translationFile);
+    }
+
+    /**
+     * 调用 Ollama /api/chat 对英文原文生成结构化中文 Markdown 小结。
+     */
+    private String callOllamaSummary(String fullText, String chatUrl, String model,
+                                     String targetLang) throws Exception {
+        String systemPrompt = "You are a professional summarizer. Read the following English transcript " +
+                "and create a structured summary in " + targetLang + " (Markdown format). " +
+                "Include:\n" +
+                "- ## 内容概要 (2-3 sentences overview)\n" +
+                "- ## 核心要点 (bullet points of key ideas)\n" +
+                "- ## 关键术语 (important terms mentioned, if any)";
+        ObjectNode requestBody = objectMapper.createObjectNode();
+        requestBody.put("model", model);
+        requestBody.put("stream", false);
+        ObjectNode options = objectMapper.createObjectNode();
+        options.put("temperature", 0.3);
+        requestBody.set("options", options);
+        ArrayNode messages = objectMapper.createArrayNode();
+        ObjectNode sysMsg = objectMapper.createObjectNode();
+        sysMsg.put("role", "system");
+        sysMsg.put("content", systemPrompt);
+        messages.add(sysMsg);
+        ObjectNode userMsg = objectMapper.createObjectNode();
+        userMsg.put("role", "user");
+        userMsg.put("content", fullText);
+        messages.add(userMsg);
+        requestBody.set("messages", messages);
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(chatUrl))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestBody), StandardCharsets.UTF_8))
+                .build();
+        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (response.statusCode() != 200) {
+            throw new RuntimeException("Ollama API 调用失败 [" + response.statusCode() + "]：" + response.body());
+        }
+        JsonNode root = objectMapper.readTree(response.body());
+        return root.path("message").path("content").asText("").trim();
     }
 
     /**
