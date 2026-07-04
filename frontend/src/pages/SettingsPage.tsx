@@ -191,7 +191,6 @@ export default function SettingsPage() {
 
   // Edge TTS voice options
   const [edgeTtsVoices, setEdgeTtsVoices] = useState<string[]>([]);
-  const [edgeTtsVoicesLoading, setEdgeTtsVoicesLoading] = useState(false);
 
   // Provider config values (key format: "step.provider.field")
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
@@ -254,7 +253,6 @@ export default function SettingsPage() {
   useEffect(() => {
     if (ttsProvider !== "edge-tts") return;
     let mounted = true;
-    setEdgeTtsVoicesLoading(true);
     (async () => {
       try {
         const data = await getEdgeTtsVoices();
@@ -263,8 +261,6 @@ export default function SettingsPage() {
         }
       } catch {
         // If edge-tts is not installed or fails, keep empty list so UI falls back gracefully
-      } finally {
-        if (mounted) setEdgeTtsVoicesLoading(false);
       }
     })();
     return () => { mounted = false; };
