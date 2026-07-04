@@ -95,8 +95,6 @@ services:
     volumes:
       - /mnt/e/youdub-data/backend:/app/data
       - /mnt/e/youdub-data/workfolder:/app/workfolder
-    depends_on:
-      - python-services
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]
@@ -115,8 +113,6 @@ services:
     container_name: youdub-frontend
     ports:
       - "3000:3000"
-    depends_on:
-      - backend
     restart: unless-stopped
     networks:
       - youdub-network
