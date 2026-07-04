@@ -47,13 +47,13 @@ services:
       - CUDA_DEVICE=${CUDA_DEVICE:-}
       - SERVICE_PORT=8001
       - HF_ENDPOINT=https://hf-mirror.com
-      - HF_HUB_OFFLINE=1
+      - HF_HUB_OFFLINE=0
       - HTTP_PROXY=http://dengwei.local:7890
       - HTTPS_PROXY=http://dengwei.local:7890
       - NO_PROXY=localhost,127.0.0.1,dengwei.local
     volumes:
-      - ./data/modelscope:/app/data/modelscope
-      - ./data/separator-models:/app/data/separator-models
+      - /mnt/e/youdub-data/modelscope:/app/data/modelscope
+      - /mnt/e/youdub-data/separator-models:/app/data/separator-models
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -62,13 +62,13 @@ services:
         max-file: "3"
     networks:
       - youdub-network
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
 
   # ── Java 后端 ──────────────────────────────────────────
   backend:
@@ -92,8 +92,8 @@ services:
       - APP_YTDLP_PROXY_HOST=${YTDLP_PROXY_HOST:-}
       - APP_YTDLP_PROXY_PORT=${YTDLP_PROXY_PORT:-}
     volumes:
-      - ./data/backend:/app/data
-      - ./data/workfolder:/app/workfolder
+      - /mnt/e/youdub-data/backend:/app/data
+      - /mnt/e/youdub-data/workfolder:/app/workfolder
     depends_on:
       - python-services
     restart: unless-stopped
