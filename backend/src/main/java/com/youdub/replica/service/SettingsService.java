@@ -10,6 +10,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
+import com.youdub.replica.util.Command;
+import com.youdub.replica.util.CommandResult;
+import com.youdub.replica.util.CommandRunner;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -22,6 +25,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * 设置服务。
@@ -64,11 +68,16 @@ public class SettingsService {
             if (p.getTts() != null) settingsRepository.set("tts.provider", p.getTts());
             if (p.getTranslate() != null) settingsRepository.set("translate.provider", p.getTranslate());
             if (p.getSeparate() != null) settingsRepository.set("separate.provider", p.getSeparate());
+        }
 
-            if (p.getProviderConfigs() != null) {
-                for (Map.Entry<String, String> entry : p.getProviderConfigs().entrySet()) {
-                    settingsRepository.set(entry.getKey(), entry.getValue());
-                }
+        // 保存 provider 配置（优先取顶层 providerConfigs，兼容前端实际发送结构）
+        Map<String, String> configs = request.getProviderConfigs();
+        if (configs == null && request.getProviders() != null) {
+            configs = request.getProviders().getProviderConfigs();
+        }
+        if (configs != null) {
+            for (Map.Entry<String, String> entry : configs.entrySet()) {
+                settingsRepository.set(entry.getKey(), entry.getValue());
             }
         }
 
@@ -128,6 +137,37 @@ public class SettingsService {
             log.error("获取模型列表失败：{}", e.getMessage());
             throw new RuntimeException("获取模型列表失败：" + e.getMessage());
         }
+    }
+
+    /**
+     * 调用 edge-tts 列出可用音色，过滤出中文音色（zh-CN, zh-HK, zh-TW）。
+     *
+     * @return 中文音色名称列表（如 ["zh-CN-XiaoxiaoNeural", ...]）
+     */
+    public List<String> getEdgeTtsVoices() {
+        String edgePath = settingsRepository.get("tts.edge-tts.path", appProperties.getTts().getEdgeTts().getPath());
+        if (edgePath == null || edgePath.isBlank()) {
+            edgePath = "edge-tts";
+        }
+
+        CommandResult result = CommandRunner.run(Command.builder()
+                .add(edgePath, "--list-voices")
+                .timeout(30_000)
+                .maxOutputLines(-1)
+                .throwOnNonZero(false)
+                .build());
+
+        if (result.exitCode() != 0) {
+            log.warn("edge-tts --list-voices 退出码非零：{}", result.exitCode());
+            return List.of();
+        }
+
+        return result.lines().stream()
+                .skip(2) // 跳过表头
+                .filter(line -> !line.isBlank() && !line.startsWith("---"))
+                .map(line -> line.split("\\s+")[0]) // 取第一列（音色名称）
+                .filter(name -> name.startsWith("zh-"))
+                .collect(Collectors.toList());
     }
 
     /**

@@ -46,7 +46,8 @@ services:
       # ── General ────────────────────────
       - CUDA_DEVICE=${CUDA_DEVICE:-}
       - SERVICE_PORT=8001
-      - HF_ENDPOINT=https://hf-mirror.com
+      # HF_ENDPOINT配置可能会报错
+      #- HF_ENDPOINT=https://hf-mirror.com
       - HF_HUB_OFFLINE=0
       - HTTP_PROXY=http://dengwei.local:7890
       - HTTPS_PROXY=http://dengwei.local:7890

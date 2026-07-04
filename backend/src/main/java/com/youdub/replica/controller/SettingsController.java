@@ -39,4 +39,10 @@ public class SettingsController {
         List<String> models = settingsService.getOpenAiModels(request.getBaseUrl(), request.getApiKey());
         return Map.of("models", models);
     }
+
+    @GetMapping("/edge-tts/voices")
+    public Map<String, List<String>> listEdgeTtsVoices() {
+        List<String> voices = settingsService.getEdgeTtsVoices();
+        return Map.of("voices", voices);
+    }
 }

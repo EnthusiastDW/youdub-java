@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { ArrowLeft, Save, Loader2, CheckCircle2 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
@@ -10,13 +10,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useI18n } from "@/i18n/index";
-import { getSettings, saveSettings } from "@/api/client";
+import { getSettings, saveSettings, getEdgeTtsVoices } from "@/api/client";
 import { formatDateTime, formatFileSize } from "@/lib/utils";
 import type { ProvidersData, Settings, SettingsRequest } from "@/types";
 
 type SectionKey = "translate" | "tts" | "asr" | "separate";
 
-type FieldType = "text" | "password" | "number";
+type FieldType = "text" | "password" | "number" | "select";
 
 interface FieldDef {
   key: string;
@@ -39,7 +39,7 @@ const PROVIDER_FIELDS: Record<string, Record<string, FieldDef[]>> = {
   tts: {
     "edge-tts": [
       { key: "path", type: "text" },
-      { key: "voice", type: "text" },
+      { key: "voice", type: "select" },
     ],
     "openai-tts": [
       { key: "url", type: "text" },
@@ -83,6 +83,7 @@ function ProviderCard({
   onProviderChange,
   configValues,
   onConfigChange,
+  selectOptions,
   t,
 }: {
   sectionKey: SectionKey;
@@ -91,6 +92,7 @@ function ProviderCard({
   onProviderChange: (value: string) => void;
   configValues: Record<string, string>;
   onConfigChange: (key: string, value: string) => void;
+  selectOptions?: Record<string, string[]>;
   t: Record<string, string>;
 }) {
   const fields = PROVIDER_FIELDS[sectionKey]?.[current] ?? [];
@@ -128,7 +130,26 @@ function ProviderCard({
                   <Label htmlFor={configKey} className="text-xs">
                     {t[field.key] || field.key}
                   </Label>
-                  {field.type === "number" ? (
+                  {field.type === "select" ? (
+                    <div className="relative">
+                      <select
+                        id={configKey}
+                        value={value}
+                        onChange={(e) => onConfigChange(configKey, e.target.value)}
+                        className="flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {selectOptions?.[configKey]?.length ? (
+                          selectOptions[configKey].map((opt) => (
+                            <option key={opt} value={opt}>
+                              {opt}
+                            </option>
+                          ))
+                        ) : (
+                          <option value={value}>{value}</option>
+                        )}
+                      </select>
+                    </div>
+                  ) : field.type === "number" ? (
                     <Input
                       id={configKey}
                       type="number"
@@ -168,8 +189,15 @@ export default function SettingsPage() {
   const [asrProvider, setAsrProvider] = useState("whisper-api");
   const [separateProvider, setSeparateProvider] = useState("audio-separator-api");
 
+  // Edge TTS voice options
+  const [edgeTtsVoices, setEdgeTtsVoices] = useState<string[]>([]);
+  const [edgeTtsVoicesLoading, setEdgeTtsVoicesLoading] = useState(false);
+
   // Provider config values (key format: "step.provider.field")
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
+  // ref 始终指向最新 configValues，避免 handleSave 闭包拿到旧值
+  const configValuesRef = useRef(configValues);
+  configValuesRef.current = configValues;
 
   // Proxy (savable)
   const [proxy, setProxy] = useState("");
@@ -222,6 +250,26 @@ export default function SettingsPage() {
     };
   }, []);
 
+  // Fetch edge-tts voices when the TTS provider is edge-tts
+  useEffect(() => {
+    if (ttsProvider !== "edge-tts") return;
+    let mounted = true;
+    setEdgeTtsVoicesLoading(true);
+    (async () => {
+      try {
+        const data = await getEdgeTtsVoices();
+        if (mounted) {
+          setEdgeTtsVoices(data.voices);
+        }
+      } catch {
+        // If edge-tts is not installed or fails, keep empty list so UI falls back gracefully
+      } finally {
+        if (mounted) setEdgeTtsVoicesLoading(false);
+      }
+    })();
+    return () => { mounted = false; };
+  }, [ttsProvider]);
+
   const handleConfigChange = (key: string, value: string) => {
     setConfigValues((prev) => ({ ...prev, [key]: value }));
   };
@@ -243,7 +291,8 @@ export default function SettingsPage() {
         const fields = PROVIDER_FIELDS[step]?.[provider] ?? [];
         for (const field of fields) {
           const key = `${step}.${provider}.${field.key}`; // format: "asr.whisper-api.baseUrl"
-          const value = configValues[key] ?? "";
+          // 使用 ref 读取最新值，避免闭包拿到旧渲染的 configValues
+          const value = configValuesRef.current[key] ?? "";
           // 密码字段为空时不发送，避免覆盖已保存在 DB 中的 key
           if (field.type === "password" && value === "") continue;
           providerConfigs[key] = value;
@@ -325,6 +374,9 @@ export default function SettingsPage() {
           onProviderChange={setTtsProvider}
           configValues={configValues}
           onConfigChange={handleConfigChange}
+          selectOptions={{
+            "tts.edge-tts.voice": edgeTtsVoices,
+          }}
           t={t.settings}
         />
 

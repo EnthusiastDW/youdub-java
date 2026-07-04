@@ -154,6 +154,10 @@ export function getOpenAIModels(baseUrl: string, apiKey: string) {
   });
 }
 
+export function getEdgeTtsVoices() {
+  return request<{ voices: string[] }>("/api/settings/edge-tts/voices");
+}
+
 export function getHealth() {
   return request<HealthResponse>("/api/health");
 }

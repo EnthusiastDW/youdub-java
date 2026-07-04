@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
+import com.youdub.replica.repository.SettingsRepository;
 import com.youdub.replica.util.Command;
 import com.youdub.replica.util.CommandRunner;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +36,7 @@ public class EdgeTtsProvider implements TtsProvider {
 
     private final ObjectMapper objectMapper;
     private final AppProperties.Tts.EdgeTts edgeTtsConfig;
+    private final SettingsRepository settingsRepository;
 
     @Qualifier("virtualExecutor")
     private final ExecutorService virtualExecutor;
@@ -54,7 +56,8 @@ public class EdgeTtsProvider implements TtsProvider {
         Files.createDirectories(ttsDir);
 
         String edgePath = edgeTtsConfig.getPath();
-        String voice = edgeTtsConfig.getVoice();
+        // 优先读取用户通过设置页面保存的音色，未设置时回退到配置文件默认值
+        String voice = settingsRepository.get("tts.edge-tts.voice", edgeTtsConfig.getVoice());
         String useVoice = (voice == null || voice.isBlank()) ? DEFAULT_VOICE : voice;
 
         // 读取翻译结果
