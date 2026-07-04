@@ -150,24 +150,29 @@ public class SettingsService {
             edgePath = "edge-tts";
         }
 
-        CommandResult result = CommandRunner.run(Command.builder()
-                .add(edgePath, "--list-voices")
-                .timeout(30_000)
-                .maxOutputLines(-1)
-                .throwOnNonZero(false)
-                .build());
+        try {
+            CommandResult result = CommandRunner.run(Command.builder()
+                    .add(edgePath, "--list-voices")
+                    .timeout(30_000)
+                    .maxOutputLines(-1)
+                    .throwOnNonZero(false)
+                    .build());
 
-        if (result.exitCode() != 0) {
-            log.warn("edge-tts --list-voices 退出码非零：{}", result.exitCode());
+            if (result.exitCode() != 0) {
+                log.warn("edge-tts --list-voices 退出码非零：{}", result.exitCode());
+                return List.of();
+            }
+
+            return result.lines().stream()
+                    .skip(2) // 跳过表头
+                    .filter(line -> !line.isBlank() && !line.startsWith("---"))
+                    .map(line -> line.split("\\s+")[0]) // 取第一列（音色名称）
+                    .filter(name -> name.startsWith("zh-"))
+                    .collect(Collectors.toList());
+        } catch (Exception e) {
+            log.warn("获取 edge-tts 音色列表失败（edge-tts 可能未安装）：{}", e.getMessage());
             return List.of();
         }
-
-        return result.lines().stream()
-                .skip(2) // 跳过表头
-                .filter(line -> !line.isBlank() && !line.startsWith("---"))
-                .map(line -> line.split("\\s+")[0]) // 取第一列（音色名称）
-                .filter(name -> name.startsWith("zh-"))
-                .collect(Collectors.toList());
     }
 
     /**

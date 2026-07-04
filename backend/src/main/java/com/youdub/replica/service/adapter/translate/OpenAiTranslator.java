@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
+import com.youdub.replica.repository.SettingsRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -37,6 +38,7 @@ public class OpenAiTranslator extends AbstractTranslator {
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final AppProperties.Translate.Openai config;
+    private final SettingsRepository settingsRepository;
 
     @Qualifier("virtualExecutor")
     private final ExecutorService virtualExecutor;
@@ -59,8 +61,9 @@ public class OpenAiTranslator extends AbstractTranslator {
             return;
         }
 
-        String apiKey = config.getApiKey();
-        String chatUrl = config.getChatUrl();
+        // 优先读取用户通过设置页面保存的值，未设置时回退到配置文件默认值
+        String apiKey = settingsRepository.get("translate.openai.apiKey", config.getApiKey());
+        String chatUrl = settingsRepository.get("translate.openai.chatUrl", config.getChatUrl());
         String useModel = config.getModel();
         int useConcurrency = config.getConcurrency() <= 0 ? 1 : config.getConcurrency();
 
