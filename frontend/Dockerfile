@@ -4,8 +4,8 @@
 FROM node:22-alpine AS build
 WORKDIR /app
 
-COPY package.json package-lock.json ./
-RUN npm ci --ignore-scripts
+COPY package.json ./
+RUN npm install --ignore-scripts
 
 COPY tsconfig.json tsconfig.app.json tsconfig.node.json vite.config.ts vitest.config.ts postcss.config.js ./
 COPY index.html ./

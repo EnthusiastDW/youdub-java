@@ -6,21 +6,13 @@
 FROM python:3.11-slim
 
 # -----------------------------------------------------------
-# System Dependencies
+# update太慢，分开使其有缓存
 # -----------------------------------------------------------
-RUN apt-get update && \
+RUN apt-get update
+
+RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get install -y --no-install-recommends \
         ffmpeg \
-        gcc \
-        g++ \
-        pkg-config \
-        libavformat-dev \
-        libavcodec-dev \
-        libavdevice-dev \
-        libavutil-dev \
-        libswscale-dev \
-        libswresample-dev \
-        git \
         libgomp1 \
         libopenblas0 \
         && \

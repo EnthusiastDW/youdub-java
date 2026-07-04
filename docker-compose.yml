@@ -12,7 +12,7 @@ services:
     image: youdub-python-services:latest
     container_name: youdub-python-services
     ports:
-      - "8002:8001"
+      - "8001:8001"
     environment:
       # ── Audio Separator ────────────────────────────────
       - SEPARATOR_MODEL=${SEPARATOR_MODEL:-UVR-MDX-NET-Inst_HQ_3.onnx}

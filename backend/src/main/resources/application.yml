@@ -13,8 +13,8 @@ spring:
       schema-locations: classpath:schema.sql
   servlet:
     multipart:
-      max-file-size: 4GB
-      max-request-size: 4GB
+      max-file-size: 4096MB
+      max-request-size: 4096MB
 
 app:
   workfolder: ${APP_WORKFOLDER:workfolder}
@@ -23,7 +23,6 @@ app:
   log-dir: ${APP_LOG_DIR:data/logs}
   db-path: ${APP_DB_PATH:./data/youdub.sqlite}
   device: ${APP_DEVICE:auto}
-  cors-allow-origins: ${APP_CORS_ORIGINS:http://localhost:5173}
   upload-max-bytes: ${APP_UPLOAD_MAX_BYTES:4294967296}
   subtitle-max-bytes: ${APP_SUBTITLE_MAX_BYTES:20971520}
 

@@ -3,17 +3,20 @@
 # ============================================================
 FROM maven:3.9-eclipse-temurin-21 AS build
 WORKDIR /app
-COPY pom.xml .
-RUN mvn dependency:go-offline -B
+
+COPY settings.xml pom.xml ./
+RUN mvn -s settings.xml dependency:go-offline -B
 
 COPY src/ src/
-RUN mvn package -DskipTests -B
+RUN mvn -s settings.xml package -DskipTests -B
 
 # ── Runtime ────────────────────────────────────────────────
 FROM eclipse-temurin:21-jre
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update
+
+Run apt-get install -y --no-install-recommends \
     curl \
     ffmpeg \
     yt-dlp \

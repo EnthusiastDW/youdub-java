@@ -19,7 +19,6 @@ public class AppProperties {
     private String logDir;
     private String dbPath;
     private String device;
-    private String corsAllowOrigins;
     private long uploadMaxBytes;
     private long subtitleMaxBytes;
 

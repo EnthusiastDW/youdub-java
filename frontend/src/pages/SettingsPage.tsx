@@ -198,7 +198,7 @@ export default function SettingsPage() {
         if (data.providers) {
           for (const [step, group] of Object.entries(data.providers)) {
             for (const [provider, fields] of Object.entries(group.options)) {
-              for (const [field, value] of Object.entries(fields)) {
+              for (const [field, value] of Object.entries(fields as Record<string, string>)) {
                 initialConfigs[`${step}.${provider}.${field}`] = value;
               }
             }
