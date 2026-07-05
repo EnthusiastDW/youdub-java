@@ -26,7 +26,7 @@ RUN apt-get install -y --no-install-recommends \
         python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --no-cache-dir --break-system-packages --upgrade pip setuptools wheel \
+RUN pip3 install --no-cache-dir --break-system-packages --upgrade --ignore-installed  pip setuptools wheel \
     && pip3 install --no-cache-dir --break-system-packages --upgrade --ignore-installed yt-dlp edge-tts
 
 RUN mkdir -p /app/data/cookies /app/data/logs /app/workfolder
