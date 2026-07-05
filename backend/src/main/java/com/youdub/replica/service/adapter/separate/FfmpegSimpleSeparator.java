@@ -1,8 +1,10 @@
 package com.youdub.replica.service.adapter.separate;
 
 import com.youdub.replica.model.entity.Task;
+import com.youdub.replica.service.adapter.AdapterSkipTracker;
 import com.youdub.replica.util.Command;
 import com.youdub.replica.util.CommandRunner;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
@@ -15,18 +17,24 @@ import java.util.List;
 
 /**
  * FFmpeg 简易人声分离适配器。
- * 使用 FFmpeg 的 highpass/lowpass 滤镜进行简单的频率分离。
+ *
+ * 使用 FFmpeg 的 highpass 滤镜进行频率滤波，仅提取人声（≥200Hz）。
+ * 不生成 BGM（背景音乐），因为纯频率分割产生的 BGM 噪声很大，
+ * 混入后会严重降低配音质量。下游在无 BGM 文件时会自动跳过混音。
+ *
+ * 如需带 BGM 的完整分离效果，请使用 Demucs（AI 模型）或 audio-separator-api（Docker 服务）。
  */
 @Slf4j
 @Component(FFMPEG_SIMPLE)
+@RequiredArgsConstructor
 public class FfmpegSimpleSeparator extends BaseSourceSeparator {
 
     private static final long TIMEOUT_MS = 120_000L;
 
+    private final AdapterSkipTracker skipTracker;
+
     @Override
     public void separate(Task task, Path audioPath, Path outputDir, String device) throws Exception {
-        long tTotal = System.currentTimeMillis();
-
         if (audioPath == null || !Files.exists(audioPath)) {
             throw new IllegalArgumentException("音频文件不存在：" + audioPath);
         }
@@ -36,10 +44,11 @@ public class FfmpegSimpleSeparator extends BaseSourceSeparator {
 
         Files.createDirectories(outputDir);
 
+        long tTotal = System.currentTimeMillis();
         Path vocalsOut = outputDir.resolve("audio_vocals.wav");
-        Path bgmOut = outputDir.resolve("audio_bgm.wav");
-        if (Files.exists(vocalsOut) && Files.exists(bgmOut)) {
-            log.info("分离结果已存在，跳过：{}", outputDir);
+        if (Files.exists(vocalsOut)) {
+            log.info("人声分离结果已存在，跳过：{}", outputDir);
+            skipTracker.markSkipped();
             return;
         }
 
@@ -60,28 +69,17 @@ public class FfmpegSimpleSeparator extends BaseSourceSeparator {
         CommandRunner.run(Command.builder().add(vocalsCmd).timeout(TIMEOUT_MS).workDir(outputDir).build());
         log.info("人声过滤完成：task={}, duration={}ms, output={}", task.getId(), System.currentTimeMillis() - t0, vocalsOut);
 
-        t0 = System.currentTimeMillis();
-        List<String> bgmCmd = new ArrayList<>();
-        bgmCmd.add("ffmpeg");
-        bgmCmd.add("-i");
-        bgmCmd.add(wavPath.toString());
-        bgmCmd.add("-af");
-        bgmCmd.add("lowpass=f=300");
-        bgmCmd.add("-y");
-        bgmCmd.add(bgmOut.toString());
-
-        log.info("FFmpeg 提取背景音乐：task={}", task.getId());
-        CommandRunner.run(Command.builder().add(bgmCmd).timeout(TIMEOUT_MS).workDir(outputDir).build());
-        log.info("背景音乐过滤完成：task={}, duration={}ms, output={}", task.getId(), System.currentTimeMillis() - t0, bgmOut);
+        // 不生成 BGM：FFmpeg 频率滤波（lowpass）产生的 BGM 噪声大、质量差，
+        // 混入后会破坏配音效果。直接输出 vocals-only，下游会自动跳过混音。
+        // 如需高质量 BGM，请选择 Demucs 或 audio-separator-api。
 
         if (isTemp) {
             Files.deleteIfExists(wavPath);
         }
 
         long vocalSize = Files.size(vocalsOut);
-        long bgmSize = Files.size(bgmOut);
-        log.info("FFmpeg 分离完成：task={}, total={}ms, vocals={}MB, bgm={}MB",
+        log.info("FFmpeg 分离完成：task={}, total={}ms, vocals={}MB（不生成 BGM）",
                 task.getId(), System.currentTimeMillis() - tTotal,
-                vocalSize / (1024 * 1024), bgmSize / (1024 * 1024));
+                vocalSize / (1024 * 1024));
     }
 }

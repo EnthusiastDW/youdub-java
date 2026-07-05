@@ -10,6 +10,7 @@ import com.youdub.replica.model.enums.StageStatus;
 import com.youdub.replica.model.enums.TaskStatus;
 import com.youdub.replica.repository.SettingsRepository;
 import com.youdub.replica.repository.TaskRepository;
+import com.youdub.replica.service.adapter.AdapterSkipTracker;
 import com.youdub.replica.service.adapter.asr.SpeechRecognizer;
 import com.youdub.replica.service.adapter.audio.AudioProcessor;
 import com.youdub.replica.service.adapter.download.Downloader;
@@ -18,8 +19,6 @@ import com.youdub.replica.service.adapter.translate.Translator;
 import com.youdub.replica.service.adapter.tts.TtsProvider;
 import com.youdub.replica.service.adapter.video.VideoProcessor;
 import com.youdub.replica.util.DeviceResolver;
-
-import static com.youdub.replica.service.adapter.AdapterConstants.*;
 import com.youdub.replica.util.TaskDirResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,11 +29,12 @@ import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+
+import static com.youdub.replica.service.adapter.AdapterConstants.*;
 
 /**
  * 管线编排器。
@@ -64,6 +64,7 @@ public class PipelineOrchestrator {
     private final Map<String, TtsProvider> ttsProviders;
     private final Map<String, AudioProcessor> audioProcessors;
     private final Map<String, VideoProcessor> videoProcessors;
+    private final AdapterSkipTracker skipTracker;
 
     /**
      * 重跑/重做时的阶段时间戳备份（taskId -> {stageName -> [startedAt, completedAt]}）。
@@ -127,7 +128,6 @@ public class PipelineOrchestrator {
                 }
 
                 taskRepository.updateField(taskId, "current_stage", stage.name);
-                long ranAt = System.currentTimeMillis();
                 taskRepository.updateStageStatus(taskId, stage.name, StageStatus.RUNNING, 0, "");
                 double stageProgressBase = (STAGES.indexOf(stage) * 100.0) / STAGES.size();
                 taskRepository.updateStatus(taskId, TaskStatus.RUNNING, stageProgressBase);
@@ -136,8 +136,11 @@ public class PipelineOrchestrator {
                     executeStage(stage.name, task, sessionDir);
                     taskRepository.updateStageStatus(taskId, stage.name, StageStatus.SUCCEEDED, 100, "");
 
-                    // 如果 stage 极短时间完成（adapter 缓存命中跳过实际工作），恢复原始时间戳
-                    restoreStageTimestampsIfSkipped(taskId, stage.name, ranAt);
+                    // adapter 显式标记跳过 → 恢复原始时间戳
+                    if (skipTracker.isSkipped()) {
+                        restoreStageTimestampsIfSkipped(taskId, stage.name);
+                    }
+                    skipTracker.clear();
 
                     double overallProgress = ((STAGES.indexOf(stage) + 1) * 100.0) / STAGES.size();
                     taskRepository.updateStatus(taskId, TaskStatus.RUNNING, overallProgress);
@@ -170,6 +173,7 @@ public class PipelineOrchestrator {
             taskRepository.updateField(taskId, "error_message", e.getMessage());
             taskRepository.updateField(taskId, "completed_at", nowIso());
         } finally {
+            skipTracker.clear();
             stageTimestampsBackup.remove(taskId);
         }
     }
@@ -242,6 +246,7 @@ public class PipelineOrchestrator {
         Path fixedFile = sessionDir.resolve("metadata").resolve("asr_fixed.json");
         if (Files.exists(fixedFile)) {
             log.info("asr_fixed 已存在，跳过：{}", fixedFile);
+            skipTracker.markSkipped();
             return;
         }
         if (!Files.exists(asrFile)) {
@@ -320,15 +325,10 @@ public class PipelineOrchestrator {
     }
 
     /**
-     * 阶段执行完后检查：如果极短时间完成（<2s，通常是 adapter 缓存命中跳过实际工作），
+     * 阶段执行完后检查：如果 adapter 显式标记跳过（输出文件已存在），
      * 且备份中有该阶段的原始时间戳，则恢复之，保留上次的耗时数据。
      */
-    private void restoreStageTimestampsIfSkipped(String taskId, String stageName, long ranAt) {
-        long elapsed = System.currentTimeMillis() - ranAt;
-        if (elapsed >= 2_000) {
-            return;
-        }
-
+    private void restoreStageTimestampsIfSkipped(String taskId, String stageName) {
         Map<String, String[]> backup = stageTimestampsBackup.get(taskId);
         if (backup == null) {
             return;
@@ -339,7 +339,7 @@ public class PipelineOrchestrator {
             return;
         }
 
-        log.info("阶段 {} 耗时仅 {}ms（缓存命中），恢复原始时间戳", stageName, elapsed);
+        log.info("阶段 {} 缓存命中，恢复原始时间戳", stageName);
         taskRepository.updateStageTimestamps(taskId, stageName, orig[0], orig[1]);
     }
 

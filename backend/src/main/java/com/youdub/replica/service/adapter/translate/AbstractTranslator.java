@@ -1,6 +1,8 @@
 package com.youdub.replica.service.adapter.translate;
 
+import com.youdub.replica.service.adapter.AdapterSkipTracker;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -9,6 +11,9 @@ import java.util.List;
 
 @Slf4j
 public abstract class AbstractTranslator implements Translator {
+
+    @Autowired
+    protected AdapterSkipTracker skipTracker;
 
     protected record Utterance(String text, long startTime, long endTime, String speaker) {
     }
@@ -27,6 +32,7 @@ public abstract class AbstractTranslator implements Translator {
         Path summaryFile = outputDir.resolve("summary.md");
         if (Files.exists(summaryFile)) {
             log.info("summary.md 已存在，跳过：{}", summaryFile);
+            skipTracker.markSkipped();
             return;
         }
         if (fullText == null || fullText.isBlank()) {

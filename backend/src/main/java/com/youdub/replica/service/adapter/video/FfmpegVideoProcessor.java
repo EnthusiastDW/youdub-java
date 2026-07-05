@@ -6,6 +6,7 @@ import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.repository.TaskRepository;
 import com.youdub.replica.service.SettingsService;
+import com.youdub.replica.service.adapter.AdapterSkipTracker;
 import com.youdub.replica.util.Command;
 import com.youdub.replica.util.CommandRunner;
 import lombok.RequiredArgsConstructor;
@@ -50,6 +51,7 @@ public class FfmpegVideoProcessor implements VideoProcessor {
     private final ObjectMapper objectMapper;
     private final SettingsService settingsService;
     private final TaskRepository taskRepository;
+    private final AdapterSkipTracker skipTracker;
 
     /**
      * Auto-detect the best available video encoder.
@@ -76,7 +78,7 @@ public class FfmpegVideoProcessor implements VideoProcessor {
                 }
             }
             videoEncoder = "libx264";
-            encoderArgs = List.of("-preset", "fast", "-crf", "23");
+            encoderArgs = List.of("-preset", "veryfast", "-crf", "23");
             log.info("编码器配置 {} 不识别，回退 libx264", override);
             return videoEncoder;
         }
@@ -84,7 +86,7 @@ public class FfmpegVideoProcessor implements VideoProcessor {
         String ffmpegPath = config.getPath();
         if (ffmpegPath == null || ffmpegPath.isBlank()) {
             videoEncoder = "libx264";
-            encoderArgs = List.of("-preset", "fast", "-crf", "23");
+            encoderArgs = List.of("-preset", "veryfast", "-crf", "23");
             return videoEncoder;
         }
 
@@ -113,7 +115,7 @@ public class FfmpegVideoProcessor implements VideoProcessor {
 
         log.info("未检测到硬件编码器，使用 libx264 软件编码");
         videoEncoder = "libx264";
-        encoderArgs = List.of("-preset", "fast", "-crf", "23");
+        encoderArgs = List.of("-preset", "veryfast", "-crf", "23");
         return videoEncoder;
     }
 
@@ -215,6 +217,7 @@ public class FfmpegVideoProcessor implements VideoProcessor {
         if (Files.exists(finalVideo) && Files.size(finalVideo) > 0) {
             log.info("最终视频已存在，跳过：{}", finalVideo);
             taskRepository.updateField(task.getId(), "final_video_path", finalVideo.toAbsolutePath().toString());
+            skipTracker.markSkipped();
             return;
         }
 
@@ -236,6 +239,9 @@ public class FfmpegVideoProcessor implements VideoProcessor {
         }
 
         // 步骤3：合成最终视频
+        ensureEncoder();
+        boolean isSoftware = "libx264".equals(videoEncoder);
+
         List<String> command = new ArrayList<>();
         command.add(ffmpegPath);
         command.add("-y");
@@ -244,22 +250,47 @@ public class FfmpegVideoProcessor implements VideoProcessor {
         command.add("-i");
         command.add(mixedAudio.toString());
 
-        if (Files.exists(srtFile)) {
-            // 字幕滤镜：用相对路径（避免 Windows 盘符冒号冲突），显式 filename= 语法
-            command.add("-vf");
-            command.add("subtitles=filename='subtitles.srt':force_style='FontName=Arial,FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1'");
+        boolean hasSrt = Files.exists(srtFile);
+        if (hasSrt) {
+            if (isSoftware) {
+                // 软字幕（独立流）：避免软件重编码带来的 CPU/内存开销
+                command.add("-i");
+                command.add(srtFile.toString());
+            } else {
+                // 硬字幕（烧入画面）：硬件编码场景下保留，用相对路径避免 Windows 冒号冲突
+                command.add("-vf");
+                command.add("subtitles=filename='subtitles.srt':force_style='FontName=Arial,FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1'");
+            }
         }
 
         command.add("-map");
         command.add("0:v:0");
         command.add("-map");
         command.add("1:a:0");
-        ensureEncoder();
-        command.add("-c:v");
-        command.add(videoEncoder);
-        command.addAll(encoderArgs);
+
+        if (hasSrt && isSoftware) {
+            command.add("-map");
+            command.add("2");
+        }
+
+        if (isSoftware) {
+            // 直接拷贝视频流，不解码不重编码，内存占用极低
+            command.add("-c:v");
+            command.add("copy");
+        } else {
+            command.add("-c:v");
+            command.add(videoEncoder);
+            command.addAll(encoderArgs);
+        }
+
         command.add("-c:a");
         command.add("aac");
+
+        if (hasSrt && isSoftware) {
+            command.add("-c:s");
+            command.add("mov_text");
+        }
+
         command.add("-movflags");
         command.add("+faststart");
         command.add("-shortest");

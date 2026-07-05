@@ -119,6 +119,10 @@ function ProviderCard({
           </Select>
         </div>
 
+        {sectionKey === "separate" && current === "ffmpeg-simple" && (
+          <p className="text-xs text-muted-foreground">{t.separateFfmpegNote}</p>
+        )}
+
         {/* Editable Fields */}
         {fields.length > 0 && (
           <div className="space-y-3">

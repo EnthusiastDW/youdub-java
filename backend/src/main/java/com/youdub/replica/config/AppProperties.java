@@ -107,6 +107,7 @@ public class AppProperties {
         private String provider;
         private Demucs demucs = new Demucs();
         private AudioSeparatorApi audioSeparatorApi = new AudioSeparatorApi();
+        private FfmpegSimple ffmpegSimple = new FfmpegSimple();
 
         @Data
         public static class Demucs {
@@ -116,6 +117,10 @@ public class AppProperties {
         @Data
         public static class AudioSeparatorApi {
             private String serviceUrl;
+        }
+
+        @Data
+        public static class FfmpegSimple {
         }
     }
 

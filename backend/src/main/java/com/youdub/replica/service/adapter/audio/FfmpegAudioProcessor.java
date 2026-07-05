@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.service.SettingsService;
+import com.youdub.replica.service.adapter.AdapterSkipTracker;
 import com.youdub.replica.util.BinaryResult;
 import com.youdub.replica.util.Command;
 import com.youdub.replica.util.CommandResult;
@@ -50,6 +51,7 @@ public class FfmpegAudioProcessor implements AudioProcessor {
 
     private final ObjectMapper objectMapper;
     private final SettingsService settingsService;
+    private final AdapterSkipTracker skipTracker;
 
     @Override
     public void splitAudio(Task task, Path vocalsPath, Path translationPath, Path outputDir) throws Exception {
@@ -126,6 +128,7 @@ public class FfmpegAudioProcessor implements AudioProcessor {
         Path timingsFile = outputDir.resolve("timings.json");
         if (Files.exists(dubbingFile) && Files.exists(timingsFile)) {
             log.info("合并结果已存在，跳过：{}", dubbingFile);
+            skipTracker.markSkipped();
             return;
         }
 

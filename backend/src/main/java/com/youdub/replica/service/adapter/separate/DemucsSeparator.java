@@ -2,6 +2,7 @@ package com.youdub.replica.service.adapter.separate;
 
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
+import com.youdub.replica.service.adapter.AdapterSkipTracker;
 import com.youdub.replica.service.SettingsService;
 import com.youdub.replica.util.Command;
 import com.youdub.replica.util.CommandRunner;
@@ -28,6 +29,7 @@ public class DemucsSeparator extends BaseSourceSeparator {
     private static final long TIMEOUT_MS = 600_000L;
 
     private final SettingsService settingsService;
+    private final AdapterSkipTracker skipTracker;
 
     @Override
     public void separate(Task task, Path audioPath, Path outputDir, String device) throws Exception {
@@ -47,6 +49,7 @@ public class DemucsSeparator extends BaseSourceSeparator {
         Path bgmOut = outputDir.resolve("audio_bgm.wav");
         if (Files.exists(vocalsOut) && Files.exists(bgmOut)) {
             log.info("分离结果已存在，跳过：{}", outputDir);
+            skipTracker.markSkipped();
             return;
         }
         String model = settingsService.getProviderConfig(DEMUCS, AppProperties.Separate.Demucs.class).getModel();

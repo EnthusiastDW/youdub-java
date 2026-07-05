@@ -7,6 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.service.SettingsService;
+import com.youdub.replica.service.adapter.AdapterSkipTracker;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -44,6 +45,8 @@ public class OpenAiTranslator extends AbstractTranslator {
     @Qualifier("virtualExecutor")
     private final ExecutorService virtualExecutor;
 
+    private final AdapterSkipTracker skipTracker;
+
     @Override
     public void translate(Task task, Path asrPath, Path outputDir, String model, String srcLang, String dstLang) throws Exception {
         if (asrPath == null || !Files.exists(asrPath)) {
@@ -54,6 +57,7 @@ public class OpenAiTranslator extends AbstractTranslator {
         Path translationFile = outputDir.resolve("translation." + dstLang + ".json");
         if (Files.exists(translationFile)) {
             log.info("翻译结果已存在，跳过：{}", translationFile);
+            skipTracker.markSkipped();
             return;
         }
 

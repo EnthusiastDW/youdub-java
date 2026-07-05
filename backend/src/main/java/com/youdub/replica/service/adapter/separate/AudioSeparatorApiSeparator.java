@@ -2,6 +2,7 @@ package com.youdub.replica.service.adapter.separate;
 
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
+import com.youdub.replica.service.adapter.AdapterSkipTracker;
 import com.youdub.replica.service.SettingsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -36,6 +37,7 @@ public class AudioSeparatorApiSeparator extends BaseSourceSeparator {
 
     private final HttpClient httpClient;
     private final SettingsService settingsService;
+    private final AdapterSkipTracker skipTracker;
 
     @Override
     public void separate(Task task, Path audioPath, Path outputDir, String device) throws Exception {
@@ -52,8 +54,9 @@ public class AudioSeparatorApiSeparator extends BaseSourceSeparator {
 
         Path vocalsOut = outputDir.resolve("audio_vocals.wav");
         Path bgmOut = outputDir.resolve("audio_bgm.wav");
-        if (Files.exists(vocalsOut) && Files.exists(bgmOut)) {
+        if (Files.exists(vocalsOut)) {
             log.info("分离结果已存在，跳过：{}", outputDir);
+            skipTracker.markSkipped();
             return;
         }
 
