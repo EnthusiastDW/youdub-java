@@ -84,3 +84,25 @@ export function extractYoutubeVideoId(input: string): string | null {
 export function getYoutubeThumbnailUrl(videoId: string): string {
   return `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
 }
+
+/**
+ * 跨域下载图片（通过 fetch + blob 绕过 CORS 限制）。
+ * 如果 fetch 失败（网络问题或 CORS 拒绝），回退为新标签页打开。
+ */
+export async function downloadImage(url: string, filename: string): Promise<void> {
+  try {
+    const response = await fetch(url, { mode: "cors" });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const blob = await response.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(blobUrl);
+  } catch {
+    window.open(url, "_blank");
+  }
+}

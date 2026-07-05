@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { ArrowLeft, Play, RotateCcw, Trash2, Loader2, AlertCircle, Pencil, Check, X, Copy } from "lucide-react";
+import { ArrowLeft, Download, Play, RotateCcw, Trash2, Loader2, AlertCircle, Pencil, Check, X, Copy } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { StageProgress } from "@/components/StageProgress";
 import { LogViewer } from "@/components/LogViewer";
@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { useTask } from "@/hooks/useTask";
 import { useI18n } from "@/i18n/index";
 import { statusBadgeClass } from "@/lib/status";
-import { formatDateTime, getYoutubeThumbnailUrl } from "@/lib/utils";
+import { formatDateTime, getYoutubeThumbnailUrl, downloadImage } from "@/lib/utils";
 import { rerunTask, resumeTask, continueTask, deleteTask, redoStage, updateTaskNotes, updateTaskYoutubeVideoId, getTaskSummary, updateTaskSummary } from "@/api/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -258,7 +258,7 @@ export default function TaskDetailPage() {
 
               {/* Right: cover thumbnail (16:9, not stretching) */}
               {task.youtubeVideoId && (
-                <div className="w-48 shrink-0 sm:w-56">
+                <div className="group relative w-48 shrink-0 sm:w-56">
                   <img
                     src={getYoutubeThumbnailUrl(task.youtubeVideoId)}
                     alt="YouTube cover"
@@ -266,6 +266,14 @@ export default function TaskDetailPage() {
                     style={{ aspectRatio: "16 / 9" }}
                     onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                   />
+                  <button
+                    onClick={() => downloadImage(getYoutubeThumbnailUrl(task.youtubeVideoId!), "cover.jpg")}
+                    className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/0 text-white opacity-0 transition-all group-hover:bg-black/30 group-hover:opacity-100"
+                    style={{ aspectRatio: "16 / 9" }}
+                    title={t.task.downloadCover}
+                  >
+                    <Download className="h-6 w-6" />
+                  </button>
                 </div>
               )}
             </div>

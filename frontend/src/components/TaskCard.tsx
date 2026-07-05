@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Play, RotateCcw, Trash2, ArrowRight, AlertCircle } from "lucide-react";
+import { Download, Play, RotateCcw, Trash2, ArrowRight, AlertCircle } from "lucide-react";
 import type { Task } from "@/types";
 import { useI18n } from "@/i18n/index";
 import { Card, CardContent } from "@/components/ui/card";
@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button, buttonVariants } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { statusBadgeClass } from "@/lib/status";
-import { formatDateTime, getYoutubeThumbnailUrl } from "@/lib/utils";
+import { formatDateTime, getYoutubeThumbnailUrl, downloadImage } from "@/lib/utils";
 
 interface TaskCardProps {
   task: Task;
@@ -30,13 +30,20 @@ export function TaskCard({ task, onResume, onRerun, onDelete }: TaskCardProps) {
         <div className="flex gap-3 sm:gap-4">
           {/* Left: cover thumbnail */}
           {task.youtubeVideoId && !thumbError && (
-            <div className="w-28 shrink-0 self-stretch sm:w-44">
+            <div className="group relative w-28 shrink-0 self-stretch sm:w-44">
               <img
                 src={getYoutubeThumbnailUrl(task.youtubeVideoId)}
                 alt=""
                 className="h-full w-full rounded-lg object-cover"
                 onError={() => setThumbError(true)}
               />
+              <button
+                onClick={() => downloadImage(getYoutubeThumbnailUrl(task.youtubeVideoId!), "cover.jpg")}
+                className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/0 text-white opacity-0 transition-all group-hover:bg-black/30 group-hover:opacity-100"
+                title={t.task.downloadCover}
+              >
+                <Download className="h-5 w-5" />
+              </button>
             </div>
           )}
           {/* Right: task info */}
