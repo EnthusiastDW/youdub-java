@@ -21,6 +21,8 @@ RUN apt-get update
 RUN apt-get install -y --no-install-recommends \
         curl \
         ffmpeg \
+        nodejs \
+        npm \
         python3 \
         python3-pip \
         python3-venv \

@@ -240,7 +240,6 @@ public class FfmpegVideoProcessor implements VideoProcessor {
 
         // 步骤3：合成最终视频
         ensureEncoder();
-        boolean isSoftware = "libx264".equals(videoEncoder);
 
         List<String> command = new ArrayList<>();
         command.add(ffmpegPath);
@@ -252,15 +251,10 @@ public class FfmpegVideoProcessor implements VideoProcessor {
 
         boolean hasSrt = Files.exists(srtFile);
         if (hasSrt) {
-            if (isSoftware) {
-                // 软字幕（独立流）：避免软件重编码带来的 CPU/内存开销
-                command.add("-i");
-                command.add(srtFile.toString());
-            } else {
-                // 硬字幕（烧入画面）：硬件编码场景下保留，用相对路径避免 Windows 冒号冲突
-                command.add("-vf");
-                command.add("subtitles=filename='subtitles.srt':force_style='FontName=Arial,FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1'");
-            }
+            // 硬字幕（烧入画面）：所有编码器统一使用 subtitles filter
+            // 用相对路径避免 Windows 冒号冲突
+            command.add("-vf");
+            command.add("subtitles=filename='subtitles.srt':force_style='FontName=Arial,FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1'");
         }
 
         command.add("-map");
@@ -268,28 +262,12 @@ public class FfmpegVideoProcessor implements VideoProcessor {
         command.add("-map");
         command.add("1:a:0");
 
-        if (hasSrt && isSoftware) {
-            command.add("-map");
-            command.add("2");
-        }
-
-        if (isSoftware) {
-            // 直接拷贝视频流，不解码不重编码，内存占用极低
-            command.add("-c:v");
-            command.add("copy");
-        } else {
-            command.add("-c:v");
-            command.add(videoEncoder);
-            command.addAll(encoderArgs);
-        }
+        command.add("-c:v");
+        command.add(videoEncoder);
+        command.addAll(encoderArgs);
 
         command.add("-c:a");
         command.add("aac");
-
-        if (hasSrt && isSoftware) {
-            command.add("-c:s");
-            command.add("mov_text");
-        }
 
         command.add("-movflags");
         command.add("+faststart");
@@ -297,7 +275,7 @@ public class FfmpegVideoProcessor implements VideoProcessor {
         command.add(finalVideo.toString());
 
         log.info("合成最终视频：task={}, video={}", task.getId(), finalVideo);
-        CommandRunner.run(Command.builder().add(command).timeout(TIMEOUT_MS).workDir(outputDir).build());
+        CommandRunner.run(Command.builder().add(command).maxOutputLines(1000).timeout(TIMEOUT_MS).workDir(outputDir).build());
 
         if (!Files.exists(finalVideo)) {
             throw new RuntimeException("最终视频生成失败：" + finalVideo);
