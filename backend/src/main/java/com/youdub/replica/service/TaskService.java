@@ -79,11 +79,13 @@ public class TaskService {
         task.setTitle("");
         task.setStatus(TaskStatus.QUEUED);
         task.setExecutionMode(request.getExecutionMode() == null ? "auto" : request.getExecutionMode());
+        task.setNotes(request.getNotes() == null ? "" : request.getNotes());
         task.setSourceType(detectSourceType(request.getUrl()));
         task.setAsrLanguage(detectAsrLanguage(task.getSourceType()));
         task.setTargetLanguage(detectTargetLanguage(task.getSourceType()));
         task.setProgress(0.0);
         task.setCreatedAt(now());
+        task.setYoutubeVideoId(request.getYoutubeVideoId() == null ? "" : request.getYoutubeVideoId());
 
         taskRepository.insert(task);
         initStages(task.getId());
@@ -97,7 +99,7 @@ public class TaskService {
     /**
      * 上传本地视频创建任务。
      */
-    public TaskResponse uploadLocalVideo(MultipartFile file, String executionMode, String direction, MultipartFile subtitleFile) throws IOException {
+    public TaskResponse uploadLocalVideo(MultipartFile file, String executionMode, String direction, MultipartFile subtitleFile, String youtubeVideoId) throws IOException {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("上传文件不能为空");
         }
@@ -138,6 +140,7 @@ public class TaskService {
         task.setTargetLanguage(targetLang);
         task.setProgress(0.0);
         task.setCreatedAt(now());
+        task.setYoutubeVideoId(youtubeVideoId == null ? "" : youtubeVideoId);
 
         taskRepository.insert(task);
         initStages(task.getId());
@@ -177,15 +180,54 @@ public class TaskService {
     }
 
     /**
-     * 删除任务。
+     * 删除任务及所有相关文件。
      */
     public void deleteTask(String id) {
         Task task = taskRepository.findById(id);
         if (task == null) {
             throw new NoSuchElementException("任务不存在：" + id);
         }
+
+        // 1. 删除会话目录
+        if (task.getSessionPath() != null && !task.getSessionPath().isBlank()) {
+            deleteDirectory(Paths.get(task.getSessionPath()));
+        }
+
+        // 2. 删除上传目录
+        Path uploadDir = taskDirResolver.resolveUploadDir(id);
+        deleteDirectory(uploadDir);
+
+        // 3. 删除日志文件
+        Path logFile = Paths.get(appProperties.getLogDir(), "task-" + id + ".log");
+        try {
+            Files.deleteIfExists(logFile);
+        } catch (IOException e) {
+            log.warn("删除日志文件失败：{}", e.getMessage());
+        }
+
+        // 4. 删除数据库记录
         taskRepository.hardDelete(id);
-        log.info("删除任务：{}", id);
+        log.info("删除任务及所有关联文件：{} (session={})", id, task.getSessionPath());
+    }
+
+    private void deleteDirectory(Path dir) {
+        if (dir == null) return;
+        try {
+            if (Files.exists(dir)) {
+                Files.walk(dir)
+                        .sorted(java.util.Comparator.reverseOrder())
+                        .forEach(p -> {
+                            try {
+                                Files.deleteIfExists(p);
+                            } catch (IOException e) {
+                                log.warn("删除文件/目录失败：{}", p);
+                            }
+                        });
+                log.debug("已删除目录：{}", dir);
+            }
+        } catch (IOException e) {
+            log.warn("遍历删除目录失败：{}", e.getMessage());
+        }
     }
 
     /**
@@ -305,6 +347,74 @@ public class TaskService {
         } catch (IOException e) {
             log.warn("读取日志失败：{}", e.getMessage());
             return "";
+        }
+    }
+
+    /**
+     * 更新 YouTube 视频 ID。
+     */
+    public void updateYoutubeVideoId(String id, String youtubeVideoId) {
+        Task task = taskRepository.findById(id);
+        if (task == null) {
+            throw new NoSuchElementException("任务不存在：" + id);
+        }
+        taskRepository.updateField(id, "youtube_video_id", youtubeVideoId == null ? "" : youtubeVideoId);
+        log.info("更新 YouTube Video ID：task={}, youtubeVideoId={}", id, youtubeVideoId);
+    }
+
+    /**
+     * 更新任务备注。
+     */
+    public void updateNotes(String id, String notes) {
+        Task task = taskRepository.findById(id);
+        if (task == null) {
+            throw new NoSuchElementException("任务不存在：" + id);
+        }
+        taskRepository.updateField(id, "notes", notes == null ? "" : notes);
+        log.info("更新备注：task={}", id);
+    }
+
+    /**
+     * 获取视频摘要（从 session 目录读取 summary.md）。
+     */
+    public String getSummary(String id) {
+        Task task = taskRepository.findById(id);
+        if (task == null) {
+            throw new NoSuchElementException("任务不存在：" + id);
+        }
+        if (task.getSessionPath() == null || task.getSessionPath().isBlank()) {
+            return "";
+        }
+        Path summaryFile = Paths.get(task.getSessionPath(), "metadata", "summary.md");
+        if (!Files.exists(summaryFile)) {
+            return "";
+        }
+        try {
+            return Files.readString(summaryFile, StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            log.warn("读取摘要失败：{}", e.getMessage());
+            return "";
+        }
+    }
+
+    /**
+     * 更新视频摘要（写入 summary.md 文件）。
+     */
+    public void updateSummary(String id, String summary) {
+        Task task = taskRepository.findById(id);
+        if (task == null) {
+            throw new NoSuchElementException("任务不存在：" + id);
+        }
+        if (task.getSessionPath() == null || task.getSessionPath().isBlank()) {
+            throw new IllegalStateException("任务尚未初始化会话目录");
+        }
+        Path summaryFile = Paths.get(task.getSessionPath(), "metadata", "summary.md");
+        try {
+            Files.createDirectories(summaryFile.getParent());
+            Files.writeString(summaryFile, summary == null ? "" : summary, StandardCharsets.UTF_8);
+            log.info("更新摘要：task={}", id);
+        } catch (IOException e) {
+            throw new RuntimeException("写入摘要失败：" + e.getMessage(), e);
         }
     }
 

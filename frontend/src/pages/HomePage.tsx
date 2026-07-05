@@ -1,17 +1,15 @@
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Plus, Upload, Loader2 } from "lucide-react";
+import { Plus } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { TaskList } from "@/components/TaskList";
 import { CreateTaskDialog } from "@/components/CreateTaskDialog";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { DeleteTaskDialog } from "@/components/DeleteTaskDialog";
 import { Button } from "@/components/ui/button";
-import { Label } from "@/components/ui/label";
-import { Select } from "@/components/ui/select";
 import { useTasks } from "@/hooks/useTasks";
 import { useI18n } from "@/i18n/index";
-import { uploadLocalTask, rerunTask, resumeTask, deleteTask } from "@/api/client";
-import type { ExecutionMode, LocalDirection, Task } from "@/types";
+import { rerunTask, resumeTask, deleteTask } from "@/api/client";
+import type { Task } from "@/types";
 
 export default function HomePage() {
   const { t } = useI18n();
@@ -19,16 +17,8 @@ export default function HomePage() {
   const { tasks, loading, error, refresh } = useTasks(2000);
 
   const [dialogOpen, setDialogOpen] = useState(false);
-
-  // Upload state
-  const [videoFile, setVideoFile] = useState<File | null>(null);
-  const [subtitleFile, setSubtitleFile] = useState<File | null>(null);
-  const [direction, setDirection] = useState<LocalDirection>("en-zh");
-  const [uploadMode, setUploadMode] = useState<ExecutionMode>("auto");
-  const [uploading, setUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const videoInputRef = useRef<HTMLInputElement>(null);
-  const subtitleInputRef = useRef<HTMLInputElement>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Task | null>(null);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   const handleCreated = (taskId: string) => {
     navigate(`/tasks/${taskId}`);
@@ -52,31 +42,22 @@ export default function HomePage() {
     }
   };
 
-  const handleDelete = async (task: Task) => {
-    if (!window.confirm(t.task.deleteTitle)) return;
+  const handleDelete = (task: Task) => setDeleteTarget(task);
+  const handleCloseDeleteDialog = () => {
+    setDeleteTarget(null);
+    setDeleteLoading(false);
+  };
+  const handleConfirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteLoading(true);
     try {
-      await deleteTask(task.id);
+      await deleteTask(deleteTarget.id);
+      setDeleteTarget(null);
       refresh();
     } catch {
       // ignore
-    }
-  };
-
-  const handleUpload = async () => {
-    if (!videoFile) return;
-    setUploading(true);
-    setUploadError(null);
-    try {
-      const task = await uploadLocalTask(videoFile, uploadMode, direction, subtitleFile);
-      setVideoFile(null);
-      setSubtitleFile(null);
-      if (videoInputRef.current) videoInputRef.current.value = "";
-      if (subtitleInputRef.current) subtitleInputRef.current.value = "";
-      navigate(`/tasks/${task.id}`);
-    } catch (err) {
-      setUploadError(err instanceof Error ? err.message : t.home.uploadError);
     } finally {
-      setUploading(false);
+      setDeleteLoading(false);
     }
   };
 
@@ -85,101 +66,15 @@ export default function HomePage() {
       <AppHeader />
 
       <main className="mx-auto max-w-6xl space-y-6 px-4 py-6">
-        <div className="space-y-2">
-          <h1 className="text-2xl font-bold tracking-tight">{t.home.title}</h1>
-          <p className="text-sm text-muted-foreground">{t.home.subtitle}</p>
-        </div>
-
-        <div className="grid gap-6 md:grid-cols-2">
-          {/* URL Create */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Plus className="h-5 w-5" />
-                {t.home.createTitle}
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <CreateTaskButton
-                onOpen={() => setDialogOpen(true)}
-              />
-            </CardContent>
-          </Card>
-
-          {/* Upload */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Upload className="h-5 w-5" />
-                {t.home.uploadTitle}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label>{t.home.localVideoLabel}</Label>
-                <input
-                  ref={videoInputRef}
-                  type="file"
-                  accept="video/*"
-                  onChange={(e) => setVideoFile(e.target.files?.[0] ?? null)}
-                  className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label>{t.home.localDirectionLabel}</Label>
-                <Select
-                  value={direction}
-                  onChange={(e) => setDirection(e.target.value as LocalDirection)}
-                  disabled={uploading}
-                >
-                  <option value="en-zh">{t.home.localEnZh}</option>
-                  <option value="zh-en">{t.home.localZhEn}</option>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label>{t.home.localSubtitleLabel}</Label>
-                <input
-                  ref={subtitleInputRef}
-                  type="file"
-                  accept=".srt,.vtt,.txt"
-                  onChange={(e) => setSubtitleFile(e.target.files?.[0] ?? null)}
-                  className="block w-full text-sm text-muted-foreground file:mr-3 file:rounded-md file:border-0 file:bg-secondary file:px-3 file:py-2 file:text-sm file:font-medium file:text-secondary-foreground hover:file:bg-secondary/80"
-                />
-                <p className="text-xs text-muted-foreground">{t.home.localSubtitleHelp}</p>
-              </div>
-
-              <div className="space-y-2">
-                <Label>{t.home.executionModeLabel}</Label>
-                <Select
-                  value={uploadMode}
-                  onChange={(e) => setUploadMode(e.target.value as ExecutionMode)}
-                  disabled={uploading}
-                >
-                  <option value="auto">{t.home.executionAuto}</option>
-                  <option value="manual">{t.home.executionManual}</option>
-                </Select>
-              </div>
-
-              {uploadError && (
-                <p className="text-sm text-destructive">{uploadError}</p>
-              )}
-
-              <Button
-                onClick={handleUpload}
-                disabled={uploading || !videoFile}
-                className="w-full"
-              >
-                {uploading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Upload className="h-4 w-4" />
-                )}
-                {uploading ? t.home.uploading : t.home.uploadTask}
-              </Button>
-            </CardContent>
-          </Card>
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1">
+            <h1 className="text-2xl font-bold tracking-tight">{t.home.title}</h1>
+            <p className="text-sm text-muted-foreground">{t.home.subtitle}</p>
+          </div>
+          <Button onClick={() => setDialogOpen(true)} size="sm" className="shrink-0">
+            <Plus className="h-4 w-4" />
+            {t.home.createTask}
+          </Button>
         </div>
 
         {/* Task list */}
@@ -201,16 +96,16 @@ export default function HomePage() {
         onClose={() => setDialogOpen(false)}
         onCreated={handleCreated}
       />
-    </div>
-  );
-}
 
-function CreateTaskButton({ onOpen }: { onOpen: () => void }) {
-  const { t } = useI18n();
-  return (
-    <Button onClick={onOpen} className="w-full">
-      <Plus className="h-4 w-4" />
-      {t.home.createTask}
-    </Button>
+      {deleteTarget && (
+        <DeleteTaskDialog
+          open={deleteTarget !== null}
+          onClose={handleCloseDeleteDialog}
+          task={deleteTarget}
+          onConfirm={handleConfirmDelete}
+          loading={deleteLoading}
+        />
+      )}
+    </div>
   );
 }

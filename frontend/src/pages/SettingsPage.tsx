@@ -201,6 +201,9 @@ export default function SettingsPage() {
   // Proxy (savable)
   const [proxy, setProxy] = useState("");
 
+  // Notes template
+  const [notesTemplate, setNotesTemplate] = useState("");
+
   // Cookie
   const [cookieContent, setCookieContent] = useState("");
   const [cookieDirty, setCookieDirty] = useState(false);
@@ -235,6 +238,9 @@ export default function SettingsPage() {
 
         // Proxy
         setProxy(data.ytdlp.proxy || "");
+
+        // Notes template
+        setNotesTemplate(data.notesTemplate || "");
 
         // Reset dirty flags
         setCookieDirty(false);
@@ -309,6 +315,7 @@ export default function SettingsPage() {
       if (cookieDirty) {
         request.youtubeCookie = { content: cookieContent };
       }
+      request.notesTemplate = notesTemplate;
       const data = await saveSettings(request);
       setSettings(data);
       setProvidersData(data.providers || null);
@@ -457,6 +464,22 @@ export default function SettingsPage() {
               }}
               placeholder={t.settings.cookiePlaceholder}
               className="min-h-[160px] font-mono text-xs"
+            />
+          </CardContent>
+        </Card>
+
+        {/* Notes Template */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">{t.settings.notesTemplateTitle}</CardTitle>
+            <CardDescription>{t.settings.notesTemplateHelp}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            <Textarea
+              value={notesTemplate}
+              onChange={(e) => setNotesTemplate(e.target.value)}
+              placeholder={t.settings.notesTemplatePlaceholder}
+              rows={4}
             />
           </CardContent>
         </Card>

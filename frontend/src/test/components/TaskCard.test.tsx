@@ -23,6 +23,7 @@ function createMockTask(overrides: Partial<Task> = {}): Task {
     createdAt: "2026-06-25T10:00:00Z",
     startedAt: "2026-06-25T10:01:00Z",
     completedAt: "2026-06-25T10:30:00Z",
+    notes: "",
     stages: [],
     ...overrides,
   };

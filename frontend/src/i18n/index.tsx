@@ -19,6 +19,7 @@ type Messages = {
     waiting: string;
     delete: string;
     retry: string;
+    edit: string;
   };
   home: Record<string, string>;
   task: Record<string, string>;
@@ -38,6 +39,7 @@ const messages: Record<UiLanguage, Messages> = {
       waiting: "Waiting",
       delete: "Delete",
       retry: "Retry",
+      edit: "Edit",
     },
     home: {
       title: "YouDub — Video Localization",
@@ -63,8 +65,16 @@ const messages: Record<UiLanguage, Messages> = {
       taskHistory: "Task history",
       empty: "No tasks yet. Submit a URL or upload a local video above to start.",
       loadError: "Failed to load tasks",
+      urlTab: "URL",
+      uploadTab: "Local file",
       createError: "Failed to create task",
       uploadError: "Failed to upload task",
+      notesLabel: "Notes",
+      notesPlaceholder: "Video source, author info, etc.",
+      youtubeCoverLabel: "YouTube cover",
+      youtubeCoverHelp: "Auto-fetch cover from YouTube",
+      youtubeUrlLabel: "YouTube video link (optional)",
+      youtubeUrlPlaceholder: "https://www.youtube.com/watch?v=...",
     },
     task: {
       overview: "Task overview",
@@ -104,9 +114,13 @@ const messages: Record<UiLanguage, Messages> = {
       deleteTask: "Delete task",
       deleteTitle: "Delete this task?",
       deleteDescription:
-        "This permanently removes the task record, its log file, and the entire session directory. This action cannot be undone.",
+        "This action cannot be undone. The following will be permanently deleted:",
       deleting: "Deleting",
       confirmDelete: "Confirm delete",
+      deleteItemDb: "Task record in database",
+      deleteItemSession: "Session directory (artifacts, subtitles, audio, video)",
+      deleteItemUpload: "Uploaded video files",
+      deleteItemLog: "Task log file",
       runningLocked: "Running tasks cannot be rerun or deleted. Wait until it finishes or fails.",
       loadError: "Failed to load task",
       deleteError: "Failed to delete task",
@@ -123,6 +137,12 @@ const messages: Record<UiLanguage, Messages> = {
       duration: "Duration",
       errorMessage: "Error",
       lastMessage: "Message",
+      notes: "Notes",
+      noNotes: "No notes",
+      youtubeVideoId: "YouTube Video ID",
+      noYoutubeVideoId: "Not set",
+      summary: "Video summary",
+      noSummary: "Summary will be generated during the translate stage.",
     },
     settings: {
       button: "Settings",
@@ -167,6 +187,9 @@ const messages: Record<UiLanguage, Messages> = {
       loadModelsError: "Failed to load models",
       modelsLoaded: "models loaded",
       keySaved: "OpenAI key is saved.",
+      notesTemplateTitle: "Notes template",
+      notesTemplateHelp: "This text will be auto-filled into the Notes field when creating a new task.",
+      notesTemplatePlaceholder: "Video source: ...\nOriginal author: ...",
     },
     status: {
       queued: "queued",
@@ -200,6 +223,7 @@ const messages: Record<UiLanguage, Messages> = {
       waiting: "等待中",
       delete: "删除",
       retry: "重试",
+      edit: "编辑",
     },
     home: {
       title: "YouDub — 视频本地化工具",
@@ -224,8 +248,16 @@ const messages: Record<UiLanguage, Messages> = {
       taskHistory: "任务历史",
       empty: "暂无任务。输入链接或上传本地视频后即可开始。",
       loadError: "加载任务失败",
+      urlTab: "链接",
+      uploadTab: "本地上传",
       createError: "创建任务失败",
       uploadError: "上传任务失败",
+      notesLabel: "备注",
+      notesPlaceholder: "视频来源、原作者信息等",
+      youtubeCoverLabel: "YouTube 封面",
+      youtubeCoverHelp: "自动从 YouTube 获取封面",
+      youtubeUrlLabel: "YouTube 视频链接（可选）",
+      youtubeUrlPlaceholder: "https://www.youtube.com/watch?v=...",
     },
     task: {
       overview: "任务概览",
@@ -264,9 +296,13 @@ const messages: Record<UiLanguage, Messages> = {
       deleteHelp: "删除这个任务、运行日志，以及对应的整个会话目录。",
       deleteTask: "删除任务",
       deleteTitle: "确认删除这个任务？",
-      deleteDescription: "这会永久删除任务记录、日志文件和整个会话目录。此操作无法撤销。",
+      deleteDescription: "此操作无法撤销。删除后将清除以下所有内容：",
       deleting: "删除中",
       confirmDelete: "确认删除",
+      deleteItemDb: "数据库中的任务记录",
+      deleteItemSession: "工作空间目录（音频、字幕、视频片段等所有产物）",
+      deleteItemUpload: "已上传的原始视频文件",
+      deleteItemLog: "任务运行日志",
       runningLocked: "运行中的任务不能重跑或删除，请等待任务完成或失败。",
       loadError: "加载任务失败",
       deleteError: "删除任务失败",
@@ -283,6 +319,12 @@ const messages: Record<UiLanguage, Messages> = {
       duration: "耗时",
       errorMessage: "错误信息",
       lastMessage: "消息",
+      notes: "备注",
+      noNotes: "暂无备注",
+      youtubeVideoId: "YouTube 视频 ID",
+      noYoutubeVideoId: "未设置",
+      summary: "视频摘要",
+      noSummary: "摘要将在翻译阶段生成。",
     },
     settings: {
       button: "设置",
@@ -327,6 +369,9 @@ const messages: Record<UiLanguage, Messages> = {
       loadModelsError: "加载模型失败",
       modelsLoaded: "个模型已加载",
       keySaved: "OpenAI API key 已保存。",
+      notesTemplateTitle: "备注模板",
+      notesTemplateHelp: "创建新任务时，该内容会自动填入备注字段。",
+      notesTemplatePlaceholder: "视频来源：...\n原作者：...",
     },
     status: {
       queued: "排队中",

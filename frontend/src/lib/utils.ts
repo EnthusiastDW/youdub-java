@@ -38,3 +38,49 @@ export function formatFileSize(bytes: number): string {
   );
   return `${(bytes / Math.pow(1024, index)).toFixed(1)} ${units[index]}`;
 }
+
+/**
+ * 从 YouTube URL 中提取视频 ID。
+ * 支持格式：
+ *   https://www.youtube.com/watch?v=VIDEO_ID
+ *   https://youtu.be/VIDEO_ID
+ *   https://www.youtube.com/embed/VIDEO_ID
+ *   https://www.youtube.com/shorts/VIDEO_ID
+ *   直接传入 VIDEO_ID（11 位字符）
+ */
+export function extractYoutubeVideoId(input: string): string | null {
+  if (!input) return null;
+
+  // 直接是 11 位视频 ID
+  if (/^[A-Za-z0-9_-]{11}$/.test(input.trim())) {
+    return input.trim();
+  }
+
+  try {
+    const url = new URL(input.trim());
+    if (url.hostname.includes("youtube.com") || url.hostname.includes("youtu.be")) {
+      // youtu.be/VIDEO_ID
+      if (url.hostname === "youtu.be") {
+        const id = url.pathname.slice(1).split("/")[0];
+        if (/^[A-Za-z0-9_-]{11}$/.test(id)) return id;
+      }
+      // youtube.com/watch?v=VIDEO_ID
+      const v = url.searchParams.get("v");
+      if (v && /^[A-Za-z0-9_-]{11}$/.test(v)) return v;
+      // youtube.com/embed/VIDEO_ID 或 /shorts/VIDEO_ID
+      const match = url.pathname.match(/\/(embed|shorts)\/([A-Za-z0-9_-]{11})/);
+      if (match) return match[2];
+    }
+  } catch {
+    // 不是合法 URL
+  }
+  return null;
+}
+
+/**
+ * 根据 YouTube 视频 ID 获取封面图片 URL。
+ * 优先使用 maxresdefault，失败时可降级到 hqdefault。
+ */
+export function getYoutubeThumbnailUrl(videoId: string): string {
+  return `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+}

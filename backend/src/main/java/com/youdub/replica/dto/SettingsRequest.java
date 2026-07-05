@@ -15,6 +15,7 @@ public class SettingsRequest {
     private ProviderSelections providers;
     /** Provider-specific config overrides（顶层，与前端发送结构一致） */
     private Map<String, String> providerConfigs;
+    private String notesTemplate;
 
     @Data
     public static class YtdlpSettings {

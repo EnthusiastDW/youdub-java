@@ -29,6 +29,9 @@ public class TaskResponse {
     private String createdAt;
     private String startedAt;
     private String completedAt;
+    private String notes;
+    private String summary;
+    private String youtubeVideoId;
     private List<TaskStageResponse> stages = new ArrayList<>();
 
     /**
@@ -52,6 +55,8 @@ public class TaskResponse {
         resp.setCreatedAt(task.getCreatedAt());
         resp.setStartedAt(task.getStartedAt());
         resp.setCompletedAt(task.getCompletedAt());
+        resp.setNotes(task.getNotes());
+        resp.setYoutubeVideoId(task.getYoutubeVideoId());
 
         if (task.getStages() != null) {
             for (TaskStage stage : task.getStages()) {

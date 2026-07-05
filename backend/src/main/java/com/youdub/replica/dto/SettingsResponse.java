@@ -15,6 +15,7 @@ public class SettingsResponse {
     private YtdlpSettings ytdlp = new YtdlpSettings();
     private YoutubeCookieInfo youtubeCookie = new YoutubeCookieInfo();
     private ProvidersData providers = new ProvidersData();
+    private String notesTemplate = "";
 
     @Data
     public static class YtdlpSettings {

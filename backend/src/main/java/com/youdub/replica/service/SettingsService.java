@@ -227,6 +227,7 @@ public class SettingsService {
 
         resp.setYoutubeCookie(buildCookieInfo());
         resp.setProviders(buildProvidersData());
+        resp.setNotesTemplate(settingsRepository.get("notes_template", ""));
         return resp;
     }
 
@@ -284,6 +285,10 @@ public class SettingsService {
 
         if (request.getYoutubeCookie() != null) {
             saveYouTubeCookie(request.getYoutubeCookie().getContent());
+        }
+
+        if (request.getNotesTemplate() != null) {
+            settingsRepository.set("notes_template", request.getNotesTemplate());
         }
 
         return getSettings();

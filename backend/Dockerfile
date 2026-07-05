@@ -21,13 +21,13 @@ RUN apt-get update
 RUN apt-get install -y --no-install-recommends \
         curl \
         ffmpeg \
-        yt-dlp \
         python3 \
         python3-pip \
         python3-venv \
     && rm -rf /var/lib/apt/lists/*
 
-RUN pip3 install --no-cache-dir --break-system-packages edge-tts
+RUN pip3 install --no-cache-dir --break-system-packages --upgrade pip setuptools wheel \
+    && pip3 install --no-cache-dir --break-system-packages --upgrade yt-dlp edge-tts
 
 RUN mkdir -p /app/data/cookies /app/data/logs /app/workfolder
 

@@ -43,8 +43,10 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
   return (await response.text()) as unknown as T;
 }
 
-export function createTask(url: string, executionMode: ExecutionMode = "auto") {
+export function createTask(url: string, executionMode: ExecutionMode = "auto", notes?: string, youtubeVideoId?: string) {
   const body: CreateTaskRequest = { url, executionMode };
+  if (notes) body.notes = notes;
+  if (youtubeVideoId) body.youtubeVideoId = youtubeVideoId;
   return request<Task>("/api/tasks", {
     method: "POST",
     body: JSON.stringify(body),
@@ -55,7 +57,8 @@ export async function uploadLocalTask(
   file: File,
   executionMode: ExecutionMode,
   direction: LocalDirection,
-  subtitleFile: File | null = null
+  subtitleFile: File | null = null,
+  youtubeVideoId?: string
 ): Promise<Task> {
   const form = new FormData();
   form.append("file", file);
@@ -63,6 +66,9 @@ export async function uploadLocalTask(
   form.append("direction", direction);
   if (subtitleFile) {
     form.append("subtitleFile", subtitleFile);
+  }
+  if (youtubeVideoId) {
+    form.append("youtubeVideoId", youtubeVideoId);
   }
 
   const response = await fetch(`${API_BASE}/api/tasks/upload`, {
@@ -115,6 +121,38 @@ export function continueTask(taskId: string, executionMode?: ExecutionMode) {
 export function redoStage(taskId: string, stageName: string) {
   return request<Task>(`/api/tasks/${taskId}/stages/${stageName}/redo`, {
     method: "POST",
+  });
+}
+
+export function updateTaskNotes(taskId: string, notes: string) {
+  return request<void>(`/api/tasks/${taskId}/notes`, {
+    method: "PATCH",
+    body: JSON.stringify({ notes }),
+  });
+}
+
+export function updateTaskYoutubeVideoId(taskId: string, youtubeVideoId: string) {
+  return request<void>(`/api/tasks/${taskId}/youtube-video-id`, {
+    method: "PATCH",
+    body: JSON.stringify({ youtubeVideoId }),
+  });
+}
+
+export async function getTaskSummary(taskId: string): Promise<string> {
+  const response = await fetch(`${API_BASE}/api/tasks/${taskId}/summary`, {
+    cache: "no-store",
+  });
+  if (!response.ok) {
+    throw new Error(`Failed to load summary: ${response.status}`);
+  }
+  const data = await response.json();
+  return (data as { summary: string }).summary || "";
+}
+
+export function updateTaskSummary(taskId: string, summary: string) {
+  return request<void>(`/api/tasks/${taskId}/summary`, {
+    method: "PATCH",
+    body: JSON.stringify({ summary }),
   });
 }
 

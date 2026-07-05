@@ -22,6 +22,7 @@ vi.mock("@/api/client", () => ({
   listTasks: vi.fn(),
   getTask: vi.fn(),
   getTaskLog: vi.fn(),
+  getSettings: vi.fn(() => Promise.resolve({ notesTemplate: "" })),
   finalVideoUrl: vi.fn((id: string) => `/api/tasks/${id}/artifact/final-video`),
   finalVideoDownloadUrl: vi.fn((id: string) => `/api/tasks/${id}/artifact/final-video?download=true`),
 }));
@@ -47,6 +48,8 @@ function createMockTask(overrides: Partial<Task> = {}): Task {
     createdAt: "2026-06-25T10:00:00Z",
     startedAt: "2026-06-25T10:01:00Z",
     completedAt: "2026-06-25T10:30:00Z",
+    notes: "",
+    youtubeVideoId: "",
     stages: [],
     ...overrides,
   };
@@ -67,14 +70,18 @@ describe("HomePage", () => {
 
   it("renders create task section", () => {
     renderWithProviders(<HomePage />);
-    expect(screen.getByText("新建任务")).toBeInTheDocument();
     expect(screen.getByText("创建任务")).toBeInTheDocument();
   });
 
-  it("renders upload section", () => {
+  it("opens dialog with URL and upload tabs when button clicked", async () => {
+    const user = userEvent.setup();
     renderWithProviders(<HomePage />);
-    expect(screen.getByText("上传本地视频")).toBeInTheDocument();
-    expect(screen.getByText("上传并创建")).toBeInTheDocument();
+    const createButtons = screen.getAllByText("创建任务");
+    await user.click(createButtons[0]);
+    await waitFor(() => {
+      expect(screen.getByText("链接")).toBeInTheDocument();
+      expect(screen.getByText("本地上传")).toBeInTheDocument();
+    });
   });
 
   it("renders task history heading", () => {

@@ -14,6 +14,9 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
+import com.youdub.replica.dto.TaskNotesRequest;
+import com.youdub.replica.dto.TaskSummaryRequest;
+import com.youdub.replica.dto.TaskYoutubeVideoIdRequest;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -39,8 +42,9 @@ public class TaskController {
             @RequestParam("file") MultipartFile file,
             @RequestParam(value = "executionMode", required = false, defaultValue = "auto") String executionMode,
             @RequestParam(value = "direction", required = false, defaultValue = "en-zh") String direction,
-            @RequestParam(value = "subtitleFile", required = false) MultipartFile subtitleFile) throws Exception {
-        return taskService.uploadLocalVideo(file, executionMode, direction, subtitleFile);
+            @RequestParam(value = "subtitleFile", required = false) MultipartFile subtitleFile,
+            @RequestParam(value = "youtubeVideoId", required = false, defaultValue = "") String youtubeVideoId) throws Exception {
+        return taskService.uploadLocalVideo(file, executionMode, direction, subtitleFile, youtubeVideoId);
     }
 
     @GetMapping
@@ -62,6 +66,30 @@ public class TaskController {
     public ResponseEntity<Void> deleteTask(@PathVariable String id) {
         taskService.deleteTask(id);
         return ResponseEntity.noContent().build();
+    }
+
+    @PatchMapping("/{id}/notes")
+    public ResponseEntity<Void> updateNotes(@PathVariable String id, @RequestBody TaskNotesRequest request) {
+        taskService.updateNotes(id, request.getNotes());
+        return ResponseEntity.ok().build();
+    }
+
+    @GetMapping("/{id}/summary")
+    public ResponseEntity<Map<String, String>> getSummary(@PathVariable String id) {
+        String summary = taskService.getSummary(id);
+        return ResponseEntity.ok(Map.of("summary", summary));
+    }
+
+    @PatchMapping("/{id}/summary")
+    public ResponseEntity<Void> updateSummary(@PathVariable String id, @RequestBody TaskSummaryRequest request) {
+        taskService.updateSummary(id, request.getSummary());
+        return ResponseEntity.ok().build();
+    }
+
+    @PatchMapping("/{id}/youtube-video-id")
+    public ResponseEntity<Void> updateYoutubeVideoId(@PathVariable String id, @RequestBody TaskYoutubeVideoIdRequest request) {
+        taskService.updateYoutubeVideoId(id, request.getYoutubeVideoId());
+        return ResponseEntity.ok().build();
     }
 
     @PostMapping("/{id}/rerun")

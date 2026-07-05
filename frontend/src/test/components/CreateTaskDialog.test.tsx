@@ -6,6 +6,8 @@ import { CreateTaskDialog } from "@/components/CreateTaskDialog";
 
 vi.mock("@/api/client", () => ({
   createTask: vi.fn(),
+  getSettings: vi.fn(() => Promise.resolve({ notesTemplate: "" })),
+  uploadLocalTask: vi.fn(),
 }));
 
 import { createTask } from "@/api/client";
@@ -22,23 +24,25 @@ describe("CreateTaskDialog", () => {
     expect(screen.queryByText("新建任务")).not.toBeInTheDocument();
   });
 
-  it("renders form when open", () => {
+  it("renders form with URL and upload tabs when open", () => {
     renderWithProviders(
       <CreateTaskDialog open={true} onClose={vi.fn()} onCreated={vi.fn()} />
     );
     expect(screen.getByText("新建任务")).toBeInTheDocument();
+    expect(screen.getByText("链接")).toBeInTheDocument();
+    expect(screen.getByText("本地上传")).toBeInTheDocument();
     expect(screen.getByText("视频链接（YouTube / Bilibili）")).toBeInTheDocument();
     expect(screen.getByText("执行模式")).toBeInTheDocument();
   });
 
-  it("disables create button when URL is empty", () => {
+  it("disables submit button when URL is empty", () => {
     renderWithProviders(
       <CreateTaskDialog open={true} onClose={vi.fn()} onCreated={vi.fn()} />
     );
     expect(screen.getByText("创建任务").closest("button")).toBeDisabled();
   });
 
-  it("calls createTask on submit", async () => {
+  it("calls createTask on URL submit", async () => {
     const user = userEvent.setup();
     const onCreated = vi.fn();
     vi.mocked(createTask).mockResolvedValue({
@@ -58,6 +62,8 @@ describe("CreateTaskDialog", () => {
       createdAt: "2026-06-25T10:00:00Z",
       startedAt: null,
       completedAt: null,
+      notes: "",
+      youtubeVideoId: "",
       stages: [],
     });
 
@@ -72,7 +78,9 @@ describe("CreateTaskDialog", () => {
     await waitFor(() => {
       expect(createTask).toHaveBeenCalledWith(
         "https://www.youtube.com/watch?v=test",
-        "auto"
+        "auto",
+        undefined,
+        undefined
       );
     });
     expect(onCreated).toHaveBeenCalledWith("new-task-1");

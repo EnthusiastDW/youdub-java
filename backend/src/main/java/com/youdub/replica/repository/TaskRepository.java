@@ -42,6 +42,8 @@ public class TaskRepository {
         task.setCreatedAt(rs.getString("created_at"));
         task.setStartedAt(rs.getString("started_at"));
         task.setCompletedAt(rs.getString("completed_at"));
+        task.setNotes(rs.getString("notes"));
+        task.setYoutubeVideoId(rs.getString("youtube_video_id"));
         return task;
     };
 
@@ -66,8 +68,8 @@ public class TaskRepository {
         String sql = """
                 INSERT INTO tasks (id, url, title, status, current_stage, session_path, final_video_path,
                                    error_message, execution_mode, source_type, asr_language, target_language,
-                                   progress, created_at, started_at, completed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                   progress, created_at, started_at, completed_at, notes, youtube_video_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         jdbcTemplate.update(sql,
                 task.getId(),
@@ -85,7 +87,9 @@ public class TaskRepository {
                 task.getProgress(),
                 task.getCreatedAt(),
                 task.getStartedAt(),
-                task.getCompletedAt()
+                task.getCompletedAt(),
+                task.getNotes(),
+                task.getYoutubeVideoId()
         );
     }
 
@@ -184,7 +188,7 @@ public class TaskRepository {
         List<String> allowed = List.of(
                 "url", "title", "status", "current_stage", "session_path", "final_video_path",
                 "error_message", "execution_mode", "source_type", "asr_language", "target_language",
-                "progress", "started_at", "completed_at"
+                "progress", "started_at", "completed_at", "notes", "youtube_video_id"
         );
         if (!allowed.contains(field)) {
             throw new IllegalArgumentException("不允许更新的字段：" + field);

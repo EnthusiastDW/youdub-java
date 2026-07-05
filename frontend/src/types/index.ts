@@ -40,6 +40,9 @@ export interface Task {
   createdAt: string;
   startedAt: string | null;
   completedAt: string | null;
+  notes: string;
+  summary?: string;
+  youtubeVideoId: string;
   stages: TaskStage[];
 }
 
@@ -76,6 +79,7 @@ export interface Settings {
   ytdlp: YtdlpSettings;
   youtubeCookie: YouTubeCookieInfo;
   providers: ProvidersData;
+  notesTemplate?: string;
 }
 
 export interface SettingsRequest {
@@ -92,6 +96,7 @@ export interface SettingsRequest {
     separate?: string;
   };
   providerConfigs?: Record<string, string>;
+  notesTemplate?: string;
 }
 
 export interface OpenAIModelsResponse {
@@ -109,4 +114,6 @@ export interface ContinueTaskRequest {
 export interface CreateTaskRequest {
   url: string;
   executionMode: ExecutionMode;
+  notes?: string;
+  youtubeVideoId?: string;
 }

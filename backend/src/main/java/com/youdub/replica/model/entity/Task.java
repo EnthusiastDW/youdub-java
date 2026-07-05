@@ -24,6 +24,8 @@ public class Task {
     private String createdAt;
     private String startedAt;
     private String completedAt;
+    private String notes = "";
+    private String youtubeVideoId = "";
 
     private List<TaskStage> stages = new ArrayList<>();
 }
