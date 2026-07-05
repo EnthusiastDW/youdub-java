@@ -24,6 +24,7 @@ function createMockTask(overrides: Partial<Task> = {}): Task {
     startedAt: "2026-06-25T10:01:00Z",
     completedAt: "2026-06-25T10:30:00Z",
     notes: "",
+    youtubeVideoId: "",
     stages: [],
     ...overrides,
   };

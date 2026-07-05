@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Loader2, ImageOff } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useI18n } from "@/i18n/index";
 import { Dialog } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";

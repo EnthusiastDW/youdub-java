@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Play, RotateCcw, Trash2, ArrowRight, AlertCircle, Loader2 } from "lucide-react";
+import { Play, RotateCcw, Trash2, ArrowRight, AlertCircle } from "lucide-react";
 import type { Task } from "@/types";
 import { useI18n } from "@/i18n/index";
 import { Card, CardContent } from "@/components/ui/card";
