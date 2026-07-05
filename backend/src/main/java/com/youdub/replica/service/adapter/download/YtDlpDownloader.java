@@ -61,13 +61,16 @@ public class YtDlpDownloader implements Downloader {
         List<String> command = new ArrayList<>();
         command.add("yt-dlp");
         command.add("--no-playlist");
-        // --print title 会在下载前先输出视频标题（一行），取输出的第一行即可
+        // --print title 默认隐式 --simulate，不加 --no-simulate 不会下载
         command.add("--print");
         command.add("title");
-        command.add("--downloader");
-        command.add("curl_cffi");
+        command.add("--no-simulate");
+        command.add("--js-runtimes");
+        command.add("node");
         command.add("--remote-components");
-        command.add("ejs:npm");
+        command.add("ejs:github");
+        command.add("--merge-output-format");
+        command.add("mp4");
         command.add("-o");
         command.add(mediaDir.resolve(outputFilename).toString());
         if (proxy != null && !proxy.isBlank()) {
