@@ -5,6 +5,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import static com.youdub.replica.service.adapter.AdapterConstants.DEMUCS;
+
 import java.io.IOException;
 import java.util.concurrent.TimeUnit;
 
@@ -41,7 +43,7 @@ public class DeviceResolver {
     public String getDeviceForComponent(String component) {
         if (component == null) return resolveDevice();
         String envValue = switch (component.toLowerCase()) {
-            case "demucs" -> appProperties.getDeviceConfig().getDemucs();
+            case DEMUCS -> appProperties.getDeviceConfig().getDemucs();
             case "whisper" -> appProperties.getDeviceConfig().getWhisper();
             default -> null;
         };

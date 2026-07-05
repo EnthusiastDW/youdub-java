@@ -9,6 +9,7 @@ import com.youdub.replica.model.entity.TaskStage;
 import com.youdub.replica.model.enums.StageStatus;
 import com.youdub.replica.model.enums.TaskStatus;
 import com.youdub.replica.repository.TaskRepository;
+import com.youdub.replica.service.adapter.AdapterConstants;
 import com.youdub.replica.util.TaskDirResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -132,7 +133,7 @@ public class TaskService {
         task.setTitle(file.getOriginalFilename());
         task.setStatus(TaskStatus.QUEUED);
         task.setExecutionMode(executionMode == null ? "auto" : executionMode);
-        task.setSourceType("local");
+        task.setSourceType(AdapterConstants.LOCAL);
         task.setAsrLanguage(asrLang);
         task.setTargetLanguage(targetLang);
         task.setProgress(0.0);

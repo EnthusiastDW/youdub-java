@@ -5,11 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.repository.TaskRepository;
+import com.youdub.replica.service.SettingsService;
 import com.youdub.replica.util.Command;
 import com.youdub.replica.util.CommandRunner;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+
+import static com.youdub.replica.service.adapter.AdapterConstants.YTDLP;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,18 +24,13 @@ import java.util.List;
  * 通过 yt-dlp 子进程下载 YouTube/Bilibili 等视频。
  */
 @Slf4j
-@Component("ytdlp")
+@Component(YTDLP)
 @RequiredArgsConstructor
 public class YtDlpDownloader implements Downloader {
 
     private final TaskRepository taskRepository;
     private final ObjectMapper objectMapper;
-    private final AppProperties.Download downloadConfig;
-
-    @Override
-    public String getName() {
-        return "ytdlp";
-    }
+    private final SettingsService settingsService;
 
     @Override
     public void download(Task task, Path workFolder, Path cookiesDir, String proxy) throws Exception {
@@ -45,7 +43,8 @@ public class YtDlpDownloader implements Downloader {
         Files.createDirectories(mediaDir);
         Files.createDirectories(metadataDir);
 
-        String outputFilename = downloadConfig.getOutputFilename();
+        AppProperties.Download config = settingsService.getGlobalConfig("download", AppProperties.Download.class);
+        String outputFilename = config.getOutputFilename();
         if (outputFilename == null || outputFilename.isBlank()) {
             outputFilename = "video_source.mp4";
         }
@@ -72,7 +71,8 @@ public class YtDlpDownloader implements Downloader {
             command.add("--proxy");
             command.add(proxy);
         }
-        Path cookieFile = cookiesDir == null ? null : cookiesDir.resolve("youtube.txt");
+        String cookieFileName = "youtube.txt";
+        Path cookieFile = cookiesDir == null ? null : cookiesDir.resolve(cookieFileName);
         if (cookieFile != null && Files.exists(cookieFile)) {
             command.add("--cookies");
             command.add(cookieFile.toString());
@@ -84,7 +84,7 @@ public class YtDlpDownloader implements Downloader {
         try {
             output = CommandRunner.run(Command.builder()
                     .add(command)
-                    .timeout(downloadConfig.getTimeoutMs())
+                    .timeout(config.getTimeoutMs())
                     .workDir(workFolder)
                     .build()).output();
         } catch (RuntimeException e) {

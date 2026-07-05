@@ -9,6 +9,5 @@ import java.nio.file.Path;
  * 替代方案：WhisperCppRecognizer（通过 whisper.cpp 子进程或 faster-whisper API）
  */
 public interface SpeechRecognizer {
-    String getName();
     void transcribe(Task task, Path audioPath, Path outputDir, String language) throws Exception;
 }

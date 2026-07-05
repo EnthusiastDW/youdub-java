@@ -9,6 +9,5 @@ import java.nio.file.Path;
  * 替代方案：LocalFileDownloader（处理本地上传文件）
  */
 public interface Downloader {
-    String getName();
     void download(Task task, Path workFolder, Path cookiesDir, String proxy) throws Exception;
 }

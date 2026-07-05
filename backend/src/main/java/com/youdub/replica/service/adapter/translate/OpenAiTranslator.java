@@ -6,11 +6,13 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
-import com.youdub.replica.repository.SettingsRepository;
+import com.youdub.replica.service.SettingsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
+
+import static com.youdub.replica.service.adapter.AdapterConstants.OPENAI;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -31,22 +33,16 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 两阶段翻译：阶段A 全文预处理（生成摘要和热词），阶段B 并发逐句翻译。
  */
 @Slf4j
-@Component("openai")
+@Component(OPENAI)
 @RequiredArgsConstructor
 public class OpenAiTranslator extends AbstractTranslator {
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
-    private final AppProperties.Translate.Openai config;
-    private final SettingsRepository settingsRepository;
+    private final SettingsService settingsService;
 
     @Qualifier("virtualExecutor")
     private final ExecutorService virtualExecutor;
-
-    @Override
-    public String getName() {
-        return "openai";
-    }
 
     @Override
     public void translate(Task task, Path asrPath, Path outputDir, String model, String srcLang, String dstLang) throws Exception {
@@ -61,11 +57,11 @@ public class OpenAiTranslator extends AbstractTranslator {
             return;
         }
 
-        // 优先读取用户通过设置页面保存的值，未设置时回退到配置文件默认值
-        String apiKey = settingsRepository.get("translate.openai.apiKey", config.getApiKey());
-        String chatUrl = settingsRepository.get("translate.openai.chatUrl", config.getChatUrl());
-        String useModel = config.getModel();
-        int useConcurrency = config.getConcurrency() <= 0 ? 1 : config.getConcurrency();
+        var cfg = settingsService.getProviderConfig(OPENAI, AppProperties.Translate.Openai.class);
+        String apiKey = cfg.getApiKey();
+        String chatUrl = cfg.getChatUrl();
+        String useModel = cfg.getModel();
+        int useConcurrency = cfg.getConcurrency() <= 0 ? 1 : cfg.getConcurrency();
 
         if (apiKey.isBlank()) {
             throw new RuntimeException("未配置 OPENAI_API_KEY 环境变量");

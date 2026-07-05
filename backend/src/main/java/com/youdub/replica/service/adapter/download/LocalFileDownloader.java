@@ -9,6 +9,8 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import static com.youdub.replica.service.adapter.AdapterConstants.LOCAL;
+
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,18 +22,13 @@ import java.util.stream.Stream;
  * 从上传目录复制视频文件到会话目录。
  */
 @Slf4j
-@Component("local")
+@Component(LOCAL)
 @RequiredArgsConstructor
 public class LocalFileDownloader implements Downloader {
 
     private final TaskRepository taskRepository;
     private final TaskDirResolver taskDirResolver;
     private final ObjectMapper objectMapper;
-
-    @Override
-    public String getName() {
-        return "local";
-    }
 
     @Override
     public void download(Task task, Path workFolder, Path cookiesDir, String proxy) throws Exception {
@@ -63,7 +60,7 @@ public class LocalFileDownloader implements Downloader {
         // 写入 local_info.json 元数据
         ObjectNode info = objectMapper.createObjectNode();
         info.put("title", task.getTitle() == null ? "" : task.getTitle());
-        info.put("source_type", "local");
+        info.put("source_type", LOCAL);
         info.put("asr_language", task.getAsrLanguage() == null ? "en" : task.getAsrLanguage());
         info.put("target_language", task.getTargetLanguage() == null ? "zh" : task.getTargetLanguage());
         info.put("original_filename", sourceVideo.getFileName().toString());

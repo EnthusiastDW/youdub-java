@@ -8,7 +8,6 @@ import java.nio.file.Path;
  * 处理音频切分、合并、速度调整等操作。
  */
 public interface AudioProcessor {
-    String getName();
     void splitAudio(Task task, Path vocalsPath, Path translationPath, Path outputDir) throws Exception;
     void mergeAudio(Task task, Path ttsDir, Path translationPath, Path outputDir) throws Exception;
 }

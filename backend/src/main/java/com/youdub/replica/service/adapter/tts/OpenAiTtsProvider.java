@@ -5,10 +5,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
+import com.youdub.replica.service.SettingsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
+
+import static com.youdub.replica.service.adapter.AdapterConstants.OPENAI_TTS;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -29,7 +32,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 通过 OpenAI /audio/speech 端点生成 TTS 音频。
  */
 @Slf4j
-@Component("openai-tts")
+@Component(OPENAI_TTS)
 @RequiredArgsConstructor
 public class OpenAiTtsProvider implements TtsProvider {
 
@@ -37,15 +40,10 @@ public class OpenAiTtsProvider implements TtsProvider {
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
-    private final AppProperties.Tts.OpenaiTts config;
+    private final SettingsService settingsService;
 
     @Qualifier("virtualExecutor")
     private final ExecutorService virtualExecutor;
-
-    @Override
-    public String getName() {
-        return "openai-tts";
-    }
 
     @Override
     public void synthesize(Task task, Path textPath, Path outputDir) throws Exception {
@@ -56,6 +54,7 @@ public class OpenAiTtsProvider implements TtsProvider {
         Path ttsDir = outputDir.resolve("tts");
         Files.createDirectories(ttsDir);
 
+        AppProperties.Tts.OpenaiTts config = settingsService.getProviderConfig(OPENAI_TTS, AppProperties.Tts.OpenaiTts.class);
         String apiKey = config.getApiKey();
         String useVoice = config.getVoice();
 

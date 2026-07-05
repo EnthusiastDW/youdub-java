@@ -2,11 +2,14 @@ package com.youdub.replica.service.adapter.separate;
 
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
+import com.youdub.replica.service.SettingsService;
 import com.youdub.replica.util.Command;
 import com.youdub.replica.util.CommandRunner;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+
+import static com.youdub.replica.service.adapter.AdapterConstants.DEMUCS;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -19,18 +22,12 @@ import java.util.List;
  * 通过 Python 子进程调用 demucs 模块，使用 HTDemucs-FT 模型。
  */
 @Slf4j
-@Component("demucs")
+@Component(DEMUCS)
 @RequiredArgsConstructor
-public class DemucsSeparator implements SourceSeparator {
-
+public class DemucsSeparator extends BaseSourceSeparator {
     private static final long TIMEOUT_MS = 600_000L;
 
-    private final AppProperties.Separate.Demucs demucsConfig;
-
-    @Override
-    public String getName() {
-        return "demucs";
-    }
+    private final SettingsService settingsService;
 
     @Override
     public void separate(Task task, Path audioPath, Path outputDir, String device) throws Exception {
@@ -52,6 +49,10 @@ public class DemucsSeparator implements SourceSeparator {
             log.info("分离结果已存在，跳过：{}", outputDir);
             return;
         }
+        String model = settingsService.getProviderConfig(DEMUCS, AppProperties.Separate.Demucs.class).getModel();
+        if (model == null || model.isBlank()) {
+            model = "htdemucs_ft";
+        }
 
         List<String> command = new ArrayList<>();
         command.add("python");
@@ -60,10 +61,7 @@ public class DemucsSeparator implements SourceSeparator {
         command.add("--two-stems");
         command.add("vocals");
         command.add("-n");
-        String model = demucsConfig.getModel();
-        if (model == null || model.isBlank()) {
-            model = "htdemucs_ft";
-        }
+
         command.add(model);
         command.add("-o");
         command.add(outputDir.toString());

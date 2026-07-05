@@ -6,10 +6,13 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
+import com.youdub.replica.service.SettingsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
+
+import static com.youdub.replica.service.adapter.AdapterConstants.OLLAMA;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -30,21 +33,16 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 调用本地 Ollama API（/api/chat）进行翻译。
  */
 @Slf4j
-@Component("ollama")
+@Component(OLLAMA)
 @RequiredArgsConstructor
 public class OllamaTranslator extends AbstractTranslator {
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
-    private final AppProperties.Translate.Ollama config;
+    private final SettingsService settingsService;
 
     @Qualifier("virtualExecutor")
     private final ExecutorService virtualExecutor;
-
-    @Override
-    public String getName() {
-        return "ollama";
-    }
 
     @Override
     public void translate(Task task, Path asrPath, Path outputDir, String model, String srcLang, String dstLang) throws Exception {
@@ -59,7 +57,8 @@ public class OllamaTranslator extends AbstractTranslator {
             return;
         }
 
-        String chatUrl = resolveChatUrl();
+        AppProperties.Translate.Ollama config = settingsService.getProviderConfig(OLLAMA, AppProperties.Translate.Ollama.class);
+        String chatUrl = resolveChatUrl(config.getBaseUrl());
         int useConcurrency = config.getConcurrency() <= 0 ? 1 : config.getConcurrency();
 
         JsonNode asrRoot = objectMapper.readTree(Files.readString(asrPath));
@@ -236,12 +235,8 @@ public class OllamaTranslator extends AbstractTranslator {
         return content.isEmpty() ? text : content;
     }
 
-    private String resolveChatUrl() {
-        String base = config.getBaseUrl();
-        if (base == null || base.isBlank()) {
-            return "http://localhost:11434/api/chat";
-        }
-        return base + "/api/chat";
+    private String resolveChatUrl(String baseUrl) {
+        return baseUrl + "/api/chat";
     }
 
 }

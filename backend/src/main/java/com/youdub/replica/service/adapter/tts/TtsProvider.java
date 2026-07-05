@@ -10,6 +10,5 @@ import java.nio.file.Path;
  *          OpenAiTtsProvider（通过 OpenAI TTS API）
  */
 public interface TtsProvider {
-    String getName();
     void synthesize(Task task, Path textPath, Path outputDir) throws Exception;
 }

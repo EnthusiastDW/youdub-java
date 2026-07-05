@@ -2,9 +2,12 @@ package com.youdub.replica.service.adapter.separate;
 
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
+import com.youdub.replica.service.SettingsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+
+import static com.youdub.replica.service.adapter.AdapterConstants.AUDIO_SEPARATOR_API;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
@@ -26,19 +29,13 @@ import java.util.zip.ZipInputStream;
  * API 返回包含 vocals.wav 和 instrumental.wav 的 ZIP 文件。
  */
 @Slf4j
-@Component("audio-separator-api")
+@Component(AUDIO_SEPARATOR_API)
 @RequiredArgsConstructor
 public class AudioSeparatorApiSeparator extends BaseSourceSeparator {
-
     private static final String SEPARATE_ENDPOINT = "/api/v1/separate";
 
     private final HttpClient httpClient;
-    private final AppProperties.Separate.AudioSeparatorApi audioSeparatorApiConfig;
-
-    @Override
-    public String getName() {
-        return "audio-separator-api";
-    }
+    private final SettingsService settingsService;
 
     @Override
     public void separate(Task task, Path audioPath, Path outputDir, String device) throws Exception {
@@ -64,7 +61,7 @@ public class AudioSeparatorApiSeparator extends BaseSourceSeparator {
         boolean isTemp = !audioToSend.equals(audioPath);
 
         try {
-            String serviceUrl = audioSeparatorApiConfig.getServiceUrl();
+            String serviceUrl = settingsService.getProviderConfig(AUDIO_SEPARATOR_API, AppProperties.Separate.AudioSeparatorApi.class).getServiceUrl();
             if (serviceUrl == null || serviceUrl.isBlank()) {
                 throw new IllegalArgumentException("audio-separator-api.serviceUrl 未配置");
             }

@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
+import com.youdub.replica.service.SettingsService;
 import com.youdub.replica.util.BinaryResult;
 import com.youdub.replica.util.Command;
 import com.youdub.replica.util.CommandResult;
@@ -13,6 +14,8 @@ import com.youdub.replica.util.CommandRunner;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+
+import static com.youdub.replica.service.adapter.AdapterConstants.FFMPEG_AUDIO;
 
 import javax.sound.sampled.AudioFileFormat;
 import javax.sound.sampled.AudioFormat;
@@ -35,7 +38,7 @@ import java.util.stream.Stream;
  * 负责音频切分（按句裁剪原始人声）和音频合并（速度对齐 TTS 片段）。
  */
 @Slf4j
-@Component("ffmpeg-audio")
+@Component(FFMPEG_AUDIO)
 @RequiredArgsConstructor
 public class FfmpegAudioProcessor implements AudioProcessor {
 
@@ -46,12 +49,7 @@ public class FfmpegAudioProcessor implements AudioProcessor {
     private static final long MIN_TRAILING_SILENCE_MS = 80L;    // 裁剪后保留的最小尾部空白（ms）
 
     private final ObjectMapper objectMapper;
-    private final AppProperties.Ffmpeg ffmpegConfig;
-
-    @Override
-    public String getName() {
-        return "ffmpeg-audio";
-    }
+    private final SettingsService settingsService;
 
     @Override
     public void splitAudio(Task task, Path vocalsPath, Path translationPath, Path outputDir) throws Exception {
@@ -73,7 +71,7 @@ public class FfmpegAudioProcessor implements AudioProcessor {
             return;
         }
 
-        String ffmpegPath = ffmpegConfig.getPath();
+        String ffmpegPath = settingsService.getGlobalConfig("ffmpeg", AppProperties.Ffmpeg.class).getPath();
 
         int index = 0;
         for (JsonNode item : translation) {
@@ -148,7 +146,7 @@ public class FfmpegAudioProcessor implements AudioProcessor {
                     .forEach(ttsFiles::add);
         }
 
-        String ffmpegPath = ffmpegConfig.getPath();
+        String ffmpegPath = settingsService.getGlobalConfig("ffmpeg", AppProperties.Ffmpeg.class).getPath();
         int sampleRate = 24000;
         int bytesPerMs = sampleRate * 2 / 1000; // 16-bit mono: 48 bytes/ms
 

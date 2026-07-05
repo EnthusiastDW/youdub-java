@@ -6,6 +6,8 @@ import com.youdub.replica.util.CommandRunner;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
+import static com.youdub.replica.service.adapter.AdapterConstants.FFMPEG_SIMPLE;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -16,15 +18,10 @@ import java.util.List;
  * 使用 FFmpeg 的 highpass/lowpass 滤镜进行简单的频率分离。
  */
 @Slf4j
-@Component("ffmpeg-simple")
+@Component(FFMPEG_SIMPLE)
 public class FfmpegSimpleSeparator extends BaseSourceSeparator {
 
     private static final long TIMEOUT_MS = 120_000L;
-
-    @Override
-    public String getName() {
-        return "ffmpeg-simple";
-    }
 
     @Override
     public void separate(Task task, Path audioPath, Path outputDir, String device) throws Exception {

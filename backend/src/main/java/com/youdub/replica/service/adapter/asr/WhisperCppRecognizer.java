@@ -6,11 +6,14 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
+import com.youdub.replica.service.SettingsService;
 import com.youdub.replica.util.Command;
 import com.youdub.replica.util.CommandRunner;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+
+import static com.youdub.replica.service.adapter.AdapterConstants.WHISPER_CPP;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -22,19 +25,14 @@ import java.util.List;
  * 通过 whisper-cli 子进程进行本地语音识别。
  */
 @Slf4j
-@Component("whisper-cpp")
+@Component(WHISPER_CPP)
 @RequiredArgsConstructor
 public class WhisperCppRecognizer implements SpeechRecognizer {
 
     private static final long TIMEOUT_MS = 600_000L;
 
     private final ObjectMapper objectMapper;
-    private final AppProperties.Asr.WhisperCpp whisperCppConfig;
-
-    @Override
-    public String getName() {
-        return "whisper-cpp";
-    }
+    private final SettingsService settingsService;
 
     @Override
     public void transcribe(Task task, Path audioPath, Path outputDir, String language) throws Exception {
@@ -50,11 +48,12 @@ public class WhisperCppRecognizer implements SpeechRecognizer {
         }
 
         Path outputBase = outputDir.resolve("asr");
+        String model = settingsService.getProviderConfig(WHISPER_CPP, AppProperties.Asr.WhisperCpp.class).getModel();
 
         List<String> command = new ArrayList<>();
         command.add("whisper-cli");
         command.add("-m");
-        command.add(whisperCppConfig.getModel());
+        command.add(model);
         command.add("-f");
         command.add(audioPath.toString());
         command.add("-oj");

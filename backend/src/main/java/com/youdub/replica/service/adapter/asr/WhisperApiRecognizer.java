@@ -6,11 +6,14 @@ import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
+import com.youdub.replica.service.SettingsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
 import java.net.URI;
+
+import static com.youdub.replica.service.adapter.AdapterConstants.WHISPER_API;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -24,18 +27,13 @@ import java.nio.file.Path;
  * 通过 OpenAI /audio/transcriptions 端点进行语音识别。
  */
 @Slf4j
-@Component("whisper-api")
+@Component(WHISPER_API)
 @RequiredArgsConstructor
 public class WhisperApiRecognizer implements SpeechRecognizer {
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
-    private final AppProperties.Asr.WhisperApi config;
-
-    @Override
-    public String getName() {
-        return "whisper-api";
-    }
+    private final SettingsService settingsService;
 
     @Override
     public void transcribe(Task task, Path audioPath, Path outputDir, String language) throws Exception {
@@ -43,6 +41,8 @@ public class WhisperApiRecognizer implements SpeechRecognizer {
             throw new IllegalArgumentException("音频文件不存在：" + audioPath);
         }
         Files.createDirectories(outputDir);
+
+        var config = settingsService.getProviderConfig(WHISPER_API, AppProperties.Asr.WhisperApi.class);
 
         Path asrFile = outputDir.resolve("asr.json");
         if (Files.exists(asrFile)) {

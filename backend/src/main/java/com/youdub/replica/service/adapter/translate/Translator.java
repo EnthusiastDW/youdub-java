@@ -9,6 +9,5 @@ import java.nio.file.Path;
  * 替代方案：OllamaTranslator（通过本地 Ollama API）
  */
 public interface Translator {
-    String getName();
     void translate(Task task, Path asrPath, Path outputDir, String model, String srcLang, String dstLang) throws Exception;
 }

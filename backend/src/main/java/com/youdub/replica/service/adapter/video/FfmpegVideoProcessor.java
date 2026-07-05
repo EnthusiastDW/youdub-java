@@ -5,11 +5,14 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.repository.TaskRepository;
+import com.youdub.replica.service.SettingsService;
 import com.youdub.replica.util.Command;
 import com.youdub.replica.util.CommandRunner;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
+
+import static com.youdub.replica.service.adapter.AdapterConstants.FFMPEG_VIDEO;
 
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -23,7 +26,7 @@ import java.util.concurrent.TimeUnit;
  * 混合配音音轨和背景音乐，生成 SRT 字幕，合成最终视频。
  */
 @Slf4j
-@Component("ffmpeg-video")
+@Component(FFMPEG_VIDEO)
 @RequiredArgsConstructor
 public class FfmpegVideoProcessor implements VideoProcessor {
 
@@ -38,20 +41,15 @@ public class FfmpegVideoProcessor implements VideoProcessor {
         "h264_nvenc", "h264_qsv", "h264_amf", "h264_videotoolbox"
     };
     private static final String[][] HW_ENCODER_ARGS = {
-        {"-preset", "p7", "-cq", "23"},                          // NVIDIA
-        {"-preset", "veryfast", "-global_quality", "23"},         // Intel QSV
-        {"-quality", "quality", "-qp_i", "23", "-qp_p", "23"},   // AMD AMF
-        {"-quality", "100"},                                     // Apple VideoToolbox
+        {"-preset", "p7", "-cq", "23"},
+        {"-preset", "veryfast", "-global_quality", "23"},
+        {"-quality", "quality", "-qp_i", "23", "-qp_p", "23"},
+        {"-quality", "100"},
     };
 
     private final ObjectMapper objectMapper;
-    private final AppProperties.Ffmpeg ffmpegConfig;
+    private final SettingsService settingsService;
     private final TaskRepository taskRepository;
-
-    @Override
-    public String getName() {
-        return "ffmpeg-video";
-    }
 
     /**
      * Auto-detect the best available video encoder.
@@ -65,7 +63,8 @@ public class FfmpegVideoProcessor implements VideoProcessor {
      */
     private String detectEncoder() {
         // 配置覆盖：nvenc / qsv / amf / videotoolbox / software
-        String override = ffmpegConfig.getEncoder();
+        AppProperties.Ffmpeg config = settingsService.getGlobalConfig("ffmpeg", AppProperties.Ffmpeg.class);
+        String override = config.getEncoder();
         if (override != null && !override.isBlank()) {
             String lower = override.toLowerCase();
             for (int i = 0; i < HW_ENCODERS.length; i++) {
@@ -82,7 +81,7 @@ public class FfmpegVideoProcessor implements VideoProcessor {
             return videoEncoder;
         }
 
-        String ffmpegPath = ffmpegConfig.getPath();
+        String ffmpegPath = config.getPath();
         if (ffmpegPath == null || ffmpegPath.isBlank()) {
             videoEncoder = "libx264";
             encoderArgs = List.of("-preset", "fast", "-crf", "23");
@@ -219,7 +218,7 @@ public class FfmpegVideoProcessor implements VideoProcessor {
             return;
         }
 
-        String ffmpegPath = ffmpegConfig.getPath();
+        String ffmpegPath = settingsService.getGlobalConfig("ffmpeg", AppProperties.Ffmpeg.class).getPath();
 
         // 步骤1：生成 SRT 字幕文件
         Path srtFile = outputDir.resolve("subtitles.srt");

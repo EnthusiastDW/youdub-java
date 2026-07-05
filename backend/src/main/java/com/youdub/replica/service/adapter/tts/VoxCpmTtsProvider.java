@@ -4,10 +4,13 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
+import com.youdub.replica.service.SettingsService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
+
+import static com.youdub.replica.service.adapter.AdapterConstants.VOXCPM;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -27,7 +30,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 通过 HTTP API 调用 VoxCPM 微服务生成声音克隆 TTS。
  */
 @Slf4j
-@Component("voxcpm")
+@Component(VOXCPM)
 @RequiredArgsConstructor
 public class VoxCpmTtsProvider implements TtsProvider {
 
@@ -35,15 +38,10 @@ public class VoxCpmTtsProvider implements TtsProvider {
 
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
-    private final AppProperties.Tts.Voxcpm voxcpmConfig;
+    private final SettingsService settingsService;
 
     @Qualifier("virtualExecutor")
     private final ExecutorService virtualExecutor;
-
-    @Override
-    public String getName() {
-        return "voxcpm";
-    }
 
     @Override
     public void synthesize(Task task, Path textPath, Path outputDir) throws Exception {
@@ -90,7 +88,7 @@ public class VoxCpmTtsProvider implements TtsProvider {
             return;
         }
 
-        String serviceUrl = voxcpmConfig.getServiceUrl();
+        String serviceUrl = settingsService.getProviderConfig(VOXCPM, AppProperties.Tts.Voxcpm.class).getServiceUrl();
         if (serviceUrl == null || serviceUrl.isBlank()) {
             throw new IllegalArgumentException("voxcpm.serviceUrl 未配置");
         }

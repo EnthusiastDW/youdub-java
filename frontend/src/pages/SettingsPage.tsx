@@ -185,7 +185,7 @@ export default function SettingsPage() {
 
   // Form state — provider selections
   const [translateProvider, setTranslateProvider] = useState("openai");
-  const [ttsProvider, setTtsProvider] = useState("edge-tts");
+  const [ttsProvider, setTtsProvider] = useState("voxcpm");
   const [asrProvider, setAsrProvider] = useState("whisper-api");
   const [separateProvider, setSeparateProvider] = useState("audio-separator-api");
 
@@ -215,7 +215,7 @@ export default function SettingsPage() {
 
         // Provider selections
         setTranslateProvider(data.providers?.translate?.current || "openai");
-        setTtsProvider(data.providers?.tts?.current || "edge-tts");
+        setTtsProvider(data.providers?.tts?.current || "voxcpm");
         setAsrProvider(data.providers?.asr?.current || "whisper-api");
         setSeparateProvider(data.providers?.separate?.current || "audio-separator-api");
         setProvidersData(data.providers || null);

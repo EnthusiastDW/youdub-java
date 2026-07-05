@@ -48,8 +48,6 @@ class AdapterE2ETest {
         assertNotNull(downloaders);
         assertTrue(downloaders.containsKey("ytdlp"));
         assertTrue(downloaders.containsKey("local"));
-        assertEquals("ytdlp", downloaders.get("ytdlp").getName());
-        assertEquals("local", downloaders.get("local").getName());
     }
 
     @Test
@@ -58,8 +56,6 @@ class AdapterE2ETest {
         assertTrue(separators.containsKey("ffmpeg-simple"));
         assertTrue(separators.containsKey("demucs"));
         assertTrue(separators.containsKey("audio-separator-api"));
-        assertEquals("demucs", separators.get("demucs").getName());
-        assertEquals("audio-separator-api", separators.get("audio-separator-api").getName());
     }
 
     @Test
@@ -67,8 +63,6 @@ class AdapterE2ETest {
         assertNotNull(recognizers);
         assertTrue(recognizers.containsKey("whisper-api"));
         assertTrue(recognizers.containsKey("whisper-cpp"));
-        assertEquals("whisper-api", recognizers.get("whisper-api").getName());
-        assertEquals("whisper-cpp", recognizers.get("whisper-cpp").getName());
     }
 
     @Test
@@ -76,8 +70,6 @@ class AdapterE2ETest {
         assertNotNull(translators);
         assertTrue(translators.containsKey("openai"));
         assertTrue(translators.containsKey("ollama"));
-        assertEquals("openai", translators.get("openai").getName());
-        assertEquals("ollama", translators.get("ollama").getName());
     }
 
     @Test
@@ -86,22 +78,17 @@ class AdapterE2ETest {
         assertTrue(ttsProviders.containsKey("voxcpm"));
         assertTrue(ttsProviders.containsKey("edge-tts"));
         assertTrue(ttsProviders.containsKey("openai-tts"));
-        assertEquals("voxcpm", ttsProviders.get("voxcpm").getName());
-        assertEquals("edge-tts", ttsProviders.get("edge-tts").getName());
-        assertEquals("openai-tts", ttsProviders.get("openai-tts").getName());
     }
 
     @Test
     void audioProcessors_shouldBeRegistered() {
         assertNotNull(audioProcessors);
         assertTrue(audioProcessors.containsKey("ffmpeg-audio"));
-        assertEquals("ffmpeg-audio", audioProcessors.get("ffmpeg-audio").getName());
     }
 
     @Test
     void videoProcessors_shouldBeRegistered() {
         assertNotNull(videoProcessors);
         assertTrue(videoProcessors.containsKey("ffmpeg-video"));
-        assertEquals("ffmpeg-video", videoProcessors.get("ffmpeg-video").getName());
     }
 }

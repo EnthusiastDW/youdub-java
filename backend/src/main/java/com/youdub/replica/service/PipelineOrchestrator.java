@@ -18,6 +18,8 @@ import com.youdub.replica.service.adapter.translate.Translator;
 import com.youdub.replica.service.adapter.tts.TtsProvider;
 import com.youdub.replica.service.adapter.video.VideoProcessor;
 import com.youdub.replica.util.DeviceResolver;
+
+import static com.youdub.replica.service.adapter.AdapterConstants.*;
 import com.youdub.replica.util.TaskDirResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -200,8 +202,8 @@ public class PipelineOrchestrator {
     }
 
     private void executeDownload(Task task, Path sessionDir) throws Exception {
-        String downloaderName = "local".equalsIgnoreCase(task.getSourceType()) ? "local" :
-                settingsRepository.get("download.provider", "ytdlp");
+        String downloaderName = LOCAL.equalsIgnoreCase(task.getSourceType()) ? LOCAL :
+        settingsRepository.get("download.provider", YTDLP);
         Downloader downloader = downloaders.get(downloaderName);
         if (downloader == null) {
             throw new RuntimeException("未找到下载适配器：" + downloaderName);
@@ -219,7 +221,7 @@ public class PipelineOrchestrator {
         }
         Path audioPath = sessionDir.resolve("media").resolve("video_source.mp4");
         Path outputDir = sessionDir.resolve("media");
-        String device = deviceResolver.getDeviceForComponent("demucs");
+        String device = deviceResolver.getDeviceForComponent(DEMUCS);
         separator.separate(task, audioPath, outputDir, device);
     }
 
@@ -281,7 +283,7 @@ public class PipelineOrchestrator {
     }
 
     private void executeSplitAudio(Task task, Path sessionDir) throws Exception {
-        AudioProcessor processor = audioProcessors.get("ffmpeg-audio");
+        AudioProcessor processor = audioProcessors.get(FFMPEG_AUDIO);
         Path vocalsPath = sessionDir.resolve("media").resolve("audio_vocals.wav");
         Path translationPath = sessionDir.resolve("metadata").resolve("translation." + task.getTargetLanguage() + ".json");
         Path outputDir = sessionDir.resolve("segments");
@@ -300,7 +302,7 @@ public class PipelineOrchestrator {
     }
 
     private void executeMergeAudio(Task task, Path sessionDir) throws Exception {
-        AudioProcessor processor = audioProcessors.get("ffmpeg-audio");
+        AudioProcessor processor = audioProcessors.get(FFMPEG_AUDIO);
         Path ttsDir = sessionDir.resolve("segments").resolve("tts");
         Path translationPath = sessionDir.resolve("metadata").resolve("translation." + task.getTargetLanguage() + ".json");
         Path outputDir = sessionDir.resolve("tmp");
@@ -308,7 +310,7 @@ public class PipelineOrchestrator {
     }
 
     private void executeMergeVideo(Task task, Path sessionDir) throws Exception {
-        VideoProcessor processor = videoProcessors.get("ffmpeg-video");
+        VideoProcessor processor = videoProcessors.get(FFMPEG_VIDEO);
         Path videoPath = sessionDir.resolve("media").resolve("video_source.mp4");
         Path dubbingPath = sessionDir.resolve("tmp").resolve("audio_dubbing.wav");
         Path bgmPath = sessionDir.resolve("media").resolve("audio_bgm.wav");

@@ -5,6 +5,8 @@ import com.youdub.replica.model.entity.Task;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
+import static com.youdub.replica.service.adapter.AdapterConstants.LOCAL;
+
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
@@ -28,8 +30,8 @@ public class TaskDirResolver {
         String title = sanitize(task.getTitle() == null ? "" : task.getTitle());
         String taskId = task.getId();
 
-        if ("local".equalsIgnoreCase(sourceType)) {
-            return base.resolve("local").resolve(title + "__" + taskId);
+if (LOCAL.equalsIgnoreCase(sourceType)) {
+return base.resolve(LOCAL).resolve(title + "__" + taskId);
         }
         return base.resolve(taskId);
     }

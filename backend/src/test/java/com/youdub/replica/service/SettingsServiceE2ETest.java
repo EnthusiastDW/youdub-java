@@ -79,8 +79,8 @@ class SettingsServiceE2ETest {
     }
 
     @Test
-    void mergeFromDb_shouldOverrideAppPropertiesAndAdapterConfigs() {
-        // 先保存配置到 DB
+    void getProviderConfig_shouldMergeDbOverDefaults() {
+        // 保存配置到 DB
         SettingsRequest request = new SettingsRequest();
         SettingsRequest.ProviderSelections providers = new SettingsRequest.ProviderSelections();
         providers.setTranslate("openai");
@@ -92,23 +92,31 @@ class SettingsServiceE2ETest {
         configs.put("asr.whisper-api.baseUrl", "https://db-whisper.example.com");
         configs.put("tts.edge-tts.voice", "db-voice");
         configs.put("separate.demucs.model", "db-demucs");
-        configs.put("ytdlp.proxy", "http://db.proxy:7890");
         providers.setProviderConfigs(configs);
         request.setProviders(providers);
         settingsService.saveSettings(request);
 
-        // 重新触发 DB -> AppProperties 合并（模拟重启）
-        appProperties.mergeFromDb(settingsRepository);
+        // 验证 getProviderConfig 返回 DB 覆盖后的合并值
+        AppProperties.Translate.Openai openaiCfg = settingsService.getProviderConfig("openai", AppProperties.Translate.Openai.class);
+        assertEquals("https://db.example.com/v1/chat/completions", openaiCfg.getChatUrl());
+        assertEquals("db-api-key", openaiCfg.getApiKey());
+        assertEquals("db-model", openaiCfg.getModel());
+        assertEquals(7, openaiCfg.getConcurrency());
 
-        // 验证 AppProperties 被覆盖
-        assertEquals("https://db.example.com/v1/chat/completions", appProperties.getTranslate().getOpenai().getChatUrl());
-        assertEquals("db-api-key", appProperties.getTranslate().getOpenai().getApiKey());
-        assertEquals("db-model", appProperties.getTranslate().getOpenai().getModel());
-        assertEquals(7, appProperties.getTranslate().getOpenai().getConcurrency());
-        assertEquals("https://db-whisper.example.com", appProperties.getAsr().getWhisperApi().getBaseUrl());
-        assertEquals("db-voice", appProperties.getTts().getEdgeTts().getVoice());
-        assertEquals("db-demucs", appProperties.getSeparate().getDemucs().getModel());
-        assertEquals("http://db.proxy:7890", appProperties.getYtdlp().getProxy());
+        AppProperties.Asr.WhisperApi whisperCfg = settingsService.getProviderConfig("whisper-api", AppProperties.Asr.WhisperApi.class);
+        assertEquals("https://db-whisper.example.com", whisperCfg.getBaseUrl());
+
+        AppProperties.Tts.EdgeTts edgeCfg = settingsService.getProviderConfig("edge-tts", AppProperties.Tts.EdgeTts.class);
+        assertEquals("db-voice", edgeCfg.getVoice());
+
+        AppProperties.Separate.Demucs demucsCfg = settingsService.getProviderConfig("demucs", AppProperties.Separate.Demucs.class);
+        assertEquals("db-demucs", demucsCfg.getModel());
+    }
+
+    @Test
+    void getProviderConfig_unknownProvider_shouldReturnDefaults() {
+        AppProperties.Translate.Ollama cfg = settingsService.getProviderConfig("ollama", AppProperties.Translate.Ollama.class);
+        assertNotNull(cfg);
     }
 
     @Test
@@ -142,6 +150,8 @@ class SettingsServiceE2ETest {
 
     @Test
     void getOpenAiModels_withoutApiKey_shouldThrow() {
+        // 清除可能由其他测试写入的 translate.openai 配置
+        settingsRepository.set("translate.openai", "{}");
         assertThrows(IllegalArgumentException.class, () ->
                 settingsService.getOpenAiModels("https://api.openai.com/v1", ""));
     }

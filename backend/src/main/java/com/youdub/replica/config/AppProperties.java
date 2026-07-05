@@ -1,12 +1,8 @@
 package com.youdub.replica.config;
 
-import com.youdub.replica.repository.SettingsRepository;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
-
-import java.util.Map;
-import java.util.function.Consumer;
 
 @Data
 @Component
@@ -148,77 +144,5 @@ public class AppProperties {
     public static class Device {
         private String demucs;
         private String whisper;
-    }
-
-    /**
-     * 启动时调用：从 DB 读取设置，覆盖 AppProperties 中同名值。
-     * DB 中存储的 key 格式如 "asr.provider"、"translate.openai.apiKey" 等。
-     */
-    public void mergeFromDb(SettingsRepository settingsRepository) {
-        Map<String, String> db = settingsRepository.getAll();
-
-        // 全局 / 下载 / 设备 / 编码器
-        setIfPresent(db, "ytdlp.proxy", ytdlp::setProxy);
-        setIfPresent(db, "download.outputFilename", download::setOutputFilename);
-        setLongIfPresent(db, "download.timeoutMs", download::setTimeoutMs);
-        setIfPresent(db, "device.demucs", deviceConfig::setDemucs);
-        setIfPresent(db, "device.whisper", deviceConfig::setWhisper);
-        setIfPresent(db, "ffmpeg.encoder", ffmpeg::setEncoder);
-
-        // Provider 选择
-        setIfPresent(db, "asr.provider", asr::setProvider);
-        setIfPresent(db, "tts.provider", tts::setProvider);
-        setIfPresent(db, "translate.provider", translate::setProvider);
-        setIfPresent(db, "separate.provider", separate::setProvider);
-
-        // ASR 配置
-        setIfPresent(db, "asr.whisper-api.baseUrl", asr.getWhisperApi()::setBaseUrl);
-        setIfPresent(db, "asr.whisper-api.url", asr.getWhisperApi()::setUrl);
-        setIfPresent(db, "asr.whisper-api.apiKey", asr.getWhisperApi()::setApiKey);
-        setIfPresent(db, "asr.whisper-api.model", asr.getWhisperApi()::setModel);
-        setIfPresent(db, "asr.whisper-cpp.model", asr.getWhisperCpp()::setModel);
-
-        // TTS 配置
-        setIfPresent(db, "tts.edge-tts.path", tts.getEdgeTts()::setPath);
-        setIfPresent(db, "tts.edge-tts.voice", tts.getEdgeTts()::setVoice);
-        setIfPresent(db, "tts.openai-tts.url", tts.getOpenaiTts()::setUrl);
-        setIfPresent(db, "tts.openai-tts.apiKey", tts.getOpenaiTts()::setApiKey);
-        setIfPresent(db, "tts.openai-tts.model", tts.getOpenaiTts()::setModel);
-        setIfPresent(db, "tts.openai-tts.voice", tts.getOpenaiTts()::setVoice);
-        setIfPresent(db, "tts.voxcpm.serviceUrl", tts.getVoxcpm()::setServiceUrl);
-
-        // 翻译配置
-        setIfPresent(db, "translate.ollama.baseUrl", translate.getOllama()::setBaseUrl);
-        setIfPresent(db, "translate.ollama.model", translate.getOllama()::setModel);
-        setIntIfPresent(db, "translate.ollama.concurrency", translate.getOllama()::setConcurrency);
-        setIfPresent(db, "translate.openai.chatUrl", translate.getOpenai()::setChatUrl);
-        setIfPresent(db, "translate.openai.apiKey", translate.getOpenai()::setApiKey);
-        setIfPresent(db, "translate.openai.model", translate.getOpenai()::setModel);
-        setIntIfPresent(db, "translate.openai.concurrency", translate.getOpenai()::setConcurrency);
-
-        // 分离配置
-        setIfPresent(db, "separate.demucs.model", separate.getDemucs()::setModel);
-        setIfPresent(db, "separate.audio-separator-api.serviceUrl", separate.getAudioSeparatorApi()::setServiceUrl);
-    }
-
-    private void setIfPresent(Map<String, String> map, String key, Consumer<String> setter) {
-        String val = map.get(key);
-        if (val != null && !val.isBlank()) {
-            setter.accept(val);
-        }
-    }
-
-    private void setIntIfPresent(Map<String, String> map, String key, Consumer<Integer> setter) {
-        String val = map.get(key);
-        if (val != null && !val.isBlank()) {
-            try { setter.accept(Integer.parseInt(val)); } catch (NumberFormatException ignored) {}
-        }
-    }
-
-    private void setLongIfPresent(Map<String, String> map, String key, Consumer<Long> setter) {
-        String val = map.get(key);
-        if (val != null && !val.isBlank()) {
-            try { setter.accept(Long.parseLong(val)); } catch (NumberFormatException ignored) {}
-        }
     }
 }

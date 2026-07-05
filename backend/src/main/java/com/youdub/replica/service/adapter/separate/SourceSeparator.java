@@ -8,6 +8,5 @@ import java.nio.file.Path;
  * 当前方案：FfmpegSimpleSeparator（FFmpeg 频率滤波）、DemucsSeparator（本地 Python 模型）、AudioSeparatorApiSeparator（Docker 容器服务）
  */
 public interface SourceSeparator {
-    String getName();
     void separate(Task task, Path audioPath, Path outputDir, String device) throws Exception;
 }

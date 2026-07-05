@@ -4,13 +4,15 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
-import com.youdub.replica.repository.SettingsRepository;
+import com.youdub.replica.service.SettingsService;
 import com.youdub.replica.util.Command;
 import com.youdub.replica.util.CommandRunner;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
+
+import static com.youdub.replica.service.adapter.AdapterConstants.EDGE_TTS;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -26,7 +28,7 @@ import java.util.concurrent.atomic.AtomicInteger;
  * 通过 edge-tts 子进程生成通用 TTS 音频。
  */
 @Slf4j
-@Component("edge-tts")
+@Component(EDGE_TTS)
 @RequiredArgsConstructor
 public class EdgeTtsProvider implements TtsProvider {
 
@@ -35,16 +37,10 @@ public class EdgeTtsProvider implements TtsProvider {
     private static final String DEFAULT_VOICE = "zh-CN-XiaoxiaoNeural";
 
     private final ObjectMapper objectMapper;
-    private final AppProperties.Tts.EdgeTts edgeTtsConfig;
-    private final SettingsRepository settingsRepository;
+    private final SettingsService settingsService;
 
     @Qualifier("virtualExecutor")
     private final ExecutorService virtualExecutor;
-
-    @Override
-    public String getName() {
-        return "edge-tts";
-    }
 
     @Override
     public void synthesize(Task task, Path textPath, Path outputDir) throws Exception {
@@ -55,9 +51,10 @@ public class EdgeTtsProvider implements TtsProvider {
         Path ttsDir = outputDir.resolve("tts");
         Files.createDirectories(ttsDir);
 
-        String edgePath = edgeTtsConfig.getPath();
+        AppProperties.Tts.EdgeTts config = settingsService.getProviderConfig(EDGE_TTS, AppProperties.Tts.EdgeTts.class);
+        String edgePath = config.getPath();
         // 优先读取用户通过设置页面保存的音色，未设置时回退到配置文件默认值
-        String voice = settingsRepository.get("tts.edge-tts.voice", edgeTtsConfig.getVoice());
+        String voice = config.getVoice();
         String useVoice = (voice == null || voice.isBlank()) ? DEFAULT_VOICE : voice;
 
         // 读取翻译结果
