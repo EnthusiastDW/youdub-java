@@ -41,7 +41,7 @@ services:
       #     - 10：默认值，速度和质量的平衡点。如果追求极致音质可以调到 20~50，追求速度可以降到 5
       - VOXCPM_INFERENCE_TIMESTEPS=${VOXCPM_INFERENCE_TIMESTEPS:-10}
       - MODEL_CACHE_DIR=/app/data/modelscope
-      - PRELOAD_MODELS=${PRELOAD_MODELS:-true}
+      - PRELOAD_MODELS=${PRELOAD_MODELS:-false}
 
       # ── General ────────────────────────
       - CUDA_DEVICE=${CUDA_DEVICE:-}

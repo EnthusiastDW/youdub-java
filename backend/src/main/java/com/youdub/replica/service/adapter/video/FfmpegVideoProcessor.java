@@ -254,7 +254,7 @@ public class FfmpegVideoProcessor implements VideoProcessor {
             // 硬字幕（烧入画面）：所有编码器统一使用 subtitles filter
             // 用相对路径避免 Windows 冒号冲突
             command.add("-vf");
-            command.add("subtitles=filename='subtitles.srt':force_style='FontName=Noto Sans CJK SC,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1'");
+            command.add("subtitles=filename='subtitles.srt':force_style='FontName=Noto Sans CJK SC,FontSize=16,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=15'");
         }
 
         command.add("-map");
@@ -283,6 +283,132 @@ public class FfmpegVideoProcessor implements VideoProcessor {
 
         taskRepository.updateField(task.getId(), "final_video_path", finalVideo.toAbsolutePath().toString());
         log.info("视频合成完成：task={}, file={}", task.getId(), finalVideo);
+    }
+
+    @Override
+    public void mergeVideoSubtitleOnly(Task task, Path videoPath, Path timingsPath, Path outputDir) throws Exception {
+        if (videoPath == null || !Files.exists(videoPath)) {
+            throw new IllegalArgumentException("视频文件不存在：" + videoPath);
+        }
+
+        Files.createDirectories(outputDir);
+
+        Path finalVideo = outputDir.resolve("video_final.mp4");
+        if (Files.exists(finalVideo) && Files.size(finalVideo) > 0) {
+            log.info("最终视频已存在，跳过：{}", finalVideo);
+            taskRepository.updateField(task.getId(), "final_video_path", finalVideo.toAbsolutePath().toString());
+            skipTracker.markSkipped();
+            return;
+        }
+
+        String ffmpegPath = settingsService.getGlobalConfig("ffmpeg", AppProperties.Ffmpeg.class).getPath();
+
+        // 生成双语 SRT
+        Path srtFile = outputDir.resolve("subtitles.srt");
+        if (timingsPath != null && Files.exists(timingsPath)) {
+            generateBilingualSrt(timingsPath, srtFile, task.getTargetLanguage());
+        }
+
+        // 合成最终视频（烧录字幕，保留原音频）
+        ensureEncoder();
+
+        List<String> command = new ArrayList<>();
+        command.add(ffmpegPath);
+        command.add("-y");
+        command.add("-i");
+        command.add(videoPath.toString());
+
+        boolean hasSrt = Files.exists(srtFile);
+        if (hasSrt) {
+            command.add("-vf");
+            command.add("subtitles=filename='subtitles.srt':force_style='FontName=Noto Sans CJK SC,FontSize=16,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=15'");
+        }
+
+        command.add("-c:v");
+        command.add(videoEncoder);
+        command.addAll(encoderArgs);
+
+        command.add("-c:a");
+        command.add("copy");
+
+        command.add("-movflags");
+        command.add("+faststart");
+        command.add(finalVideo.toString());
+
+        log.info("合成字幕视频：task={}, video={}", task.getId(), finalVideo);
+        CommandRunner.run(Command.builder().add(command).maxOutputLines(1000).timeout(TIMEOUT_MS).workDir(outputDir).build());
+
+        if (!Files.exists(finalVideo)) {
+            throw new RuntimeException("最终视频生成失败：" + finalVideo);
+        }
+
+        taskRepository.updateField(task.getId(), "final_video_path", finalVideo.toAbsolutePath().toString());
+        log.info("字幕视频合成完成：task={}, file={}", task.getId(), finalVideo);
+    }
+
+    /**
+     * Generate a bilingual SRT subtitle file from translation timings JSON.
+     * Each entry shows both src (original) and dst (translated) text on separate lines:
+     *
+     *   1
+     *   00:00:01,500 --> 00:00:04,000
+     *   Hello, how are you?
+     *   你好吗？
+     *
+     * Falls back to start_time/end_time when actual_* fields absent.
+     * Falls back to single language if src or dst is empty.
+     */
+    private void generateBilingualSrt(Path timingsPath, Path srtFile, String targetLanguage) throws Exception {
+        JsonNode root = objectMapper.readTree(Files.readString(timingsPath));
+        JsonNode translation = root.path("translation");
+        if (!translation.isArray()) {
+            log.warn("timings 中没有 translation 数组，跳过双语 SRT 生成");
+            return;
+        }
+
+        // 先收集所有非空条目，再写入 SRT。
+        // 写入时确保相邻段时间不重叠：若下一段 start <= 当前段 end，
+        // 将当前段 end 截断到下一段 start 前 1ms。
+        // 这样 FFmpeg 渲染时不会同时显示两个字幕导致叠在一起。
+        record SrtEntry(long startMs, long endMs, String text) {}
+        List<SrtEntry> entries = new ArrayList<>();
+        for (JsonNode item : translation) {
+            String src = item.path("src").asText("").trim();
+            String dst = item.path("dst").asText("").trim();
+            if (src.isEmpty() && dst.isEmpty()) continue;
+
+            long startMs = item.path("actual_start_time").asLong(item.path("start_time").asLong(0));
+            long endMs = item.path("actual_end_time").asLong(item.path("end_time").asLong(0));
+
+            String text;
+            if (!src.isEmpty() && !dst.isEmpty()) {
+                text = src + "\n" + dst;
+            } else if (!src.isEmpty()) {
+                text = src;
+            } else {
+                text = dst;
+            }
+            entries.add(new SrtEntry(startMs, endMs, text));
+        }
+
+        StringBuilder srt = new StringBuilder();
+        for (int i = 0; i < entries.size(); i++) {
+            SrtEntry entry = entries.get(i);
+            long actualStart = Math.max(entry.startMs, 0);
+            long actualEnd = entry.endMs;
+
+            long nextStart = (i + 1 < entries.size()) ? entries.get(i + 1).startMs : Long.MAX_VALUE;
+            if (actualEnd >= nextStart) {
+                actualEnd = Math.max(actualStart, nextStart - 1);
+            }
+
+            srt.append(i + 1).append("\n");
+            srt.append(formatSrtTime(actualStart)).append(" --> ").append(formatSrtTime(actualEnd)).append("\n");
+            srt.append(entry.text).append("\n\n");
+        }
+
+        Files.writeString(srtFile, srt.toString());
+        log.info("双语 SRT 生成完成：{}", srtFile);
     }
 
     /**

@@ -8,7 +8,7 @@ export type TaskStatus =
 
 export type StageStatus = "pending" | "running" | "succeeded" | "failed";
 
-export type ExecutionMode = "auto" | "manual";
+export type ExecutionMode = "auto" | "manual" | "subtitle-only";
 
 export type LocalDirection = "en-zh" | "zh-en";
 

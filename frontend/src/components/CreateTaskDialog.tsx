@@ -247,6 +247,7 @@ export function CreateTaskDialog({ open, onClose, onCreated }: CreateTaskDialogP
           >
             <option value="auto">{t.home.executionAuto}</option>
             <option value="manual">{t.home.executionManual}</option>
+            <option value="subtitle-only">{t.home.executionSubtitleOnly}</option>
           </Select>
         </div>
 

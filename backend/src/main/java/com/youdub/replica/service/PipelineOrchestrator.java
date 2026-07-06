@@ -87,6 +87,16 @@ public class PipelineOrchestrator {
             new StageDef("merge_video", "合成视频")
     );
 
+    /** 简化模式（仅字幕）的 6 个阶段：不做 TTS、不替换音频 */
+    private static final List<StageDef> SUBTITLE_ONLY_STAGES = List.of(
+            new StageDef("download", "下载"),
+            new StageDef("separate", "Demucs"),
+            new StageDef("asr", "Whisper"),
+            new StageDef("asr_fix", "切分句子"),
+            new StageDef("translate", "翻译"),
+            new StageDef("merge_video", "合成视频")
+    );
+
     /**
      * 执行管线。
      */
@@ -109,6 +119,10 @@ public class PipelineOrchestrator {
                 task.setSessionPath(sessionDir.toString());
             }
 
+            List<StageDef> activeStages = "subtitle-only".equalsIgnoreCase(task.getExecutionMode())
+                    ? SUBTITLE_ONLY_STAGES
+                    : STAGES;
+
             for (StageDef stage : STAGES) {
                 // 检查任务是否被暂停或取消
                 Task current = taskRepository.findById(taskId);
@@ -123,6 +137,13 @@ public class PipelineOrchestrator {
                     return;
                 }
 
+                // 简化模式：跳过不在活跃列表中的阶段
+                if (!activeStages.contains(stage)) {
+                    log.info("简化模式跳过阶段：task={}, stage={}", taskId, stage.name);
+                    taskRepository.updateStageStatus(taskId, stage.name, StageStatus.SUCCEEDED, 100, "");
+                    continue;
+                }
+
                 TaskStage stageState = findStage(current.getStages(), stage.name);
                 if (stageState != null && stageState.getStatus() == StageStatus.SUCCEEDED) {
                     log.info("阶段已成功，跳过：task={}, stage={}", taskId, stage.name);
@@ -131,7 +152,7 @@ public class PipelineOrchestrator {
 
                 taskRepository.updateField(taskId, "current_stage", stage.name);
                 taskRepository.updateStageStatus(taskId, stage.name, StageStatus.RUNNING, 0, "");
-                double stageProgressBase = (STAGES.indexOf(stage) * 100.0) / STAGES.size();
+                double stageProgressBase = (activeStages.indexOf(stage) * 100.0) / activeStages.size();
                 taskRepository.updateStatus(taskId, TaskStatus.RUNNING, stageProgressBase);
 
                 try {
@@ -144,7 +165,7 @@ public class PipelineOrchestrator {
                     }
                     skipTracker.clear();
 
-                    double overallProgress = ((STAGES.indexOf(stage) + 1) * 100.0) / STAGES.size();
+                    double overallProgress = ((activeStages.indexOf(stage) + 1) * 100.0) / activeStages.size();
                     taskRepository.updateStatus(taskId, TaskStatus.RUNNING, overallProgress);
                     log.info("阶段完成：task={}, stage={}", taskId, stage.name);
                 } catch (Exception e) {
@@ -159,7 +180,7 @@ public class PipelineOrchestrator {
                 // 手动模式下，每个阶段成功后暂停
                 if ("manual".equalsIgnoreCase(task.getExecutionMode())) {
                     log.info("手动模式，暂停任务：task={}, stage={}", taskId, stage.name);
-                    taskRepository.updateStatus(taskId, TaskStatus.PAUSED, stageProgressBase + 100.0 / STAGES.size());
+                    taskRepository.updateStatus(taskId, TaskStatus.PAUSED, stageProgressBase + 100.0 / activeStages.size());
                     return;
                 }
             }
@@ -368,11 +389,17 @@ public class PipelineOrchestrator {
     private void executeMergeVideo(Task task, Path sessionDir) throws Exception {
         VideoProcessor processor = videoProcessors.get(FFMPEG_VIDEO);
         Path videoPath = sessionDir.resolve("media").resolve("video_source.mp4");
-        Path dubbingPath = sessionDir.resolve("tmp").resolve("audio_dubbing.wav");
-        Path bgmPath = sessionDir.resolve("media").resolve("audio_bgm.wav");
-        Path timingsPath = sessionDir.resolve("tmp").resolve("timings.json");
         Path outputDir = sessionDir.resolve("media");
-        processor.mergeVideo(task, videoPath, dubbingPath, bgmPath, timingsPath, outputDir);
+
+        if ("subtitle-only".equalsIgnoreCase(task.getExecutionMode())) {
+            Path timingsPath = sessionDir.resolve("metadata").resolve("translation." + task.getTargetLanguage() + ".json");
+            processor.mergeVideoSubtitleOnly(task, videoPath, timingsPath, outputDir);
+        } else {
+            Path dubbingPath = sessionDir.resolve("tmp").resolve("audio_dubbing.wav");
+            Path bgmPath = sessionDir.resolve("media").resolve("audio_bgm.wav");
+            Path timingsPath = sessionDir.resolve("tmp").resolve("timings.json");
+            processor.mergeVideo(task, videoPath, dubbingPath, bgmPath, timingsPath, outputDir);
+        }
     }
 
     /**

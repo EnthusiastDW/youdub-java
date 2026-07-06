@@ -9,4 +9,6 @@ import java.nio.file.Path;
  */
 public interface VideoProcessor {
     void mergeVideo(Task task, Path videoPath, Path dubbingPath, Path bgmPath, Path timingsPath, Path outputDir) throws Exception;
+
+    void mergeVideoSubtitleOnly(Task task, Path videoPath, Path timingsPath, Path outputDir) throws Exception;
 }
