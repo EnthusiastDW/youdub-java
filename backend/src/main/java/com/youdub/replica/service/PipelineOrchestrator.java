@@ -35,8 +35,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
+import jakarta.annotation.PostConstruct;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Semaphore;
 
 import static com.youdub.replica.service.adapter.AdapterConstants.*;
 
@@ -71,6 +73,31 @@ public class PipelineOrchestrator {
     private final Map<String, AudioProcessor> audioProcessors;
     private final Map<String, VideoProcessor> videoProcessors;
     private final AdapterSkipTracker skipTracker;
+
+    private final Map<String, Semaphore> stageGates = new ConcurrentHashMap<>();
+
+    private static final Map<String, Integer> DEFAULT_STAGE_CONCURRENCY = Map.ofEntries(
+            Map.entry("download", 2),
+            Map.entry("separate", 1),
+            Map.entry("asr", 2),
+            Map.entry("asr_correct", 2),
+            Map.entry("asr_fix", 4),
+            Map.entry("translate", 3),
+            Map.entry("split_audio", 4),
+            Map.entry("tts", 1),
+            Map.entry("merge_audio", 2),
+            Map.entry("merge_video", 1)
+    );
+
+    @PostConstruct
+    public void initStageGates() {
+        Map<String, Integer> config = appProperties.getPipeline().getConcurrency();
+        DEFAULT_STAGE_CONCURRENCY.forEach((stage, defaultPermits) -> {
+            int permits = config.getOrDefault(stage, defaultPermits);
+            stageGates.put(stage, new Semaphore(permits));
+            log.info("步骤并发门控初始化：{} = {}", stage, permits);
+        });
+    }
 
     /**
      * 重跑/重做时的阶段时间戳备份（taskId -> {stageName -> [startedAt, completedAt]}）。
@@ -210,16 +237,22 @@ public class PipelineOrchestrator {
      * 根据阶段名称调用对应适配器。
      */
     private void executeStage(String stageName, Task task, Path sessionDir) throws Exception {
-        Path mediaDir = sessionDir.resolve("media");
-        Path metadataDir = sessionDir.resolve("metadata");
-        Path segmentsDir = sessionDir.resolve("segments");
-        Path tmpDir = sessionDir.resolve("tmp");
-        Files.createDirectories(mediaDir);
-        Files.createDirectories(metadataDir);
-        Files.createDirectories(segmentsDir);
-        Files.createDirectories(tmpDir);
+        Semaphore gate = stageGates.get(stageName);
+        if (gate != null) {
+            log.info("等待步骤门控：stage={}, 当前排队={}", stageName, gate.getQueueLength());
+            gate.acquire();
+        }
+        try {
+            Path mediaDir = sessionDir.resolve("media");
+            Path metadataDir = sessionDir.resolve("metadata");
+            Path segmentsDir = sessionDir.resolve("segments");
+            Path tmpDir = sessionDir.resolve("tmp");
+            Files.createDirectories(mediaDir);
+            Files.createDirectories(metadataDir);
+            Files.createDirectories(segmentsDir);
+            Files.createDirectories(tmpDir);
 
-        switch (stageName) {
+            switch (stageName) {
             case "download" -> executeDownload(task, sessionDir);
             case "separate" -> executeSeparate(task, sessionDir);
             case "asr" -> executeAsr(task, sessionDir);
@@ -231,6 +264,11 @@ public class PipelineOrchestrator {
             case "merge_audio" -> executeMergeAudio(task, sessionDir);
             case "merge_video" -> executeMergeVideo(task, sessionDir);
             default -> throw new RuntimeException("未知阶段：" + stageName);
+            }
+        } finally {
+            if (gate != null) {
+                gate.release();
+            }
         }
     }
 

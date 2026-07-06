@@ -4,6 +4,9 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import java.util.HashMap;
+import java.util.Map;
+
 @Data
 @Component
 @ConfigurationProperties(prefix = "app")
@@ -28,6 +31,7 @@ public class AppProperties {
     private Ffmpeg ffmpeg = new Ffmpeg();
     private Download download = new Download();
     private Device deviceConfig = new Device();
+    private Pipeline pipeline = new Pipeline();
 
     @Data
     public static class Ytdlp {
@@ -164,5 +168,10 @@ public class AppProperties {
     public static class Device {
         private String demucs;
         private String whisper;
+    }
+
+    @Data
+    public static class Pipeline {
+        private Map<String, Integer> concurrency = new HashMap<>();
     }
 }

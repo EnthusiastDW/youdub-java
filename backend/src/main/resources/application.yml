@@ -98,3 +98,16 @@ app:
   device-config:
     demucs: ${APP_DEVICE_DEMUCS:}
     whisper: ${APP_DEVICE_WHISPER:}
+
+  pipeline:
+    concurrency:
+      download: 2
+      separate: 2
+      asr: 2
+      asr_correct: 2
+      asr_fix: 4
+      translate: 2
+      split_audio: 4
+      tts: 1
+      merge_audio: 2
+      merge_video: 1
