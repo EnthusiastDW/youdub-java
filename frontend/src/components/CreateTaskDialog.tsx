@@ -81,13 +81,14 @@ export function CreateTaskDialog({ open, onClose, onCreated }: CreateTaskDialogP
     setSubtitleFile(null);
     setDirection("en-zh");
     setExecutionMode("auto");
-    setNotes("");
     setError(null);
     setYoutubeUrl("");
     setMode("url");
+    // 不从 getSettings() 加载后覆盖，直接用 functional setter 避免覆盖用户输入
+    setNotes("");
     getSettings()
       .then((data) => {
-        if (data.notesTemplate) setNotes(data.notesTemplate);
+        setNotes(prev => prev || data.notesTemplate || "");
       })
       .catch(() => {});
   }, [open]);
@@ -107,7 +108,8 @@ export function CreateTaskDialog({ open, onClose, onCreated }: CreateTaskDialogP
         if (!videoFile) return;
         const task = await uploadLocalTask(
           videoFile, executionMode, direction, subtitleFile,
-          uploadYoutubeVideoId || undefined
+          uploadYoutubeVideoId || undefined,
+          notes || undefined,
         );
         setVideoFile(null);
         setSubtitleFile(null);

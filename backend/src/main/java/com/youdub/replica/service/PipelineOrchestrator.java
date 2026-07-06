@@ -2,8 +2,10 @@ package com.youdub.replica.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
+import com.youdub.replica.service.adapter.asr.SubtitleParser;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.model.entity.TaskStage;
 import com.youdub.replica.model.enums.StageStatus;
@@ -230,15 +232,64 @@ public class PipelineOrchestrator {
     }
 
     private void executeAsr(Task task, Path sessionDir) throws Exception {
+        Path audioPath = sessionDir.resolve("media").resolve("audio_vocals.wav");
+        Path outputDir = sessionDir.resolve("metadata");
+
+        // 优先使用 YouTube 自动字幕，无需 GPU ASR
+        Path subtitleFile = sessionDir.resolve("media").resolve("video_source.en.vtt");
+        if (Files.exists(subtitleFile)) {
+            log.info("找到英文字幕文件，跳过 Whisper ASR：{}", subtitleFile);
+            List<SubtitleParser.Segment> segments = SubtitleParser.parse(subtitleFile);
+            writeAsrJson(segments, audioPath, outputDir);
+            return;
+        }
+
         String provider = settingsRepository.get("asr.provider", appProperties.getAsr().getProvider());
         SpeechRecognizer recognizer = recognizers.get(provider);
         if (recognizer == null) {
             throw new RuntimeException("未找到 ASR 适配器：" + provider);
         }
-        Path audioPath = sessionDir.resolve("media").resolve("audio_vocals.wav");
-        Path outputDir = sessionDir.resolve("metadata");
         String language = task.getAsrLanguage();
         recognizer.transcribe(task, audioPath, outputDir, language);
+    }
+
+    /**
+     * 将字幕段列表写入 asr.json，格式与 WhisperApiRecognizer.convertToStandardFormat 一致。
+     */
+    private void writeAsrJson(List<SubtitleParser.Segment> segments, Path audioPath, Path outputDir) throws Exception {
+        ObjectNode root = objectMapper.createObjectNode();
+
+        ObjectNode audioInfo = objectMapper.createObjectNode();
+        audioInfo.put("duration", 0);
+        audioInfo.put("source", audioPath.toString());
+        root.set("audio_info", audioInfo);
+
+        ObjectNode resultObj = objectMapper.createObjectNode();
+        StringBuilder fullText = new StringBuilder();
+        ArrayNode utterances = objectMapper.createArrayNode();
+
+        for (SubtitleParser.Segment seg : segments) {
+            if (fullText.length() > 0) {
+                fullText.append(" ");
+            }
+            fullText.append(seg.getText());
+
+            ObjectNode utterance = objectMapper.createObjectNode();
+            utterance.put("text", seg.getText());
+            utterance.put("start_time", seg.getStartTimeMs());
+            utterance.put("end_time", seg.getEndTimeMs());
+            utterance.put("speaker", "1");
+            utterance.set("words", objectMapper.createArrayNode());
+            utterances.add(utterance);
+        }
+
+        resultObj.put("text", fullText.toString());
+        resultObj.set("utterances", utterances);
+        root.set("result", resultObj);
+
+        Path asrFile = outputDir.resolve("asr.json");
+        Files.writeString(asrFile, objectMapper.writeValueAsString(root));
+        log.info("字幕转 ASR 完成：{}", asrFile);
     }
 
     private void executeAsrFix(Task task, Path sessionDir) throws Exception {

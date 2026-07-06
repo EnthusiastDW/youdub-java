@@ -58,7 +58,8 @@ export async function uploadLocalTask(
   executionMode: ExecutionMode,
   direction: LocalDirection,
   subtitleFile: File | null = null,
-  youtubeVideoId?: string
+  youtubeVideoId?: string,
+  notes?: string,
 ): Promise<Task> {
   const form = new FormData();
   form.append("file", file);
@@ -69,6 +70,9 @@ export async function uploadLocalTask(
   }
   if (youtubeVideoId) {
     form.append("youtubeVideoId", youtubeVideoId);
+  }
+  if (notes) {
+    form.append("notes", notes);
   }
 
   const response = await fetch(`${API_BASE}/api/tasks/upload`, {

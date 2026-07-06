@@ -1,0 +1,2736 @@
+WEBVTT
+Kind: captions
+Language: en
+
+00:00:00.919 --> 00:00:02.590 align:start position:0%
+ 
+at<00:00:01.040><c> the</c><00:00:01.120><c> end</c><00:00:01.319><c> of</c><00:00:01.480><c> this</c><00:00:01.680><c> video</c><00:00:02.080><c> you</c><00:00:02.200><c> will</c><00:00:02.360><c> know</c>
+
+00:00:02.590 --> 00:00:02.600 align:start position:0%
+at the end of this video you will know
+ 
+
+00:00:02.600 --> 00:00:05.150 align:start position:0%
+at the end of this video you will know
+exactly<00:00:03.159><c> why</c><00:00:03.320><c> we</c><00:00:03.480><c> need</c><00:00:03.800><c> generics</c><00:00:04.200><c> and</c><00:00:04.400><c> rust</c>
+
+00:00:05.150 --> 00:00:05.160 align:start position:0%
+exactly why we need generics and rust
+ 
+
+00:00:05.160 --> 00:00:07.430 align:start position:0%
+exactly why we need generics and rust
+and<00:00:05.640><c> understand</c><00:00:05.839><c> their</c><00:00:06.080><c> tight</c><00:00:06.359><c> coupling</c><00:00:06.839><c> to</c>
+
+00:00:07.430 --> 00:00:07.440 align:start position:0%
+and understand their tight coupling to
+ 
+
+00:00:07.440 --> 00:00:09.790 align:start position:0%
+and understand their tight coupling to
+trades<00:00:08.440><c> this</c><00:00:08.559><c> will</c><00:00:08.800><c> totally</c><00:00:09.200><c> change</c><00:00:09.519><c> the</c><00:00:09.679><c> way</c>
+
+00:00:09.790 --> 00:00:09.800 align:start position:0%
+trades this will totally change the way
+ 
+
+00:00:09.800 --> 00:00:12.190 align:start position:0%
+trades this will totally change the way
+you<00:00:10.000><c> look</c><00:00:10.320><c> at</c><00:00:10.480><c> the</c><00:00:10.639><c> language</c><00:00:11.599><c> generics</c><00:00:12.040><c> And</c>
+
+00:00:12.190 --> 00:00:12.200 align:start position:0%
+you look at the language generics And
+ 
+
+00:00:12.200 --> 00:00:14.549 align:start position:0%
+you look at the language generics And
+Trades<00:00:12.639><c> are</c><00:00:12.920><c> ubiquitous</c><00:00:13.480><c> in</c><00:00:13.679><c> Rust</c><00:00:14.240><c> and</c><00:00:14.400><c> you</c>
+
+00:00:14.549 --> 00:00:14.559 align:start position:0%
+Trades are ubiquitous in Rust and you
+ 
+
+00:00:14.559 --> 00:00:17.189 align:start position:0%
+Trades are ubiquitous in Rust and you
+surely<00:00:14.920><c> use</c><00:00:15.240><c> them</c><00:00:15.519><c> over</c><00:00:15.839><c> and</c><00:00:16.119><c> over</c><00:00:16.800><c> even</c><00:00:17.000><c> in</c>
+
+00:00:17.189 --> 00:00:17.199 align:start position:0%
+surely use them over and over even in
+ 
+
+00:00:17.199 --> 00:00:19.470 align:start position:0%
+surely use them over and over even in
+quite<00:00:17.400><c> trivial</c><00:00:17.840><c> code</c><00:00:18.279><c> maybe</c><00:00:19.080><c> without</c>
+
+00:00:19.470 --> 00:00:19.480 align:start position:0%
+quite trivial code maybe without
+ 
+
+00:00:19.480 --> 00:00:22.830 align:start position:0%
+quite trivial code maybe without
+noticing<00:00:20.320><c> and</c><00:00:20.920><c> understanding</c><00:00:21.640><c> how</c><00:00:21.840><c> they</c><00:00:22.000><c> work</c>
+
+00:00:22.830 --> 00:00:22.840 align:start position:0%
+noticing and understanding how they work
+ 
+
+00:00:22.840 --> 00:00:25.470 align:start position:0%
+noticing and understanding how they work
+today<00:00:23.279><c> is</c><00:00:23.439><c> the</c><00:00:23.640><c> day</c><00:00:24.080><c> this</c><00:00:24.279><c> ends</c><00:00:24.840><c> we're</c><00:00:25.119><c> pulling</c>
+
+00:00:25.470 --> 00:00:25.480 align:start position:0%
+today is the day this ends we're pulling
+ 
+
+00:00:25.480 --> 00:00:27.790 align:start position:0%
+today is the day this ends we're pulling
+back<00:00:25.599><c> the</c><00:00:25.760><c> curtains</c><00:00:26.080><c> on</c><00:00:26.279><c> generics</c><00:00:26.880><c> and</c><00:00:27.080><c> see</c>
+
+00:00:27.790 --> 00:00:27.800 align:start position:0%
+back the curtains on generics and see
+ 
+
+00:00:27.800 --> 00:00:30.029 align:start position:0%
+back the curtains on generics and see
+why<00:00:28.000><c> trades</c><00:00:28.320><c> are</c><00:00:28.560><c> required</c><00:00:29.160><c> to</c><00:00:29.320><c> make</c><00:00:29.480><c> generics</c>
+
+00:00:30.029 --> 00:00:30.039 align:start position:0%
+why trades are required to make generics
+ 
+
+00:00:30.039 --> 00:00:32.190 align:start position:0%
+why trades are required to make generics
+work<00:00:30.279><c> in</c><00:00:30.359><c> the</c><00:00:30.519><c> first</c><00:00:30.800><c> place</c><00:00:31.720><c> this</c><00:00:31.840><c> is</c><00:00:32.040><c> the</c>
+
+00:00:32.190 --> 00:00:32.200 align:start position:0%
+work in the first place this is the
+ 
+
+00:00:32.200 --> 00:00:35.310 align:start position:0%
+work in the first place this is the
+first<00:00:32.520><c> episode</c><00:00:33.079><c> of</c><00:00:33.239><c> my</c><00:00:33.440><c> Advanced</c><00:00:33.840><c> rust</c><00:00:34.320><c> series</c>
+
+00:00:35.310 --> 00:00:35.320 align:start position:0%
+first episode of my Advanced rust series
+ 
+
+00:00:35.320 --> 00:00:37.229 align:start position:0%
+first episode of my Advanced rust series
+subscribe<00:00:35.840><c> now</c><00:00:36.239><c> if</c><00:00:36.360><c> you</c><00:00:36.440><c> want</c><00:00:36.640><c> to</c><00:00:36.760><c> level</c><00:00:37.040><c> up</c>
+
+00:00:37.229 --> 00:00:37.239 align:start position:0%
+subscribe now if you want to level up
+ 
+
+00:00:37.239 --> 00:00:39.229 align:start position:0%
+subscribe now if you want to level up
+your<00:00:37.399><c> programming</c><00:00:37.960><c> knowledge</c><00:00:38.600><c> by</c><00:00:38.760><c> learning</c>
+
+00:00:39.229 --> 00:00:39.239 align:start position:0%
+your programming knowledge by learning
+ 
+
+00:00:39.239 --> 00:00:41.709 align:start position:0%
+your programming knowledge by learning
+Concepts<00:00:39.920><c> from</c><00:00:40.160><c> the</c><00:00:40.320><c> ground</c><00:00:40.640><c> up</c><00:00:41.120><c> always</c>
+
+00:00:41.709 --> 00:00:41.719 align:start position:0%
+Concepts from the ground up always
+ 
+
+00:00:41.719 --> 00:00:43.910 align:start position:0%
+Concepts from the ground up always
+focusing<00:00:42.280><c> on</c><00:00:42.480><c> the</c><00:00:42.640><c> underlying</c><00:00:43.239><c> principles</c>
+
+00:00:43.910 --> 00:00:43.920 align:start position:0%
+focusing on the underlying principles
+ 
+
+00:00:43.920 --> 00:00:46.709 align:start position:0%
+focusing on the underlying principles
+first<00:00:44.920><c> this</c><00:00:45.039><c> will</c><00:00:45.360><c> give</c><00:00:45.520><c> you</c><00:00:45.680><c> a</c><00:00:45.960><c> solid</c><00:00:46.280><c> basis</c>
+
+00:00:46.709 --> 00:00:46.719 align:start position:0%
+first this will give you a solid basis
+ 
+
+00:00:46.719 --> 00:00:49.189 align:start position:0%
+first this will give you a solid basis
+to<00:00:46.879><c> build</c><00:00:47.120><c> your</c><00:00:47.360><c> career</c><00:00:47.680><c> on</c><00:00:48.320><c> if</c><00:00:48.440><c> you</c><00:00:48.600><c> feel</c><00:00:49.039><c> like</c>
+
+00:00:49.189 --> 00:00:49.199 align:start position:0%
+to build your career on if you feel like
+ 
+
+00:00:49.199 --> 00:00:50.990 align:start position:0%
+to build your career on if you feel like
+you're<00:00:49.360><c> still</c><00:00:49.640><c> unsure</c><00:00:50.079><c> about</c><00:00:50.399><c> some</c><00:00:50.600><c> of</c><00:00:50.719><c> these</c>
+
+00:00:50.990 --> 00:00:51.000 align:start position:0%
+you're still unsure about some of these
+ 
+
+00:00:51.000 --> 00:00:52.869 align:start position:0%
+you're still unsure about some of these
+Central<00:00:51.360><c> rust</c><00:00:51.640><c> features</c><00:00:52.480><c> watch</c><00:00:52.680><c> my</c>
+
+00:00:52.869 --> 00:00:52.879 align:start position:0%
+Central rust features watch my
+ 
+
+00:00:52.879 --> 00:00:58.910 align:start position:0%
+Central rust features watch my
+fundamental
+
+00:00:58.910 --> 00:00:58.920 align:start position:0%
+ 
+ 
+
+00:00:58.920 --> 00:01:03.110 align:start position:0%
+ 
+series
+
+00:01:03.110 --> 00:01:03.120 align:start position:0%
+ 
+ 
+
+00:01:03.120 --> 00:01:05.270 align:start position:0%
+ 
+I'd<00:01:03.280><c> like</c><00:01:03.440><c> to</c><00:01:03.600><c> introduce</c><00:01:04.119><c> generics</c><00:01:04.839><c> by</c><00:01:05.000><c> means</c>
+
+00:01:05.270 --> 00:01:05.280 align:start position:0%
+I'd like to introduce generics by means
+ 
+
+00:01:05.280 --> 00:01:07.590 align:start position:0%
+I'd like to introduce generics by means
+of<00:01:05.439><c> an</c><00:01:05.680><c> analogy</c><00:01:06.680><c> so</c><00:01:06.920><c> follow</c><00:01:07.200><c> me</c><00:01:07.320><c> on</c><00:01:07.439><c> this</c>
+
+00:01:07.590 --> 00:01:07.600 align:start position:0%
+of an analogy so follow me on this
+ 
+
+00:01:07.600 --> 00:01:10.990 align:start position:0%
+of an analogy so follow me on this
+example<00:01:08.200><c> here</c><00:01:09.200><c> we</c><00:01:09.360><c> have</c><00:01:09.520><c> two</c><00:01:09.720><c> arrays</c><00:01:10.159><c> of</c><00:01:10.320><c> i32</c>
+
+00:01:10.990 --> 00:01:11.000 align:start position:0%
+example here we have two arrays of i32
+ 
+
+00:01:11.000 --> 00:01:14.310 align:start position:0%
+example here we have two arrays of i32
+numbers<00:01:11.720><c> my</c><00:01:12.000><c> nums</c><00:01:12.479><c> and</c><00:01:12.640><c> your</c><00:01:12.920><c> nums</c><00:01:13.799><c> our</c><00:01:14.040><c> goal</c>
+
+00:01:14.310 --> 00:01:14.320 align:start position:0%
+numbers my nums and your nums our goal
+ 
+
+00:01:14.320 --> 00:01:16.749 align:start position:0%
+numbers my nums and your nums our goal
+is<00:01:14.439><c> to</c><00:01:14.680><c> compute</c><00:01:15.000><c> the</c><00:01:15.159><c> sum</c><00:01:15.479><c> of</c><00:01:15.640><c> each</c><00:01:15.960><c> array</c><00:01:16.640><c> a</c>
+
+00:01:16.749 --> 00:01:16.759 align:start position:0%
+is to compute the sum of each array a
+ 
+
+00:01:16.759 --> 00:01:18.710 align:start position:0%
+is to compute the sum of each array a
+beginner<00:01:17.159><c> rust</c><00:01:17.520><c> programmer</c><00:01:18.159><c> might</c><00:01:18.400><c> write</c><00:01:18.640><c> the</c>
+
+00:01:18.710 --> 00:01:18.720 align:start position:0%
+beginner rust programmer might write the
+ 
+
+00:01:18.720 --> 00:01:21.149 align:start position:0%
+beginner rust programmer might write the
+following<00:01:19.119><c> code</c><00:01:20.000><c> initiate</c><00:01:20.439><c> the</c><00:01:20.600><c> sum</c><00:01:20.880><c> with</c><00:01:21.000><c> the</c>
+
+00:01:21.149 --> 00:01:21.159 align:start position:0%
+following code initiate the sum with the
+ 
+
+00:01:21.159 --> 00:01:23.230 align:start position:0%
+following code initiate the sum with the
+first<00:01:21.400><c> element</c><00:01:22.280><c> then</c><00:01:22.439><c> Loop</c><00:01:22.799><c> over</c><00:01:23.000><c> the</c>
+
+00:01:23.230 --> 00:01:23.240 align:start position:0%
+first element then Loop over the
+ 
+
+00:01:23.240 --> 00:01:25.510 align:start position:0%
+first element then Loop over the
+remaining<00:01:23.479><c> indices</c><00:01:24.439><c> and</c><00:01:24.680><c> add</c><00:01:24.840><c> the</c><00:01:25.000><c> number</c><00:01:25.360><c> at</c>
+
+00:01:25.510 --> 00:01:25.520 align:start position:0%
+remaining indices and add the number at
+ 
+
+00:01:25.520 --> 00:01:28.469 align:start position:0%
+remaining indices and add the number at
+the<00:01:25.680><c> respective</c><00:01:26.200><c> index</c><00:01:26.680><c> to</c><00:01:26.880><c> the</c><00:01:27.119><c> sum</c><00:01:28.119><c> although</c>
+
+00:01:28.469 --> 00:01:28.479 align:start position:0%
+the respective index to the sum although
+ 
+
+00:01:28.479 --> 00:01:30.190 align:start position:0%
+the respective index to the sum although
+the<00:01:28.640><c> solution</c><00:01:29.040><c> is</c><00:01:29.200><c> not</c><00:01:29.400><c> particular</c><00:01:29.920><c> LLY</c>
+
+00:01:30.190 --> 00:01:30.200 align:start position:0%
+the solution is not particular LLY
+ 
+
+00:01:30.200 --> 00:01:33.350 align:start position:0%
+the solution is not particular LLY
+beautiful<00:01:31.000><c> it</c><00:01:31.119><c> is</c><00:01:31.360><c> correct</c><00:01:31.880><c> and</c><00:01:32.079><c> does</c><00:01:32.280><c> the</c><00:01:32.439><c> job</c>
+
+00:01:33.350 --> 00:01:33.360 align:start position:0%
+beautiful it is correct and does the job
+ 
+
+00:01:33.360 --> 00:01:35.310 align:start position:0%
+beautiful it is correct and does the job
+the<00:01:33.560><c> problem</c><00:01:33.920><c> starts</c><00:01:34.479><c> when</c><00:01:34.640><c> the</c><00:01:34.799><c> programmer</c>
+
+00:01:35.310 --> 00:01:35.320 align:start position:0%
+the problem starts when the programmer
+ 
+
+00:01:35.320 --> 00:01:37.389 align:start position:0%
+the problem starts when the programmer
+copies<00:01:35.720><c> the</c><00:01:35.880><c> same</c><00:01:36.159><c> code</c><00:01:36.439><c> to</c><00:01:36.600><c> compute</c><00:01:36.960><c> the</c><00:01:37.079><c> sum</c>
+
+00:01:37.389 --> 00:01:37.399 align:start position:0%
+copies the same code to compute the sum
+ 
+
+00:01:37.399 --> 00:01:39.950 align:start position:0%
+copies the same code to compute the sum
+of<00:01:37.520><c> the</c><00:01:37.640><c> second</c><00:01:38.000><c> array</c><00:01:38.960><c> code</c><00:01:39.240><c> duplication</c><00:01:39.759><c> is</c>
+
+00:01:39.950 --> 00:01:39.960 align:start position:0%
+of the second array code duplication is
+ 
+
+00:01:39.960 --> 00:01:42.190 align:start position:0%
+of the second array code duplication is
+often<00:01:40.320><c> at</c><00:01:40.439><c> the</c><00:01:40.560><c> root</c><00:01:40.799><c> of</c><00:01:41.000><c> unmaintainable</c><00:01:41.920><c> bug</c>
+
+00:01:42.190 --> 00:01:42.200 align:start position:0%
+often at the root of unmaintainable bug
+ 
+
+00:01:42.200 --> 00:01:44.230 align:start position:0%
+often at the root of unmaintainable bug
+written<00:01:42.520><c> code</c><00:01:43.159><c> and</c><00:01:43.280><c> should</c><00:01:43.479><c> be</c><00:01:43.640><c> avoided</c><00:01:44.079><c> in</c>
+
+00:01:44.230 --> 00:01:44.240 align:start position:0%
+written code and should be avoided in
+ 
+
+00:01:44.240 --> 00:01:45.630 align:start position:0%
+written code and should be avoided in
+almost<00:01:44.600><c> all</c>
+
+00:01:45.630 --> 00:01:45.640 align:start position:0%
+almost all
+ 
+
+00:01:45.640 --> 00:01:47.870 align:start position:0%
+almost all
+scenarios<00:01:46.640><c> as</c><00:01:46.840><c> a</c><00:01:47.000><c> well</c><00:01:47.280><c> equipped</c><00:01:47.560><c> rust</c>
+
+00:01:47.870 --> 00:01:47.880 align:start position:0%
+scenarios as a well equipped rust
+ 
+
+00:01:47.880 --> 00:01:49.789 align:start position:0%
+scenarios as a well equipped rust
+programmer<00:01:48.479><c> who</c><00:01:48.640><c> followed</c><00:01:49.040><c> my</c><00:01:49.200><c> fundamental</c>
+
+00:01:49.789 --> 00:01:49.799 align:start position:0%
+programmer who followed my fundamental
+ 
+
+00:01:49.799 --> 00:01:52.190 align:start position:0%
+programmer who followed my fundamental
+series<00:01:50.759><c> you</c><00:01:50.920><c> of</c><00:01:51.079><c> course</c><00:01:51.280><c> already</c><00:01:51.600><c> know</c><00:01:51.840><c> a</c><00:01:52.000><c> way</c>
+
+00:01:52.190 --> 00:01:52.200 align:start position:0%
+series you of course already know a way
+ 
+
+00:01:52.200 --> 00:01:54.389 align:start position:0%
+series you of course already know a way
+better<00:01:52.479><c> solution</c><00:01:52.840><c> to</c><00:01:53.040><c> this</c><00:01:53.280><c> problem</c><00:01:54.119><c> we</c><00:01:54.280><c> need</c>
+
+00:01:54.389 --> 00:01:54.399 align:start position:0%
+better solution to this problem we need
+ 
+
+00:01:54.399 --> 00:01:56.149 align:start position:0%
+better solution to this problem we need
+to<00:01:54.600><c> factor</c><00:01:54.920><c> out</c><00:01:55.119><c> the</c><00:01:55.240><c> algorithm</c><00:01:55.799><c> into</c><00:01:56.000><c> a</c>
+
+00:01:56.149 --> 00:01:56.159 align:start position:0%
+to factor out the algorithm into a
+ 
+
+00:01:56.159 --> 00:01:58.630 align:start position:0%
+to factor out the algorithm into a
+function<00:01:57.000><c> in</c><00:01:57.159><c> this</c><00:01:57.360><c> case</c><00:01:57.640><c> the</c><00:01:57.799><c> function</c><00:01:58.320><c> sum</c>
+
+00:01:58.630 --> 00:01:58.640 align:start position:0%
+function in this case the function sum
+ 
+
+00:01:58.640 --> 00:02:02.109 align:start position:0%
+function in this case the function sum
+of<00:01:58.840><c> elements</c><00:01:59.880><c> takes</c><00:02:00.119><c> a</c><00:02:00.280><c> slice</c><00:02:00.640><c> of</c><00:02:00.840><c> I</c><00:02:01.039><c> 32s</c><00:02:01.799><c> and</c>
+
+00:02:02.109 --> 00:02:02.119 align:start position:0%
+of elements takes a slice of I 32s and
+ 
+
+00:02:02.119 --> 00:02:05.310 align:start position:0%
+of elements takes a slice of I 32s and
+Returns<00:02:02.439><c> the</c><00:02:02.600><c> sum</c><00:02:02.920><c> as</c><00:02:03.039><c> an</c><00:02:03.479><c> i32</c><00:02:04.479><c> the</c><00:02:04.600><c> algorithm</c>
+
+00:02:05.310 --> 00:02:05.320 align:start position:0%
+Returns the sum as an i32 the algorithm
+ 
+
+00:02:05.320 --> 00:02:08.669 align:start position:0%
+Returns the sum as an i32 the algorithm
+remained<00:02:05.640><c> exactly</c><00:02:06.200><c> as</c><00:02:06.320><c> it</c><00:02:06.960><c> was</c><00:02:07.960><c> the</c><00:02:08.119><c> function</c>
+
+00:02:08.669 --> 00:02:08.679 align:start position:0%
+remained exactly as it was the function
+ 
+
+00:02:08.679 --> 00:02:10.389 align:start position:0%
+remained exactly as it was the function
+can<00:02:08.920><c> then</c><00:02:09.080><c> be</c><00:02:09.239><c> called</c><00:02:09.640><c> with</c><00:02:09.840><c> both</c><00:02:10.119><c> of</c><00:02:10.280><c> the</c>
+
+00:02:10.389 --> 00:02:10.399 align:start position:0%
+can then be called with both of the
+ 
+
+00:02:10.399 --> 00:02:12.229 align:start position:0%
+can then be called with both of the
+arrays<00:02:10.959><c> and</c><00:02:11.120><c> the</c><00:02:11.239><c> code</c><00:02:11.480><c> duplication</c><00:02:12.120><c> is</c>
+
+00:02:12.229 --> 00:02:12.239 align:start position:0%
+arrays and the code duplication is
+ 
+
+00:02:12.239 --> 00:02:14.949 align:start position:0%
+arrays and the code duplication is
+cleaned<00:02:12.640><c> up</c><00:02:13.640><c> this</c><00:02:13.760><c> is</c><00:02:13.920><c> nothing</c><00:02:14.200><c> new</c><00:02:14.400><c> to</c><00:02:14.560><c> you</c>
+
+00:02:14.949 --> 00:02:14.959 align:start position:0%
+cleaned up this is nothing new to you
+ 
+
+00:02:14.959 --> 00:02:16.790 align:start position:0%
+cleaned up this is nothing new to you
+and<00:02:15.080><c> I</c><00:02:15.239><c> would</c><00:02:15.400><c> have</c><00:02:15.599><c> wasted</c><00:02:16.040><c> your</c><00:02:16.280><c> time</c><00:02:16.640><c> if</c>
+
+00:02:16.790 --> 00:02:16.800 align:start position:0%
+and I would have wasted your time if
+ 
+
+00:02:16.800 --> 00:02:19.150 align:start position:0%
+and I would have wasted your time if
+this<00:02:17.000><c> example</c><00:02:17.400><c> was</c><00:02:17.560><c> over</c><00:02:17.879><c> now</c><00:02:18.440><c> so</c><00:02:18.680><c> let's</c><00:02:18.920><c> take</c>
+
+00:02:19.150 --> 00:02:19.160 align:start position:0%
+this example was over now so let's take
+ 
+
+00:02:19.160 --> 00:02:21.869 align:start position:0%
+this example was over now so let's take
+a<00:02:19.319><c> step</c><00:02:19.680><c> forward</c><00:02:20.680><c> a</c><00:02:20.840><c> seemingly</c><00:02:21.319><c> trivial</c>
+
+00:02:21.869 --> 00:02:21.879 align:start position:0%
+a step forward a seemingly trivial
+ 
+
+00:02:21.879 --> 00:02:24.390 align:start position:0%
+a step forward a seemingly trivial
+expansion<00:02:22.400><c> of</c><00:02:22.519><c> our</c><00:02:22.800><c> task</c><00:02:23.160><c> comes</c><00:02:23.400><c> in</c><00:02:24.040><c> we</c><00:02:24.160><c> would</c>
+
+00:02:24.390 --> 00:02:24.400 align:start position:0%
+expansion of our task comes in we would
+ 
+
+00:02:24.400 --> 00:02:26.390 align:start position:0%
+expansion of our task comes in we would
+also<00:02:24.680><c> like</c><00:02:24.840><c> to</c><00:02:25.040><c> compute</c><00:02:25.360><c> the</c><00:02:25.480><c> sum</c><00:02:25.800><c> of</c><00:02:25.920><c> an</c><00:02:26.080><c> area</c>
+
+00:02:26.390 --> 00:02:26.400 align:start position:0%
+also like to compute the sum of an area
+ 
+
+00:02:26.400 --> 00:02:29.990 align:start position:0%
+also like to compute the sum of an area
+of<00:02:26.560><c> I64</c><00:02:27.840><c> numbers</c><00:02:28.840><c> the</c><00:02:29.000><c> algorithm</c><00:02:29.440><c> for</c><00:02:29.599><c> this</c>
+
+00:02:29.990 --> 00:02:30.000 align:start position:0%
+of I64 numbers the algorithm for this
+ 
+
+00:02:30.000 --> 00:02:32.110 align:start position:0%
+of I64 numbers the algorithm for this
+will<00:02:30.160><c> be</c><00:02:30.319><c> the</c><00:02:30.480><c> exact</c><00:02:30.800><c> same</c><00:02:31.400><c> however</c><00:02:31.720><c> the</c><00:02:31.840><c> rest</c>
+
+00:02:32.110 --> 00:02:32.120 align:start position:0%
+will be the exact same however the rest
+ 
+
+00:02:32.120 --> 00:02:34.790 align:start position:0%
+will be the exact same however the rest
+compiler<00:02:32.720><c> does</c><00:02:32.920><c> not</c><00:02:33.160><c> play</c><00:02:33.440><c> nice</c><00:02:33.760><c> with</c><00:02:33.920><c> us</c><00:02:34.680><c> we</c>
+
+00:02:34.790 --> 00:02:34.800 align:start position:0%
+compiler does not play nice with us we
+ 
+
+00:02:34.800 --> 00:02:37.070 align:start position:0%
+compiler does not play nice with us we
+are<00:02:34.959><c> not</c><00:02:35.120><c> allowed</c><00:02:35.440><c> to</c><00:02:35.599><c> call</c><00:02:35.879><c> our</c><00:02:36.160><c> function</c>
+
+00:02:37.070 --> 00:02:37.080 align:start position:0%
+are not allowed to call our function
+ 
+
+00:02:37.080 --> 00:02:39.630 align:start position:0%
+are not allowed to call our function
+that<00:02:37.200><c> is</c><00:02:37.319><c> set</c><00:02:37.560><c> to</c><00:02:37.840><c> operate</c><00:02:38.160><c> on</c><00:02:38.360><c> I</c><00:02:38.560><c> 32s</c><00:02:39.200><c> with</c><00:02:39.360><c> our</c>
+
+00:02:39.630 --> 00:02:39.640 align:start position:0%
+that is set to operate on I 32s with our
+ 
+
+00:02:39.640 --> 00:02:43.270 align:start position:0%
+that is set to operate on I 32s with our
+array<00:02:40.040><c> of</c><00:02:40.239><c> I</c><00:02:40.879><c> 64s</c><00:02:41.879><c> now</c><00:02:42.360><c> there</c><00:02:42.480><c> surely</c><00:02:42.879><c> must</c><00:02:43.120><c> be</c>
+
+00:02:43.270 --> 00:02:43.280 align:start position:0%
+array of I 64s now there surely must be
+ 
+
+00:02:43.280 --> 00:02:45.110 align:start position:0%
+array of I 64s now there surely must be
+a<00:02:43.400><c> better</c><00:02:43.640><c> solution</c><00:02:44.319><c> than</c><00:02:44.519><c> copying</c><00:02:44.959><c> the</c>
+
+00:02:45.110 --> 00:02:45.120 align:start position:0%
+a better solution than copying the
+ 
+
+00:02:45.120 --> 00:02:48.509 align:start position:0%
+a better solution than copying the
+function<00:02:45.519><c> and</c><00:02:45.800><c> adapting</c><00:02:46.200><c> it</c><00:02:46.440><c> to</c><00:02:46.680><c> I</c><00:02:47.319><c> 64s</c><00:02:48.319><c> if</c>
+
+00:02:48.509 --> 00:02:48.519 align:start position:0%
+function and adapting it to I 64s if
+ 
+
+00:02:48.519 --> 00:02:50.430 align:start position:0%
+function and adapting it to I 64s if
+there<00:02:48.720><c> only</c><00:02:49.080><c> was</c><00:02:49.280><c> a</c><00:02:49.519><c> concept</c><00:02:49.959><c> to</c><00:02:50.120><c> tell</c><00:02:50.319><c> the</c>
+
+00:02:50.430 --> 00:02:50.440 align:start position:0%
+there only was a concept to tell the
+ 
+
+00:02:50.440 --> 00:02:52.390 align:start position:0%
+there only was a concept to tell the
+rust<00:02:50.840><c> compiler</c><00:02:51.720><c> that</c><00:02:51.840><c> you</c><00:02:52.000><c> want</c><00:02:52.239><c> this</c>
+
+00:02:52.390 --> 00:02:52.400 align:start position:0%
+rust compiler that you want this
+ 
+
+00:02:52.400 --> 00:02:54.790 align:start position:0%
+rust compiler that you want this
+function<00:02:52.720><c> to</c><00:02:52.879><c> work</c><00:02:53.200><c> on</c><00:02:53.400><c> any</c><00:02:53.680><c> type</c><00:02:54.360><c> instead</c><00:02:54.640><c> of</c>
+
+00:02:54.790 --> 00:02:54.800 align:start position:0%
+function to work on any type instead of
+ 
+
+00:02:54.800 --> 00:02:56.190 align:start position:0%
+function to work on any type instead of
+only<00:02:55.080><c> I</c>
+
+00:02:56.190 --> 00:02:56.200 align:start position:0%
+only I
+ 
+
+00:02:56.200 --> 00:02:59.589 align:start position:0%
+only I
+32s<00:02:57.200><c> in</c><00:02:57.480><c> fact</c><00:02:57.920><c> there</c><00:02:58.120><c> is</c><00:02:58.640><c> and</c><00:02:58.840><c> this</c><00:02:59.040><c> concept</c><00:02:59.440><c> is</c>
+
+00:02:59.589 --> 00:02:59.599 align:start position:0%
+32s in fact there is and this concept is
+ 
+
+00:02:59.599 --> 00:03:02.949 align:start position:0%
+32s in fact there is and this concept is
+called<00:02:59.800><c> called</c><00:03:00.400><c> generics</c><00:03:01.400><c> and</c><00:03:01.560><c> lo</c><00:03:01.760><c> and</c><00:03:01.959><c> behold</c>
+
+00:03:02.949 --> 00:03:02.959 align:start position:0%
+called called generics and lo and behold
+ 
+
+00:03:02.959 --> 00:03:05.670 align:start position:0%
+called called generics and lo and behold
+the<00:03:03.159><c> code</c><00:03:03.440><c> we</c><00:03:03.560><c> wrote</c><00:03:04.159><c> out</c><00:03:04.360><c> of</c><00:03:04.560><c> pure</c><00:03:04.840><c> despair</c><00:03:05.440><c> is</c>
+
+00:03:05.670 --> 00:03:05.680 align:start position:0%
+the code we wrote out of pure despair is
+ 
+
+00:03:05.680 --> 00:03:07.830 align:start position:0%
+the code we wrote out of pure despair is
+almost<00:03:06.200><c> syntactically</c>
+
+00:03:07.830 --> 00:03:07.840 align:start position:0%
+almost syntactically
+ 
+
+00:03:07.840 --> 00:03:11.110 align:start position:0%
+almost syntactically
+correct<00:03:08.840><c> at</c><00:03:09.040><c> first</c><00:03:09.760><c> by</c><00:03:10.000><c> convention</c><00:03:10.879><c> the</c>
+
+00:03:11.110 --> 00:03:11.120 align:start position:0%
+correct at first by convention the
+ 
+
+00:03:11.120 --> 00:03:13.550 align:start position:0%
+correct at first by convention the
+generic<00:03:11.560><c> type</c><00:03:11.840><c> is</c><00:03:12.040><c> often</c><00:03:12.319><c> times</c><00:03:12.599><c> called</c><00:03:12.959><c> T</c>
+
+00:03:13.550 --> 00:03:13.560 align:start position:0%
+generic type is often times called T
+ 
+
+00:03:13.560 --> 00:03:16.229 align:start position:0%
+generic type is often times called T
+instead<00:03:13.920><c> of</c><00:03:14.159><c> any</c><00:03:14.599><c> type</c><00:03:15.480><c> you</c><00:03:15.720><c> could</c><00:03:15.879><c> leave</c><00:03:16.120><c> the</c>
+
+00:03:16.229 --> 00:03:16.239 align:start position:0%
+instead of any type you could leave the
+ 
+
+00:03:16.239 --> 00:03:19.229 align:start position:0%
+instead of any type you could leave the
+any<00:03:16.599><c> type</c><00:03:16.920><c> though</c><00:03:17.319><c> if</c><00:03:17.440><c> you</c><00:03:17.640><c> really</c><00:03:17.959><c> wanted</c><00:03:18.959><c> and</c>
+
+00:03:19.229 --> 00:03:19.239 align:start position:0%
+any type though if you really wanted and
+ 
+
+00:03:19.239 --> 00:03:21.750 align:start position:0%
+any type though if you really wanted and
+second<00:03:20.159><c> we</c><00:03:20.280><c> need</c><00:03:20.440><c> to</c><00:03:20.599><c> tell</c><00:03:20.799><c> the</c><00:03:21.000><c> compiler</c><00:03:21.599><c> that</c>
+
+00:03:21.750 --> 00:03:21.760 align:start position:0%
+second we need to tell the compiler that
+ 
+
+00:03:21.760 --> 00:03:25.670 align:start position:0%
+second we need to tell the compiler that
+our<00:03:22.120><c> T</c><00:03:22.920><c> is</c><00:03:23.120><c> now</c><00:03:23.319><c> a</c><00:03:23.400><c> placeholder</c><00:03:24.120><c> for</c><00:03:24.360><c> any</c><00:03:24.680><c> type</c>
+
+00:03:25.670 --> 00:03:25.680 align:start position:0%
+our T is now a placeholder for any type
+ 
+
+00:03:25.680 --> 00:03:27.670 align:start position:0%
+our T is now a placeholder for any type
+without<00:03:26.000><c> this</c><00:03:26.239><c> thrust</c><00:03:26.599><c> would</c><00:03:26.799><c> complain</c><00:03:27.400><c> that</c>
+
+00:03:27.670 --> 00:03:27.680 align:start position:0%
+without this thrust would complain that
+ 
+
+00:03:27.680 --> 00:03:29.910 align:start position:0%
+without this thrust would complain that
+t<00:03:28.239><c> is</c><00:03:28.360><c> an</c><00:03:28.519><c> unknown</c><00:03:28.959><c> type</c><00:03:29.159><c> and</c><00:03:29.280><c> the</c><00:03:29.400><c> program</c>
+
+00:03:29.910 --> 00:03:29.920 align:start position:0%
+t is an unknown type and the program
+ 
+
+00:03:29.920 --> 00:03:32.270 align:start position:0%
+t is an unknown type and the program
+would<00:03:30.040><c> not</c><00:03:30.400><c> compile</c><00:03:31.400><c> we</c><00:03:31.560><c> introduce</c><00:03:32.080><c> the</c>
+
+00:03:32.270 --> 00:03:32.280 align:start position:0%
+would not compile we introduce the
+ 
+
+00:03:32.280 --> 00:03:34.990 align:start position:0%
+would not compile we introduce the
+generic<00:03:32.720><c> type</c><00:03:33.000><c> T</c><00:03:33.480><c> in</c><00:03:33.680><c> angled</c><00:03:34.159><c> brackets</c><00:03:34.799><c> right</c>
+
+00:03:34.990 --> 00:03:35.000 align:start position:0%
+generic type T in angled brackets right
+ 
+
+00:03:35.000 --> 00:03:37.949 align:start position:0%
+generic type T in angled brackets right
+after<00:03:35.239><c> the</c><00:03:35.400><c> function</c><00:03:35.879><c> name</c><00:03:36.879><c> this</c><00:03:37.120><c> makes</c><00:03:37.720><c> sum</c>
+
+00:03:37.949 --> 00:03:37.959 align:start position:0%
+after the function name this makes sum
+ 
+
+00:03:37.959 --> 00:03:40.429 align:start position:0%
+after the function name this makes sum
+of<00:03:38.120><c> elements</c><00:03:38.760><c> a</c><00:03:38.959><c> generic</c><00:03:39.400><c> function</c><00:03:39.920><c> over</c><00:03:40.200><c> the</c>
+
+00:03:40.429 --> 00:03:40.439 align:start position:0%
+of elements a generic function over the
+ 
+
+00:03:40.439 --> 00:03:43.429 align:start position:0%
+of elements a generic function over the
+type<00:03:40.799><c> T</c><00:03:41.720><c> and</c><00:03:41.840><c> it</c><00:03:42.000><c> can</c><00:03:42.159><c> now</c><00:03:42.319><c> be</c><00:03:42.480><c> called</c><00:03:42.840><c> for</c><00:03:43.120><c> both</c>
+
+00:03:43.429 --> 00:03:43.439 align:start position:0%
+type T and it can now be called for both
+ 
+
+00:03:43.439 --> 00:03:45.429 align:start position:0%
+type T and it can now be called for both
+I<00:03:43.680><c> 32s</c><00:03:44.439><c> and</c><00:03:44.680><c> I</c>
+
+00:03:45.429 --> 00:03:45.439 align:start position:0%
+I 32s and I
+ 
+
+00:03:45.439 --> 00:03:48.550 align:start position:0%
+I 32s and I
+64s<00:03:46.439><c> and</c><00:03:46.680><c> not</c><00:03:46.879><c> only</c><00:03:47.280><c> that</c><00:03:47.760><c> we</c><00:03:47.920><c> can</c><00:03:48.120><c> use</c><00:03:48.360><c> this</c>
+
+00:03:48.550 --> 00:03:48.560 align:start position:0%
+64s and not only that we can use this
+ 
+
+00:03:48.560 --> 00:03:50.670 align:start position:0%
+64s and not only that we can use this
+function<00:03:48.959><c> to</c><00:03:49.159><c> sum</c><00:03:49.480><c> the</c><00:03:49.640><c> elements</c><00:03:50.159><c> of</c><00:03:50.400><c> any</c>
+
+00:03:50.670 --> 00:03:50.680 align:start position:0%
+function to sum the elements of any
+ 
+
+00:03:50.680 --> 00:03:53.229 align:start position:0%
+function to sum the elements of any
+array<00:03:51.519><c> I</c><00:03:51.680><c> hope</c><00:03:52.040><c> this</c><00:03:52.239><c> introduction</c><00:03:52.920><c> made</c><00:03:53.079><c> it</c>
+
+00:03:53.229 --> 00:03:53.239 align:start position:0%
+array I hope this introduction made it
+ 
+
+00:03:53.239 --> 00:03:55.630 align:start position:0%
+array I hope this introduction made it
+very<00:03:53.439><c> clear</c><00:03:54.120><c> that</c><00:03:54.319><c> the</c><00:03:54.439><c> main</c><00:03:54.680><c> use</c><00:03:54.879><c> of</c><00:03:55.079><c> generics</c>
+
+00:03:55.630 --> 00:03:55.640 align:start position:0%
+very clear that the main use of generics
+ 
+
+00:03:55.640 --> 00:03:59.069 align:start position:0%
+very clear that the main use of generics
+is<00:03:55.799><c> to</c><00:03:56.040><c> avoid</c><00:03:56.599><c> code</c><00:03:57.480><c> duplication</c><00:03:58.480><c> just</c><00:03:58.879><c> like</c>
+
+00:03:59.069 --> 00:03:59.079 align:start position:0%
+is to avoid code duplication just like
+ 
+
+00:03:59.079 --> 00:04:00.509 align:start position:0%
+is to avoid code duplication just like
+with<00:03:59.280><c> function</c>
+
+00:04:00.509 --> 00:04:00.519 align:start position:0%
+with function
+ 
+
+00:04:00.519 --> 00:04:02.869 align:start position:0%
+with function
+however<00:04:00.840><c> generics</c><00:04:01.480><c> work</c><00:04:01.879><c> on</c><00:04:02.120><c> another</c><00:04:02.480><c> level</c>
+
+00:04:02.869 --> 00:04:02.879 align:start position:0%
+however generics work on another level
+ 
+
+00:04:02.879 --> 00:04:05.830 align:start position:0%
+however generics work on another level
+of<00:04:03.280><c> abstraction</c><00:04:04.280><c> while</c><00:04:04.560><c> functions</c><00:04:05.159><c> allow</c><00:04:05.519><c> us</c>
+
+00:04:05.830 --> 00:04:05.840 align:start position:0%
+of abstraction while functions allow us
+ 
+
+00:04:05.840 --> 00:04:08.229 align:start position:0%
+of abstraction while functions allow us
+to<00:04:06.000><c> use</c><00:04:06.280><c> the</c><00:04:06.439><c> same</c><00:04:06.720><c> code</c><00:04:07.040><c> for</c><00:04:07.280><c> different</c><00:04:07.799><c> data</c>
+
+00:04:08.229 --> 00:04:08.239 align:start position:0%
+to use the same code for different data
+ 
+
+00:04:08.239 --> 00:04:11.429 align:start position:0%
+to use the same code for different data
+of<00:04:08.439><c> the</c><00:04:08.640><c> exact</c><00:04:09.040><c> same</c><00:04:09.400><c> type</c><00:04:10.200><c> generics</c><00:04:11.000><c> allow</c><00:04:11.280><c> us</c>
+
+00:04:11.429 --> 00:04:11.439 align:start position:0%
+of the exact same type generics allow us
+ 
+
+00:04:11.439 --> 00:04:13.589 align:start position:0%
+of the exact same type generics allow us
+to<00:04:11.560><c> use</c><00:04:11.799><c> the</c><00:04:11.959><c> same</c><00:04:12.200><c> code</c><00:04:12.480><c> for</c><00:04:12.720><c> different</c><00:04:13.159><c> data</c>
+
+00:04:13.589 --> 00:04:13.599 align:start position:0%
+to use the same code for different data
+ 
+
+00:04:13.599 --> 00:04:15.509 align:start position:0%
+to use the same code for different data
+of<00:04:13.879><c> various</c>
+
+00:04:15.509 --> 00:04:15.519 align:start position:0%
+of various
+ 
+
+00:04:15.519 --> 00:04:18.229 align:start position:0%
+of various
+types<00:04:16.519><c> if</c><00:04:16.639><c> you</c><00:04:16.759><c> were</c><00:04:17.040><c> eager</c><00:04:17.560><c> to</c><00:04:17.720><c> try</c><00:04:17.959><c> out</c><00:04:18.120><c> the</c>
+
+00:04:18.229 --> 00:04:18.239 align:start position:0%
+types if you were eager to try out the
+ 
+
+00:04:18.239 --> 00:04:19.990 align:start position:0%
+types if you were eager to try out the
+code<00:04:18.479><c> from</c><00:04:18.639><c> the</c><00:04:18.799><c> slideshow</c><00:04:19.600><c> you</c><00:04:19.720><c> will</c>
+
+00:04:19.990 --> 00:04:20.000 align:start position:0%
+code from the slideshow you will
+ 
+
+00:04:20.000 --> 00:04:22.310 align:start position:0%
+code from the slideshow you will
+probably<00:04:20.359><c> already</c><00:04:20.680><c> have</c><00:04:20.919><c> caught</c><00:04:21.799><c> that</c><00:04:22.199><c> it</c>
+
+00:04:22.310 --> 00:04:22.320 align:start position:0%
+probably already have caught that it
+ 
+
+00:04:22.320 --> 00:04:25.350 align:start position:0%
+probably already have caught that it
+doesn't<00:04:22.919><c> compile</c><00:04:23.919><c> and</c><00:04:24.160><c> this</c><00:04:24.280><c> is</c><00:04:24.440><c> not</c><00:04:24.720><c> because</c>
+
+00:04:25.350 --> 00:04:25.360 align:start position:0%
+doesn't compile and this is not because
+ 
+
+00:04:25.360 --> 00:04:29.629 align:start position:0%
+doesn't compile and this is not because
+our<00:04:25.680><c> use</c><00:04:25.960><c> of</c><00:04:26.160><c> generics</c><00:04:26.639><c> was</c><00:04:26.880><c> wrong</c><00:04:28.039><c> well</c><00:04:29.039><c> not</c>
+
+00:04:29.629 --> 00:04:29.639 align:start position:0%
+our use of generics was wrong well not
+ 
+
+00:04:29.639 --> 00:04:32.670 align:start position:0%
+our use of generics was wrong well not
+the<00:04:29.720><c> use</c><00:04:29.840><c> of</c><00:04:30.000><c> generics</c><00:04:30.520><c> itself</c><00:04:31.520><c> the</c><00:04:31.720><c> reason</c>
+
+00:04:32.670 --> 00:04:32.680 align:start position:0%
+the use of generics itself the reason
+ 
+
+00:04:32.680 --> 00:04:35.110 align:start position:0%
+the use of generics itself the reason
+are<00:04:33.120><c> two</c><00:04:33.400><c> operators</c><00:04:34.080><c> that</c><00:04:34.199><c> are</c><00:04:34.360><c> used</c><00:04:34.759><c> inside</c>
+
+00:04:35.110 --> 00:04:35.120 align:start position:0%
+are two operators that are used inside
+ 
+
+00:04:35.120 --> 00:04:37.710 align:start position:0%
+are two operators that are used inside
+the<00:04:35.280><c> function</c><00:04:36.199><c> the</c><00:04:36.639><c> assignment</c>
+
+00:04:37.710 --> 00:04:37.720 align:start position:0%
+the function the assignment
+ 
+
+00:04:37.720 --> 00:04:41.550 align:start position:0%
+the function the assignment
+operator<00:04:38.720><c> and</c><00:04:39.080><c> the</c><00:04:39.360><c> ADD</c><00:04:39.800><c> and</c><00:04:40.120><c> assign</c>
+
+00:04:41.550 --> 00:04:41.560 align:start position:0%
+operator and the ADD and assign
+ 
+
+00:04:41.560 --> 00:04:45.670 align:start position:0%
+operator and the ADD and assign
+operator<00:04:42.560><c> assigning</c><00:04:43.240><c> nums</c><00:04:44.120><c> at</c><00:04:44.360><c> zero</c><00:04:45.240><c> to</c><00:04:45.440><c> our</c>
+
+00:04:45.670 --> 00:04:45.680 align:start position:0%
+operator assigning nums at zero to our
+ 
+
+00:04:45.680 --> 00:04:49.390 align:start position:0%
+operator assigning nums at zero to our
+sum<00:04:46.000><c> variable</c><00:04:47.000><c> would</c><00:04:47.560><c> either</c><00:04:47.960><c> execute</c><00:04:48.479><c> a</c><00:04:48.680><c> copy</c>
+
+00:04:49.390 --> 00:04:49.400 align:start position:0%
+sum variable would either execute a copy
+ 
+
+00:04:49.400 --> 00:04:53.629 align:start position:0%
+sum variable would either execute a copy
+for<00:04:49.960><c> types</c><00:04:50.280><c> that</c><00:04:50.440><c> can</c><00:04:50.639><c> be</c><00:04:50.840><c> copied</c><00:04:51.840><c> or</c><00:04:52.080><c> a</c><00:04:52.639><c> move</c>
+
+00:04:53.629 --> 00:04:53.639 align:start position:0%
+for types that can be copied or a move
+ 
+
+00:04:53.639 --> 00:04:56.390 align:start position:0%
+for types that can be copied or a move
+while<00:04:53.960><c> the</c><00:04:54.120><c> copy</c><00:04:54.440><c> is</c><00:04:54.800><c> okay</c><00:04:55.800><c> the</c><00:04:55.960><c> move</c><00:04:56.280><c> is</c>
+
+00:04:56.390 --> 00:04:56.400 align:start position:0%
+while the copy is okay the move is
+ 
+
+00:04:56.400 --> 00:04:59.550 align:start position:0%
+while the copy is okay the move is
+illegal<00:04:56.919><c> here</c><00:04:57.360><c> because</c><00:04:57.840><c> nums</c><00:04:58.840><c> is</c><00:04:59.199><c> an</c>
+
+00:04:59.550 --> 00:04:59.560 align:start position:0%
+illegal here because nums is an
+ 
+
+00:04:59.560 --> 00:05:01.950 align:start position:0%
+illegal here because nums is an
+immutable<00:05:00.120><c> reference</c><00:05:01.120><c> that</c><00:05:01.280><c> we</c><00:05:01.400><c> cannot</c><00:05:01.680><c> move</c>
+
+00:05:01.950 --> 00:05:01.960 align:start position:0%
+immutable reference that we cannot move
+ 
+
+00:05:01.960 --> 00:05:06.390 align:start position:0%
+immutable reference that we cannot move
+out<00:05:02.280><c> of</c><00:05:03.280><c> because</c><00:05:03.639><c> T</c><00:05:04.639><c> could</c><00:05:05.199><c> literally</c><00:05:05.720><c> be</c><00:05:06.039><c> any</c>
+
+00:05:06.390 --> 00:05:06.400 align:start position:0%
+out of because T could literally be any
+ 
+
+00:05:06.400 --> 00:05:09.110 align:start position:0%
+out of because T could literally be any
+type<00:05:07.240><c> the</c><00:05:07.520><c> compiler</c><00:05:07.880><c> saves</c><00:05:08.280><c> us</c><00:05:08.639><c> from</c><00:05:08.919><c> the</c>
+
+00:05:09.110 --> 00:05:09.120 align:start position:0%
+type the compiler saves us from the
+ 
+
+00:05:09.120 --> 00:05:11.749 align:start position:0%
+type the compiler saves us from the
+illegal<00:05:09.600><c> move</c><00:05:10.199><c> out</c><00:05:10.720><c> of</c><00:05:11.000><c> an</c><00:05:11.160><c> immutable</c>
+
+00:05:11.749 --> 00:05:11.759 align:start position:0%
+illegal move out of an immutable
+ 
+
+00:05:11.759 --> 00:05:14.710 align:start position:0%
+illegal move out of an immutable
+reference<00:05:12.639><c> by</c><00:05:12.800><c> throwing</c><00:05:13.280><c> an</c><00:05:13.560><c> error</c><00:05:14.560><c> the</c>
+
+00:05:14.710 --> 00:05:14.720 align:start position:0%
+reference by throwing an error the
+ 
+
+00:05:14.720 --> 00:05:16.749 align:start position:0%
+reference by throwing an error the
+second<00:05:15.039><c> problem</c><00:05:15.360><c> arises</c><00:05:15.960><c> in</c><00:05:16.120><c> the</c><00:05:16.280><c> ADD</c><00:05:16.520><c> and</c>
+
+00:05:16.749 --> 00:05:16.759 align:start position:0%
+second problem arises in the ADD and
+ 
+
+00:05:16.759 --> 00:05:19.270 align:start position:0%
+second problem arises in the ADD and
+assign<00:05:17.160><c> operator</c><00:05:17.919><c> within</c><00:05:18.199><c> the</c>
+
+00:05:19.270 --> 00:05:19.280 align:start position:0%
+assign operator within the
+ 
+
+00:05:19.280 --> 00:05:22.350 align:start position:0%
+assign operator within the
+loop<00:05:20.280><c> we</c><00:05:20.440><c> boldly</c><00:05:20.880><c> assume</c><00:05:21.240><c> that</c><00:05:21.440><c> t</c><00:05:22.039><c> has</c><00:05:22.199><c> the</c>
+
+00:05:22.350 --> 00:05:22.360 align:start position:0%
+loop we boldly assume that t has the
+ 
+
+00:05:22.360 --> 00:05:25.029 align:start position:0%
+loop we boldly assume that t has the
+ability<00:05:22.800><c> to</c><00:05:22.960><c> be</c><00:05:23.120><c> added</c><00:05:23.639><c> and</c><00:05:23.919><c> assigned</c><00:05:24.800><c> this</c><00:05:24.919><c> is</c>
+
+00:05:25.029 --> 00:05:25.039 align:start position:0%
+ability to be added and assigned this is
+ 
+
+00:05:25.039 --> 00:05:27.710 align:start position:0%
+ability to be added and assigned this is
+not<00:05:25.240><c> true</c><00:05:25.479><c> for</c><00:05:25.720><c> all</c><00:05:25.960><c> types</c><00:05:26.360><c> that</c><00:05:26.560><c> exist</c><00:05:27.440><c> as</c><00:05:27.520><c> an</c>
+
+00:05:27.710 --> 00:05:27.720 align:start position:0%
+not true for all types that exist as an
+ 
+
+00:05:27.720 --> 00:05:50.189 align:start position:0%
+not true for all types that exist as an
+example<00:05:28.440><c> think</c><00:05:28.680><c> of</c><00:05:28.880><c> two</c><00:05:29.120><c> vectors</c>
+
+00:05:50.189 --> 00:05:50.199 align:start position:0%
+ 
+ 
+
+00:05:50.199 --> 00:05:52.189 align:start position:0%
+ 
+they<00:05:50.360><c> cannot</c><00:05:50.759><c> be</c><00:05:50.919><c> added</c><00:05:51.360><c> even</c><00:05:51.600><c> with</c><00:05:51.759><c> a</c><00:05:51.919><c> plus</c>
+
+00:05:52.189 --> 00:05:52.199 align:start position:0%
+they cannot be added even with a plus
+ 
+
+00:05:52.199 --> 00:05:55.749 align:start position:0%
+they cannot be added even with a plus
+operator<00:05:53.199><c> and</c><00:05:53.560><c> thus</c><00:05:54.160><c> add</c><00:05:54.360><c> and</c><00:05:54.639><c> assign</c><00:05:55.319><c> is</c><00:05:55.520><c> also</c>
+
+00:05:55.749 --> 00:05:55.759 align:start position:0%
+operator and thus add and assign is also
+ 
+
+00:05:55.759 --> 00:05:58.870 align:start position:0%
+operator and thus add and assign is also
+not<00:05:55.960><c> possible</c><00:05:56.440><c> with</c><00:05:56.840><c> vectors</c><00:05:57.840><c> so</c><00:05:58.280><c> are</c><00:05:58.440><c> we</c><00:05:58.680><c> back</c>
+
+00:05:58.870 --> 00:05:58.880 align:start position:0%
+not possible with vectors so are we back
+ 
+
+00:05:58.880 --> 00:06:00.830 align:start position:0%
+not possible with vectors so are we back
+at<00:05:59.000><c> square</c><00:05:59.319><c> one</c><00:05:59.520><c> one</c><00:06:00.199><c> do</c><00:06:00.360><c> we</c><00:06:00.479><c> need</c><00:06:00.600><c> to</c>
+
+00:06:00.830 --> 00:06:00.840 align:start position:0%
+at square one one do we need to
+ 
+
+00:06:00.840 --> 00:06:03.870 align:start position:0%
+at square one one do we need to
+duplicate<00:06:01.360><c> our</c><00:06:01.680><c> function</c><00:06:02.120><c> for</c><00:06:02.440><c> every</c><00:06:02.800><c> type</c><00:06:03.639><c> or</c>
+
+00:06:03.870 --> 00:06:03.880 align:start position:0%
+duplicate our function for every type or
+ 
+
+00:06:03.880 --> 00:06:06.510 align:start position:0%
+duplicate our function for every type or
+can<00:06:04.120><c> we</c><00:06:04.440><c> somehow</c><00:06:05.120><c> tell</c><00:06:05.400><c> the</c><00:06:05.560><c> compiler</c><00:06:06.360><c> that</c>
+
+00:06:06.510 --> 00:06:06.520 align:start position:0%
+can we somehow tell the compiler that
+ 
+
+00:06:06.520 --> 00:06:08.390 align:start position:0%
+can we somehow tell the compiler that
+this<00:06:06.720><c> function</c><00:06:07.039><c> is</c><00:06:07.160><c> only</c><00:06:07.479><c> meant</c><00:06:07.720><c> for</c><00:06:07.960><c> types</c>
+
+00:06:08.390 --> 00:06:08.400 align:start position:0%
+this function is only meant for types
+ 
+
+00:06:08.400 --> 00:06:10.950 align:start position:0%
+this function is only meant for types
+that<00:06:08.560><c> can</c><00:06:08.759><c> be</c><00:06:08.960><c> copied</c><00:06:09.560><c> and</c><00:06:09.800><c> add</c><00:06:10.080><c> assigned</c><00:06:10.840><c> this</c>
+
+00:06:10.950 --> 00:06:10.960 align:start position:0%
+that can be copied and add assigned this
+ 
+
+00:06:10.960 --> 00:06:14.270 align:start position:0%
+that can be copied and add assigned this
+is<00:06:11.199><c> exactly</c><00:06:11.680><c> where</c><00:06:11.840><c> traes</c><00:06:12.199><c> come</c><00:06:12.360><c> in</c><00:06:13.039><c> traits</c><00:06:13.759><c> or</c>
+
+00:06:14.270 --> 00:06:14.280 align:start position:0%
+is exactly where traes come in traits or
+ 
+
+00:06:14.280 --> 00:06:16.550 align:start position:0%
+is exactly where traes come in traits or
+interfaces<00:06:15.160><c> as</c><00:06:15.479><c> they</c><00:06:15.599><c> are</c><00:06:15.800><c> called</c><00:06:16.080><c> in</c><00:06:16.319><c> most</c>
+
+00:06:16.550 --> 00:06:16.560 align:start position:0%
+interfaces as they are called in most
+ 
+
+00:06:16.560 --> 00:06:19.189 align:start position:0%
+interfaces as they are called in most
+other<00:06:16.840><c> languages</c><00:06:17.759><c> are</c><00:06:18.080><c> Concepts</c><00:06:18.919><c> that</c>
+
+00:06:19.189 --> 00:06:19.199 align:start position:0%
+other languages are Concepts that
+ 
+
+00:06:19.199 --> 00:06:21.070 align:start position:0%
+other languages are Concepts that
+guarantee<00:06:19.840><c> that</c><00:06:19.960><c> an</c><00:06:20.160><c> object</c><00:06:20.440><c> or</c><00:06:20.639><c> struct</c>
+
+00:06:21.070 --> 00:06:21.080 align:start position:0%
+guarantee that an object or struct
+ 
+
+00:06:21.080 --> 00:06:23.670 align:start position:0%
+guarantee that an object or struct
+provides<00:06:21.479><c> a</c><00:06:21.680><c> certain</c><00:06:22.360><c> functionality</c><00:06:23.360><c> in</c><00:06:23.520><c> the</c>
+
+00:06:23.670 --> 00:06:23.680 align:start position:0%
+provides a certain functionality in the
+ 
+
+00:06:23.680 --> 00:06:25.790 align:start position:0%
+provides a certain functionality in the
+past<00:06:23.880><c> the</c><00:06:24.000><c> rust</c><00:06:24.319><c> compiler</c><00:06:25.000><c> has</c><00:06:25.160><c> often</c><00:06:25.400><c> saved</c>
+
+00:06:25.790 --> 00:06:25.800 align:start position:0%
+past the rust compiler has often saved
+ 
+
+00:06:25.800 --> 00:06:28.990 align:start position:0%
+past the rust compiler has often saved
+us<00:06:26.160><c> by</c><00:06:26.400><c> making</c><00:06:26.960><c> quite</c><00:06:27.240><c> good</c><00:06:27.560><c> suggestions</c><00:06:28.560><c> of</c>
+
+00:06:28.990 --> 00:06:29.000 align:start position:0%
+us by making quite good suggestions of
+ 
+
+00:06:29.000 --> 00:06:31.189 align:start position:0%
+us by making quite good suggestions of
+what<00:06:29.160><c> we</c><00:06:29.520><c> would</c><00:06:29.720><c> like</c><00:06:29.960><c> to</c><00:06:30.400><c> implement</c><00:06:30.840><c> in</c><00:06:30.960><c> our</c>
+
+00:06:31.189 --> 00:06:31.199 align:start position:0%
+what we would like to implement in our
+ 
+
+00:06:31.199 --> 00:06:33.870 align:start position:0%
+what we would like to implement in our
+code<00:06:31.479><c> to</c><00:06:31.639><c> make</c><00:06:31.759><c> it</c><00:06:31.960><c> work</c><00:06:32.919><c> let's</c><00:06:33.160><c> see</c><00:06:33.599><c> what</c><00:06:33.720><c> it</c>
+
+00:06:33.870 --> 00:06:33.880 align:start position:0%
+code to make it work let's see what it
+ 
+
+00:06:33.880 --> 00:06:35.430 align:start position:0%
+code to make it work let's see what it
+suggests<00:06:34.400><c> this</c>
+
+00:06:35.430 --> 00:06:35.440 align:start position:0%
+suggests this
+ 
+
+00:06:35.440 --> 00:06:37.950 align:start position:0%
+suggests this
+time<00:06:36.440><c> here</c><00:06:36.639><c> we</c><00:06:36.759><c> can</c><00:06:36.960><c> see</c><00:06:37.440><c> that</c><00:06:37.599><c> the</c><00:06:37.720><c> rest</c>
+
+00:06:37.950 --> 00:06:37.960 align:start position:0%
+time here we can see that the rest
+ 
+
+00:06:37.960 --> 00:06:40.150 align:start position:0%
+time here we can see that the rest
+compiler<00:06:38.360><c> says</c><00:06:38.720><c> consider</c><00:06:39.199><c> restricting</c><00:06:39.919><c> the</c>
+
+00:06:40.150 --> 00:06:40.160 align:start position:0%
+compiler says consider restricting the
+ 
+
+00:06:40.160 --> 00:06:43.909 align:start position:0%
+compiler says consider restricting the
+type<00:06:40.479><c> of</c><00:06:40.840><c> parameter</c><00:06:41.319><c> T</c><00:06:41.800><c> to</c><00:06:42.039><c> stit</c><00:06:42.479><c> Ops</c><00:06:43.080><c> add</c><00:06:43.240><c> a</c>
+
+00:06:43.909 --> 00:06:43.919 align:start position:0%
+type of parameter T to stit Ops add a
+ 
+
+00:06:43.919 --> 00:06:47.110 align:start position:0%
+type of parameter T to stit Ops add a
+sign<00:06:44.919><c> well</c><00:06:45.240><c> let's</c><00:06:45.639><c> do</c><00:06:45.960><c> exactly</c><00:06:46.440><c> this</c><00:06:46.880><c> how</c><00:06:47.000><c> do</c>
+
+00:06:47.110 --> 00:06:47.120 align:start position:0%
+sign well let's do exactly this how do
+ 
+
+00:06:47.120 --> 00:06:50.550 align:start position:0%
+sign well let's do exactly this how do
+we<00:06:47.240><c> do</c><00:06:47.440><c> this</c><00:06:47.680><c> we</c><00:06:47.840><c> say</c><00:06:48.160><c> that</c><00:06:48.520><c> t</c><00:06:49.280><c> colon</c><00:06:50.280><c> and</c><00:06:50.400><c> now</c>
+
+00:06:50.550 --> 00:06:50.560 align:start position:0%
+we do this we say that t colon and now
+ 
+
+00:06:50.560 --> 00:06:52.589 align:start position:0%
+we do this we say that t colon and now
+we<00:06:50.639><c> can</c><00:06:50.800><c> restrict</c><00:06:51.240><c> the</c><00:06:51.440><c> parameter</c><00:06:52.319><c> by</c>
+
+00:06:52.589 --> 00:06:52.599 align:start position:0%
+we can restrict the parameter by
+ 
+
+00:06:52.599 --> 00:06:54.790 align:start position:0%
+we can restrict the parameter by
+requiring<00:06:53.160><c> it</c><00:06:53.560><c> to</c><00:06:53.800><c> have</c><00:06:54.080><c> certain</c>
+
+00:06:54.790 --> 00:06:54.800 align:start position:0%
+requiring it to have certain
+ 
+
+00:06:54.800 --> 00:06:57.950 align:start position:0%
+requiring it to have certain
+functionality<00:06:55.800><c> in</c><00:06:55.960><c> this</c><00:06:56.199><c> case</c><00:06:56.479><c> it</c><00:06:56.599><c> is</c><00:06:56.759><c> the</c><00:06:57.039><c> S</c>
+
+00:06:57.950 --> 00:06:57.960 align:start position:0%
+functionality in this case it is the S
+ 
+
+00:06:57.960 --> 00:07:03.270 align:start position:0%
+functionality in this case it is the S
+Ops<00:06:58.960><c> add</c><00:06:59.680><c> assign</c><00:07:00.879><c> trait</c><00:07:01.879><c> so</c><00:07:02.080><c> we</c><00:07:02.199><c> can</c><00:07:02.400><c> see</c><00:07:02.759><c> that</c>
+
+00:07:03.270 --> 00:07:03.280 align:start position:0%
+Ops add assign trait so we can see that
+ 
+
+00:07:03.280 --> 00:07:05.430 align:start position:0%
+Ops add assign trait so we can see that
+one<00:07:03.520><c> squiggly</c><00:07:04.000><c> line</c><00:07:04.199><c> went</c><00:07:04.440><c> away</c><00:07:05.000><c> from</c><00:07:05.240><c> the</c>
+
+00:07:05.430 --> 00:07:05.440 align:start position:0%
+one squiggly line went away from the
+ 
+
+00:07:05.440 --> 00:07:08.629 align:start position:0%
+one squiggly line went away from the
+plus<00:07:05.879><c> equals</c><00:07:06.879><c> and</c><00:07:07.240><c> two</c><00:07:07.520><c> new</c><00:07:07.639><c> squiggly</c><00:07:08.120><c> lines</c>
+
+00:07:08.629 --> 00:07:08.639 align:start position:0%
+plus equals and two new squiggly lines
+ 
+
+00:07:08.639 --> 00:07:11.790 align:start position:0%
+plus equals and two new squiggly lines
+appeared<00:07:09.639><c> at</c><00:07:09.840><c> first</c><00:07:10.319><c> let's</c><00:07:10.560><c> clarify</c><00:07:11.240><c> why</c><00:07:11.680><c> the</c>
+
+00:07:11.790 --> 00:07:11.800 align:start position:0%
+appeared at first let's clarify why the
+ 
+
+00:07:11.800 --> 00:07:14.189 align:start position:0%
+appeared at first let's clarify why the
+squiggly<00:07:12.240><c> line</c><00:07:12.440><c> under</c><00:07:12.759><c> plus</c><00:07:13.039><c> equal</c>
+
+00:07:14.189 --> 00:07:14.199 align:start position:0%
+squiggly line under plus equal
+ 
+
+00:07:14.199 --> 00:07:16.869 align:start position:0%
+squiggly line under plus equal
+disappeared<00:07:15.199><c> well</c><00:07:15.400><c> we</c><00:07:15.560><c> now</c><00:07:15.720><c> say</c><00:07:16.039><c> that</c><00:07:16.319><c> we</c><00:07:16.479><c> want</c>
+
+00:07:16.869 --> 00:07:16.879 align:start position:0%
+disappeared well we now say that we want
+ 
+
+00:07:16.879 --> 00:07:20.430 align:start position:0%
+disappeared well we now say that we want
+T<00:07:17.280><c> to</c><00:07:17.440><c> be</c><00:07:17.680><c> any</c><00:07:18.039><c> type</c><00:07:18.960><c> but</c><00:07:19.160><c> we</c><00:07:19.360><c> restrict</c><00:07:20.039><c> that</c><00:07:20.240><c> it</c>
+
+00:07:20.430 --> 00:07:20.440 align:start position:0%
+T to be any type but we restrict that it
+ 
+
+00:07:20.440 --> 00:07:23.710 align:start position:0%
+T to be any type but we restrict that it
+needs<00:07:20.720><c> to</c><00:07:21.000><c> have</c><00:07:21.319><c> this</c><00:07:21.680><c> add</c><00:07:22.000><c> assign</c><00:07:22.400><c> trade</c><00:07:23.280><c> and</c>
+
+00:07:23.710 --> 00:07:23.720 align:start position:0%
+needs to have this add assign trade and
+ 
+
+00:07:23.720 --> 00:07:27.070 align:start position:0%
+needs to have this add assign trade and
+this<00:07:23.960><c> add</c><00:07:24.199><c> assign</c><00:07:24.720><c> trade</c><00:07:25.720><c> is</c><00:07:26.520><c> the</c>
+
+00:07:27.070 --> 00:07:27.080 align:start position:0%
+this add assign trade is the
+ 
+
+00:07:27.080 --> 00:07:29.629 align:start position:0%
+this add assign trade is the
+functionality<00:07:28.080><c> that</c><00:07:28.240><c> it</c><00:07:28.400><c> must</c><00:07:28.720><c> have</c><00:07:28.960><c> the</c><00:07:29.520><c> at</c>
+
+00:07:29.629 --> 00:07:29.639 align:start position:0%
+functionality that it must have the at
+ 
+
+00:07:29.639 --> 00:07:32.189 align:start position:0%
+functionality that it must have the at
+the<00:07:29.879><c> plus</c><00:07:30.240><c> equal</c><00:07:30.840><c> implemented</c><00:07:31.440><c> for</c>
+
+00:07:32.189 --> 00:07:32.199 align:start position:0%
+the plus equal implemented for
+ 
+
+00:07:32.199 --> 00:07:36.150 align:start position:0%
+the plus equal implemented for
+itself<00:07:33.199><c> this</c><00:07:33.520><c> is</c><00:07:33.720><c> what</c><00:07:33.879><c> we</c><00:07:34.080><c> call</c><00:07:34.520><c> a</c><00:07:34.919><c> trait</c><00:07:35.680><c> or</c>
+
+00:07:36.150 --> 00:07:36.160 align:start position:0%
+itself this is what we call a trait or
+ 
+
+00:07:36.160 --> 00:07:38.830 align:start position:0%
+itself this is what we call a trait or
+as<00:07:36.240><c> I</c><00:07:36.400><c> said</c><00:07:36.639><c> an</c><00:07:36.840><c> interface</c><00:07:37.840><c> so</c><00:07:38.039><c> for</c><00:07:38.240><c> all</c><00:07:38.520><c> types</c>
+
+00:07:38.830 --> 00:07:38.840 align:start position:0%
+as I said an interface so for all types
+ 
+
+00:07:38.840 --> 00:07:41.150 align:start position:0%
+as I said an interface so for all types
+T<00:07:39.440><c> that</c><00:07:39.599><c> this</c><00:07:39.800><c> function</c><00:07:40.160><c> can</c><00:07:40.440><c> take</c><00:07:41.039><c> the</c>
+
+00:07:41.150 --> 00:07:41.160 align:start position:0%
+T that this function can take the
+ 
+
+00:07:41.160 --> 00:07:43.309 align:start position:0%
+T that this function can take the
+compiler<00:07:41.560><c> will</c><00:07:41.759><c> make</c><00:07:41.960><c> sure</c><00:07:42.680><c> that</c><00:07:42.879><c> the</c><00:07:43.039><c> plus</c>
+
+00:07:43.309 --> 00:07:43.319 align:start position:0%
+compiler will make sure that the plus
+ 
+
+00:07:43.319 --> 00:07:46.149 align:start position:0%
+compiler will make sure that the plus
+equal<00:07:43.720><c> operator</c><00:07:44.280><c> is</c><00:07:44.479><c> defined</c><00:07:44.840><c> for</c><00:07:45.039><c> them</c><00:07:45.960><c> let's</c>
+
+00:07:46.149 --> 00:07:46.159 align:start position:0%
+equal operator is defined for them let's
+ 
+
+00:07:46.159 --> 00:07:48.629 align:start position:0%
+equal operator is defined for them let's
+see<00:07:46.720><c> what</c><00:07:46.879><c> else</c><00:07:47.080><c> is</c><00:07:47.280><c> wrong</c><00:07:47.599><c> here</c><00:07:48.199><c> here</c><00:07:48.319><c> we</c><00:07:48.440><c> can</c>
+
+00:07:48.629 --> 00:07:48.639 align:start position:0%
+see what else is wrong here here we can
+ 
+
+00:07:48.639 --> 00:07:51.029 align:start position:0%
+see what else is wrong here here we can
+see<00:07:48.840><c> in</c><00:07:49.000><c> line</c><00:07:49.240><c> 13</c><00:07:49.680><c> what</c><00:07:49.800><c> the</c><00:07:49.960><c> problem</c><00:07:50.280><c> is</c><00:07:50.919><c> we</c>
+
+00:07:51.029 --> 00:07:51.039 align:start position:0%
+see in line 13 what the problem is we
+ 
+
+00:07:51.039 --> 00:07:54.550 align:start position:0%
+see in line 13 what the problem is we
+cannot<00:07:51.400><c> move</c><00:07:51.919><c> out</c><00:07:52.120><c> of</c><00:07:52.479><c> type</c><00:07:52.759><c> T</c><00:07:53.720><c> which</c><00:07:53.879><c> is</c><00:07:54.199><c> a</c>
+
+00:07:54.550 --> 00:07:54.560 align:start position:0%
+cannot move out of type T which is a
+ 
+
+00:07:54.560 --> 00:07:58.909 align:start position:0%
+cannot move out of type T which is a
+non-<00:07:55.080><c> copy</c><00:07:55.639><c> slice</c><00:07:56.639><c> of</c><00:07:56.800><c> course</c><00:07:57.479><c> nums</c><00:07:58.280><c> is</c><00:07:58.720><c> a</c>
+
+00:07:58.909 --> 00:07:58.919 align:start position:0%
+non- copy slice of course nums is a
+ 
+
+00:07:58.919 --> 00:08:02.350 align:start position:0%
+non- copy slice of course nums is a
+slice<00:07:59.479><c> of</c><00:07:59.639><c> type</c><00:08:00.080><c> T</c><00:08:01.080><c> we</c><00:08:01.280><c> just</c><00:08:01.479><c> borrow</c><00:08:01.919><c> this</c><00:08:02.080><c> one</c>
+
+00:08:02.350 --> 00:08:02.360 align:start position:0%
+slice of type T we just borrow this one
+ 
+
+00:08:02.360 --> 00:08:05.390 align:start position:0%
+slice of type T we just borrow this one
+we<00:08:02.520><c> don't</c><00:08:02.800><c> have</c><00:08:03.000><c> mutability</c><00:08:03.960><c> and</c><00:08:04.400><c> especially</c>
+
+00:08:05.390 --> 00:08:05.400 align:start position:0%
+we don't have mutability and especially
+ 
+
+00:08:05.400 --> 00:08:07.990 align:start position:0%
+we don't have mutability and especially
+we<00:08:05.520><c> are</c><00:08:05.800><c> not</c><00:08:06.120><c> taking</c><00:08:06.680><c> the</c><00:08:06.879><c> full</c><00:08:07.280><c> ownership</c><00:08:07.800><c> of</c>
+
+00:08:07.990 --> 00:08:08.000 align:start position:0%
+we are not taking the full ownership of
+ 
+
+00:08:08.000 --> 00:08:10.950 align:start position:0%
+we are not taking the full ownership of
+this<00:08:08.400><c> therefore</c><00:08:08.720><c> we</c><00:08:08.879><c> cannot</c><00:08:09.120><c> move</c><00:08:09.319><c> out</c><00:08:09.479><c> of</c><00:08:09.960><c> it</c>
+
+00:08:10.950 --> 00:08:10.960 align:start position:0%
+this therefore we cannot move out of it
+ 
+
+00:08:10.960 --> 00:08:13.390 align:start position:0%
+this therefore we cannot move out of it
+so<00:08:11.319><c> there</c><00:08:11.520><c> would</c><00:08:11.720><c> be</c><00:08:12.280><c> multiple</c><00:08:12.759><c> Solutions</c><00:08:13.240><c> we</c>
+
+00:08:13.390 --> 00:08:13.400 align:start position:0%
+so there would be multiple Solutions we
+ 
+
+00:08:13.400 --> 00:08:15.469 align:start position:0%
+so there would be multiple Solutions we
+could<00:08:13.599><c> have</c><00:08:13.840><c> here</c><00:08:14.080><c> we</c><00:08:14.199><c> could</c><00:08:14.400><c> for</c><00:08:14.639><c> example</c>
+
+00:08:15.469 --> 00:08:15.479 align:start position:0%
+could have here we could for example
+ 
+
+00:08:15.479 --> 00:08:18.070 align:start position:0%
+could have here we could for example
+call<00:08:15.840><c> a</c><00:08:16.240><c> do</c><00:08:16.520><c> clone</c><00:08:17.000><c> here</c><00:08:17.599><c> which</c><00:08:17.720><c> means</c><00:08:17.960><c> we</c>
+
+00:08:18.070 --> 00:08:18.080 align:start position:0%
+call a do clone here which means we
+ 
+
+00:08:18.080 --> 00:08:20.390 align:start position:0%
+call a do clone here which means we
+would<00:08:18.319><c> explicitly</c><00:08:18.919><c> clone</c><00:08:19.240><c> the</c><00:08:19.400><c> number</c>
+
+00:08:20.390 --> 00:08:20.400 align:start position:0%
+would explicitly clone the number
+ 
+
+00:08:20.400 --> 00:08:24.350 align:start position:0%
+would explicitly clone the number
+however<00:08:21.280><c> then</c><00:08:21.879><c> not</c><00:08:22.159><c> every</c><00:08:22.599><c> type</c><00:08:23.159><c> has</c><00:08:23.560><c> clone</c>
+
+00:08:24.350 --> 00:08:24.360 align:start position:0%
+however then not every type has clone
+ 
+
+00:08:24.360 --> 00:08:27.230 align:start position:0%
+however then not every type has clone
+implemented<00:08:25.360><c> the</c><00:08:25.560><c> second</c><00:08:26.000><c> possibility</c><00:08:26.840><c> and</c>
+
+00:08:27.230 --> 00:08:27.240 align:start position:0%
+implemented the second possibility and
+ 
+
+00:08:27.240 --> 00:08:29.550 align:start position:0%
+implemented the second possibility and
+this<00:08:27.360><c> is</c><00:08:27.560><c> what</c><00:08:27.680><c> we're</c><00:08:27.840><c> going</c><00:08:27.960><c> to</c><00:08:28.120><c> do</c><00:08:28.360><c> for</c><00:08:28.639><c> now</c>
+
+00:08:29.550 --> 00:08:29.560 align:start position:0%
+this is what we're going to do for now
+ 
+
+00:08:29.560 --> 00:08:31.469 align:start position:0%
+this is what we're going to do for now
+is<00:08:29.960><c> that</c><00:08:30.159><c> we</c><00:08:30.280><c> want</c><00:08:30.520><c> to</c>
+
+00:08:31.469 --> 00:08:31.479 align:start position:0%
+is that we want to
+ 
+
+00:08:31.479 --> 00:08:34.870 align:start position:0%
+is that we want to
+copy<00:08:32.479><c> an</c><00:08:32.680><c> implicit</c><00:08:33.200><c> copy</c><00:08:33.599><c> happens</c><00:08:34.120><c> whenever</c>
+
+00:08:34.870 --> 00:08:34.880 align:start position:0%
+copy an implicit copy happens whenever
+ 
+
+00:08:34.880 --> 00:08:37.389 align:start position:0%
+copy an implicit copy happens whenever
+this<00:08:35.360><c> type</c><00:08:35.719><c> on</c><00:08:35.880><c> the</c><00:08:36.039><c> right</c><00:08:36.320><c> hand</c><00:08:36.519><c> side</c><00:08:37.039><c> has</c>
+
+00:08:37.389 --> 00:08:37.399 align:start position:0%
+this type on the right hand side has
+ 
+
+00:08:37.399 --> 00:08:40.709 align:start position:0%
+this type on the right hand side has
+implemented<00:08:38.080><c> the</c><00:08:38.240><c> copy</c><00:08:38.680><c> tra</c><00:08:39.680><c> in</c><00:08:39.839><c> this</c><00:08:40.039><c> case</c><00:08:40.479><c> we</c>
+
+00:08:40.709 --> 00:08:40.719 align:start position:0%
+implemented the copy tra in this case we
+ 
+
+00:08:40.719 --> 00:08:42.430 align:start position:0%
+implemented the copy tra in this case we
+need<00:08:40.880><c> to</c><00:08:41.039><c> make</c><00:08:41.200><c> sure</c><00:08:41.440><c> that</c><00:08:41.599><c> the</c><00:08:41.719><c> copy</c><00:08:41.959><c> tra</c><00:08:42.279><c> is</c>
+
+00:08:42.430 --> 00:08:42.440 align:start position:0%
+need to make sure that the copy tra is
+ 
+
+00:08:42.440 --> 00:08:45.230 align:start position:0%
+need to make sure that the copy tra is
+implemented<00:08:43.399><c> and</c><00:08:43.519><c> we</c><00:08:43.680><c> do</c><00:08:43.880><c> this</c><00:08:44.120><c> by</c><00:08:44.320><c> adding</c><00:08:44.800><c> the</c>
+
+00:08:45.230 --> 00:08:45.240 align:start position:0%
+implemented and we do this by adding the
+ 
+
+00:08:45.240 --> 00:08:48.070 align:start position:0%
+implemented and we do this by adding the
+copy<00:08:45.560><c> trade</c><00:08:46.440><c> as</c><00:08:46.600><c> a</c><00:08:46.800><c> requirement</c><00:08:47.399><c> for</c><00:08:47.600><c> our</c><00:08:47.880><c> type</c>
+
+00:08:48.070 --> 00:08:48.080 align:start position:0%
+copy trade as a requirement for our type
+ 
+
+00:08:48.080 --> 00:08:52.790 align:start position:0%
+copy trade as a requirement for our type
+T<00:08:48.959><c> so</c><00:08:49.200><c> we'll</c><00:08:49.440><c> say</c><00:08:50.080><c> t</c><00:08:51.000><c> must</c><00:08:51.399><c> have</c><00:08:52.000><c> both</c><00:08:52.399><c> the</c><00:08:52.560><c> add</c>
+
+00:08:52.790 --> 00:08:52.800 align:start position:0%
+T so we'll say t must have both the add
+ 
+
+00:08:52.800 --> 00:08:55.750 align:start position:0%
+T so we'll say t must have both the add
+assign<00:08:53.240><c> trait</c><00:08:54.000><c> and</c><00:08:54.320><c> the</c><00:08:54.480><c> copy</c><00:08:54.800><c> trade</c><00:08:55.600><c> which</c>
+
+00:08:55.750 --> 00:08:55.760 align:start position:0%
+assign trait and the copy trade which
+ 
+
+00:08:55.760 --> 00:08:58.670 align:start position:0%
+assign trait and the copy trade which
+means<00:08:56.240><c> that</c><00:08:57.040><c> the</c><00:08:57.240><c> add</c><00:08:57.440><c> assign</c><00:08:57.880><c> operator</c><00:08:58.399><c> plus</c>
+
+00:08:58.670 --> 00:08:58.680 align:start position:0%
+means that the add assign operator plus
+ 
+
+00:08:58.680 --> 00:09:03.389 align:start position:0%
+means that the add assign operator plus
+equals<00:08:59.600><c> is</c><00:08:59.880><c> implemented</c><00:09:00.880><c> and</c><00:09:01.399><c> a</c><00:09:01.959><c> copy</c><00:09:02.600><c> is</c><00:09:02.760><c> also</c>
+
+00:09:03.389 --> 00:09:03.399 align:start position:0%
+equals is implemented and a copy is also
+ 
+
+00:09:03.399 --> 00:09:07.190 align:start position:0%
+equals is implemented and a copy is also
+implemented<00:09:04.399><c> so</c><00:09:04.959><c> now</c><00:09:05.200><c> we</c><00:09:05.320><c> saw</c><00:09:05.839><c> that</c><00:09:06.240><c> obviously</c>
+
+00:09:07.190 --> 00:09:07.200 align:start position:0%
+implemented so now we saw that obviously
+ 
+
+00:09:07.200 --> 00:09:10.870 align:start position:0%
+implemented so now we saw that obviously
+trades<00:09:08.079><c> are</c><00:09:08.360><c> required</c><00:09:08.959><c> to</c><00:09:09.360><c> restrict</c><00:09:10.360><c> generic</c>
+
+00:09:10.870 --> 00:09:10.880 align:start position:0%
+trades are required to restrict generic
+ 
+
+00:09:10.880 --> 00:09:13.949 align:start position:0%
+trades are required to restrict generic
+parameters<00:09:11.640><c> in</c><00:09:11.800><c> this</c><00:09:12.040><c> case</c><00:09:12.320><c> our</c><00:09:12.800><c> T</c><00:09:13.399><c> that</c><00:09:13.600><c> was</c>
+
+00:09:13.949 --> 00:09:13.959 align:start position:0%
+parameters in this case our T that was
+ 
+
+00:09:13.959 --> 00:09:16.910 align:start position:0%
+parameters in this case our T that was
+any<00:09:14.320><c> type</c><00:09:14.600><c> before</c><00:09:15.360><c> and</c><00:09:15.560><c> now</c><00:09:15.839><c> has</c><00:09:16.000><c> to</c><00:09:16.160><c> be</c><00:09:16.640><c> add</c>
+
+00:09:16.910 --> 00:09:16.920 align:start position:0%
+any type before and now has to be add
+ 
+
+00:09:16.920 --> 00:09:19.829 align:start position:0%
+any type before and now has to be add
+assignable<00:09:17.480><c> and</c><00:09:18.079><c> copyable</c><00:09:19.079><c> however</c><00:09:19.680><c> we</c>
+
+00:09:19.829 --> 00:09:19.839 align:start position:0%
+assignable and copyable however we
+ 
+
+00:09:19.839 --> 00:09:22.550 align:start position:0%
+assignable and copyable however we
+didn't<00:09:20.120><c> really</c><00:09:20.399><c> see</c><00:09:21.240><c> how</c><00:09:21.480><c> a</c><00:09:21.720><c> trade</c><00:09:22.160><c> actually</c>
+
+00:09:22.550 --> 00:09:22.560 align:start position:0%
+didn't really see how a trade actually
+ 
+
+00:09:22.560 --> 00:09:26.110 align:start position:0%
+didn't really see how a trade actually
+works<00:09:23.440><c> and</c><00:09:23.680><c> how</c><00:09:23.800><c> we</c><00:09:23.920><c> can</c><00:09:24.079><c> Implement</c><00:09:24.800><c> one</c><00:09:25.800><c> and</c>
+
+00:09:26.110 --> 00:09:26.120 align:start position:0%
+works and how we can Implement one and
+ 
+
+00:09:26.120 --> 00:09:28.550 align:start position:0%
+works and how we can Implement one and
+rather<00:09:26.440><c> than</c><00:09:26.800><c> doing</c><00:09:27.200><c> that</c><00:09:27.440><c> myself</c><00:09:27.920><c> now</c><00:09:28.440><c> I</c>
+
+00:09:28.550 --> 00:09:28.560 align:start position:0%
+rather than doing that myself now I
+ 
+
+00:09:28.560 --> 00:09:30.030 align:start position:0%
+rather than doing that myself now I
+would<00:09:28.720><c> just</c><00:09:28.959><c> like</c><00:09:29.240><c> like</c><00:09:29.360><c> to</c><00:09:29.480><c> look</c><00:09:29.600><c> at</c><00:09:29.760><c> one</c><00:09:29.880><c> of</c>
+
+00:09:30.030 --> 00:09:30.040 align:start position:0%
+would just like like to look at one of
+ 
+
+00:09:30.040 --> 00:09:32.269 align:start position:0%
+would just like like to look at one of
+the<00:09:30.200><c> most</c><00:09:30.440><c> important</c><00:09:30.839><c> traits</c><00:09:31.560><c> that</c><00:09:31.760><c> we</c><00:09:31.959><c> happen</c>
+
+00:09:32.269 --> 00:09:32.279 align:start position:0%
+the most important traits that we happen
+ 
+
+00:09:32.279 --> 00:09:35.590 align:start position:0%
+the most important traits that we happen
+to<00:09:32.480><c> use</c><00:09:33.079><c> which</c><00:09:33.279><c> is</c><00:09:33.920><c> copy</c><00:09:34.920><c> so</c><00:09:35.079><c> if</c><00:09:35.200><c> we</c><00:09:35.320><c> look</c><00:09:35.480><c> at</c>
+
+00:09:35.590 --> 00:09:35.600 align:start position:0%
+to use which is copy so if we look at
+ 
+
+00:09:35.600 --> 00:09:37.750 align:start position:0%
+to use which is copy so if we look at
+the<00:09:35.760><c> official</c><00:09:36.279><c> documentation</c><00:09:37.279><c> we</c><00:09:37.399><c> see</c><00:09:37.640><c> that</c>
+
+00:09:37.750 --> 00:09:37.760 align:start position:0%
+the official documentation we see that
+ 
+
+00:09:37.760 --> 00:09:39.949 align:start position:0%
+the official documentation we see that
+the<00:09:37.920><c> copy</c><00:09:38.200><c> trade</c><00:09:38.640><c> is</c><00:09:38.839><c> situated</c><00:09:39.399><c> in</c><00:09:39.519><c> the</c><00:09:39.720><c> stit</c>
+
+00:09:39.949 --> 00:09:39.959 align:start position:0%
+the copy trade is situated in the stit
+ 
+
+00:09:39.959 --> 00:09:42.470 align:start position:0%
+the copy trade is situated in the stit
+marker<00:09:40.320><c> module</c><00:09:40.920><c> we</c><00:09:41.040><c> see</c><00:09:41.320><c> that</c><00:09:41.480><c> it</c><00:09:41.640><c> is</c><00:09:41.880><c> a</c><00:09:42.160><c> public</c>
+
+00:09:42.470 --> 00:09:42.480 align:start position:0%
+marker module we see that it is a public
+ 
+
+00:09:42.480 --> 00:09:45.590 align:start position:0%
+marker module we see that it is a public
+trade<00:09:43.079><c> and</c><00:09:43.240><c> its</c><00:09:43.480><c> name</c><00:09:43.720><c> is</c><00:09:43.959><c> copy</c><00:09:44.880><c> and</c><00:09:45.040><c> now</c><00:09:45.360><c> let's</c>
+
+00:09:45.590 --> 00:09:45.600 align:start position:0%
+trade and its name is copy and now let's
+ 
+
+00:09:45.600 --> 00:09:48.430 align:start position:0%
+trade and its name is copy and now let's
+just<00:09:45.839><c> move</c><00:09:46.079><c> through</c><00:09:46.320><c> this</c><00:09:46.600><c> together</c><00:09:47.560><c> so</c><00:09:48.079><c> types</c>
+
+00:09:48.430 --> 00:09:48.440 align:start position:0%
+just move through this together so types
+ 
+
+00:09:48.440 --> 00:09:51.389 align:start position:0%
+just move through this together so types
+that<00:09:48.680><c> have</c><00:09:49.040><c> copy</c><00:09:50.000><c> are</c><00:09:50.320><c> those</c><00:09:50.720><c> whose</c><00:09:51.000><c> values</c>
+
+00:09:51.389 --> 00:09:51.399 align:start position:0%
+that have copy are those whose values
+ 
+
+00:09:51.399 --> 00:09:54.150 align:start position:0%
+that have copy are those whose values
+can<00:09:51.560><c> be</c><00:09:51.720><c> duplicated</c><00:09:52.360><c> simply</c><00:09:52.920><c> by</c><00:09:53.320><c> copying</c><00:09:54.000><c> the</c>
+
+00:09:54.150 --> 00:09:54.160 align:start position:0%
+can be duplicated simply by copying the
+ 
+
+00:09:54.160 --> 00:09:56.990 align:start position:0%
+can be duplicated simply by copying the
+individual<00:09:54.680><c> bits</c><00:09:55.560><c> and</c><00:09:55.800><c> by</c><00:09:55.959><c> default</c><00:09:56.600><c> variable</c>
+
+00:09:56.990 --> 00:09:57.000 align:start position:0%
+individual bits and by default variable
+ 
+
+00:09:57.000 --> 00:09:59.230 align:start position:0%
+individual bits and by default variable
+bindings<00:09:57.519><c> have</c><00:09:57.680><c> move</c><00:09:58.000><c> semantics</c><00:09:58.720><c> in</c><00:09:58.839><c> other</c>
+
+00:09:59.230 --> 00:09:59.240 align:start position:0%
+bindings have move semantics in other
+ 
+
+00:09:59.240 --> 00:10:02.310 align:start position:0%
+bindings have move semantics in other
+words<00:10:00.200><c> we</c><00:10:00.320><c> can</c><00:10:00.560><c> say</c><00:10:00.880><c> that</c><00:10:01.120><c> we</c><00:10:01.440><c> Define</c><00:10:01.880><c> our</c><00:10:02.079><c> own</c>
+
+00:10:02.310 --> 00:10:02.320 align:start position:0%
+words we can say that we Define our own
+ 
+
+00:10:02.320 --> 00:10:06.230 align:start position:0%
+words we can say that we Define our own
+struct<00:10:02.920><c> Fu</c><00:10:03.920><c> and</c><00:10:04.120><c> then</c><00:10:04.279><c> we'll</c><00:10:04.519><c> say</c><00:10:04.839><c> x</c><00:10:05.200><c> equals</c><00:10:05.600><c> Fu</c>
+
+00:10:06.230 --> 00:10:06.240 align:start position:0%
+struct Fu and then we'll say x equals Fu
+ 
+
+00:10:06.240 --> 00:10:09.430 align:start position:0%
+struct Fu and then we'll say x equals Fu
+that<00:10:06.399><c> means</c><00:10:06.839><c> that</c><00:10:07.240><c> Fu</c><00:10:07.640><c> will</c><00:10:07.800><c> be</c><00:10:07.920><c> moved</c><00:10:08.279><c> into</c><00:10:08.600><c> X</c>
+
+00:10:09.430 --> 00:10:09.440 align:start position:0%
+that means that Fu will be moved into X
+ 
+
+00:10:09.440 --> 00:10:13.350 align:start position:0%
+that means that Fu will be moved into X
+and<00:10:09.600><c> if</c><00:10:09.760><c> we</c><00:10:09.959><c> now</c><00:10:10.160><c> do</c><00:10:10.519><c> y</c><00:10:10.959><c> equal</c><00:10:11.760><c> x</c><00:10:12.760><c> x</c><00:10:13.040><c> will</c><00:10:13.240><c> be</c>
+
+00:10:13.350 --> 00:10:13.360 align:start position:0%
+and if we now do y equal x x will be
+ 
+
+00:10:13.360 --> 00:10:17.630 align:start position:0%
+and if we now do y equal x x will be
+moved<00:10:13.839><c> into</c><00:10:14.279><c> Y</c><00:10:15.279><c> and</c><00:10:15.480><c> therefore</c><00:10:16.480><c> at</c><00:10:17.000><c> this</c><00:10:17.279><c> place</c>
+
+00:10:17.630 --> 00:10:17.640 align:start position:0%
+moved into Y and therefore at this place
+ 
+
+00:10:17.640 --> 00:10:20.630 align:start position:0%
+moved into Y and therefore at this place
+we<00:10:17.800><c> could</c><00:10:18.000><c> not</c><00:10:18.360><c> use</c><00:10:18.959><c> x</c><00:10:19.360><c> again</c><00:10:20.079><c> because</c><00:10:20.360><c> it</c><00:10:20.519><c> has</c>
+
+00:10:20.630 --> 00:10:20.640 align:start position:0%
+we could not use x again because it has
+ 
+
+00:10:20.640 --> 00:10:22.590 align:start position:0%
+we could not use x again because it has
+been<00:10:20.800><c> moved</c><00:10:21.120><c> out</c><00:10:21.279><c> of</c><00:10:21.920><c> well</c><00:10:22.079><c> this</c><00:10:22.160><c> is</c><00:10:22.360><c> what</c><00:10:22.480><c> we</c>
+
+00:10:22.590 --> 00:10:22.600 align:start position:0%
+been moved out of well this is what we
+ 
+
+00:10:22.600 --> 00:10:24.670 align:start position:0%
+been moved out of well this is what we
+learned<00:10:22.920><c> about</c><00:10:23.240><c> ownership</c>
+
+00:10:24.670 --> 00:10:24.680 align:start position:0%
+learned about ownership
+ 
+
+00:10:24.680 --> 00:10:27.110 align:start position:0%
+learned about ownership
+already<00:10:25.680><c> however</c><00:10:25.920><c> it</c><00:10:26.079><c> says</c><00:10:26.480><c> if</c><00:10:26.600><c> I</c><00:10:26.839><c> type</c>
+
+00:10:27.110 --> 00:10:27.120 align:start position:0%
+already however it says if I type
+ 
+
+00:10:27.120 --> 00:10:29.949 align:start position:0%
+already however it says if I type
+implements<00:10:27.640><c> copy</c><00:10:28.360><c> it</c><00:10:28.519><c> instead</c><00:10:29.240><c> has</c><00:10:29.600><c> copy</c>
+
+00:10:29.949 --> 00:10:29.959 align:start position:0%
+implements copy it instead has copy
+ 
+
+00:10:29.959 --> 00:10:32.790 align:start position:0%
+implements copy it instead has copy
+mechanics<00:10:30.959><c> what</c><00:10:31.079><c> are</c><00:10:31.279><c> copy</c><00:10:31.600><c> mechanics</c><00:10:32.600><c> that</c>
+
+00:10:32.790 --> 00:10:32.800 align:start position:0%
+mechanics what are copy mechanics that
+ 
+
+00:10:32.800 --> 00:10:35.629 align:start position:0%
+mechanics what are copy mechanics that
+just<00:10:32.959><c> means</c><00:10:33.320><c> that</c><00:10:33.519><c> instead</c><00:10:33.839><c> of</c><00:10:34.320><c> moving</c><00:10:34.959><c> Fu</c>
+
+00:10:35.629 --> 00:10:35.639 align:start position:0%
+just means that instead of moving Fu
+ 
+
+00:10:35.639 --> 00:10:39.470 align:start position:0%
+just means that instead of moving Fu
+into<00:10:36.000><c> X</c><00:10:36.399><c> here</c><00:10:37.079><c> we</c><00:10:37.200><c> will</c><00:10:37.440><c> make</c><00:10:37.760><c> a</c><00:10:38.279><c> copy</c><00:10:38.560><c> of</c><00:10:38.720><c> Fu</c>
+
+00:10:39.470 --> 00:10:39.480 align:start position:0%
+into X here we will make a copy of Fu
+ 
+
+00:10:39.480 --> 00:10:42.269 align:start position:0%
+into X here we will make a copy of Fu
+and<00:10:39.720><c> X</c><00:10:40.000><c> is</c><00:10:40.120><c> now</c><00:10:40.279><c> an</c><00:10:40.480><c> exact</c><00:10:40.880><c> copy</c><00:10:41.160><c> of</c><00:10:41.320><c> Fu</c><00:10:41.680><c> but</c><00:10:41.839><c> Fu</c>
+
+00:10:42.269 --> 00:10:42.279 align:start position:0%
+and X is now an exact copy of Fu but Fu
+ 
+
+00:10:42.279 --> 00:10:45.949 align:start position:0%
+and X is now an exact copy of Fu but Fu
+still<00:10:42.720><c> exists</c><00:10:43.720><c> same</c><00:10:44.000><c> here</c><00:10:44.120><c> for</c><00:10:44.480><c> y</c><00:10:45.320><c> and</c><00:10:45.639><c> because</c>
+
+00:10:45.949 --> 00:10:45.959 align:start position:0%
+still exists same here for y and because
+ 
+
+00:10:45.959 --> 00:10:48.190 align:start position:0%
+still exists same here for y and because
+X<00:10:46.240><c> has</c><00:10:46.360><c> not</c><00:10:46.519><c> been</c><00:10:46.680><c> moved</c><00:10:47.040><c> out</c><00:10:47.240><c> of</c><00:10:47.480><c> but</c><00:10:47.800><c> has</c><00:10:47.959><c> only</c>
+
+00:10:48.190 --> 00:10:48.200 align:start position:0%
+X has not been moved out of but has only
+ 
+
+00:10:48.200 --> 00:10:51.069 align:start position:0%
+X has not been moved out of but has only
+been<00:10:48.399><c> copied</c><00:10:48.959><c> we</c><00:10:49.079><c> can</c><00:10:49.360><c> therefore</c><00:10:49.959><c> still</c><00:10:50.720><c> use</c>
+
+00:10:51.069 --> 00:10:51.079 align:start position:0%
+been copied we can therefore still use
+ 
+
+00:10:51.079 --> 00:10:54.790 align:start position:0%
+been copied we can therefore still use
+this<00:10:51.279><c> X</c><00:10:52.040><c> after</c><00:10:52.720><c> this</c><00:10:52.920><c> assignment</c><00:10:53.480><c> here</c><00:10:54.480><c> and</c><00:10:54.680><c> we</c>
+
+00:10:54.790 --> 00:10:54.800 align:start position:0%
+this X after this assignment here and we
+ 
+
+00:10:54.800 --> 00:10:58.389 align:start position:0%
+this X after this assignment here and we
+can<00:10:55.079><c> see</c><00:10:55.519><c> that</c><00:10:56.279><c> we</c><00:10:56.639><c> can</c><00:10:57.160><c> derive</c><00:10:57.680><c> this</c><00:10:57.839><c> trait</c>
+
+00:10:58.389 --> 00:10:58.399 align:start position:0%
+can see that we can derive this trait
+ 
+
+00:10:58.399 --> 00:10:59.550 align:start position:0%
+can see that we can derive this trait
+directly
+
+00:10:59.550 --> 00:10:59.560 align:start position:0%
+directly
+ 
+
+00:10:59.560 --> 00:11:03.110 align:start position:0%
+directly
+via<00:11:00.040><c> copy</c><00:11:00.800><c> which</c><00:11:00.959><c> means</c><00:11:01.320><c> that</c><00:11:01.720><c> the</c><00:11:02.240><c> compiler</c>
+
+00:11:03.110 --> 00:11:03.120 align:start position:0%
+via copy which means that the compiler
+ 
+
+00:11:03.120 --> 00:11:05.590 align:start position:0%
+via copy which means that the compiler
+will<00:11:03.480><c> derive</c><00:11:03.880><c> an</c><00:11:04.200><c> implementation</c><00:11:05.200><c> of</c><00:11:05.440><c> the</c>
+
+00:11:05.590 --> 00:11:05.600 align:start position:0%
+will derive an implementation of the
+ 
+
+00:11:05.600 --> 00:11:08.430 align:start position:0%
+will derive an implementation of the
+trade<00:11:06.320><c> copy</c><00:11:07.320><c> which</c><00:11:07.560><c> has</c><00:11:07.680><c> a</c><00:11:07.880><c> function</c><00:11:08.320><c> that</c>
+
+00:11:08.430 --> 00:11:08.440 align:start position:0%
+trade copy which has a function that
+ 
+
+00:11:08.440 --> 00:11:11.750 align:start position:0%
+trade copy which has a function that
+will<00:11:08.839><c> bit</c><00:11:09.079><c> by</c><00:11:09.320><c> bit</c><00:11:10.040><c> copy</c><00:11:10.639><c> whatever</c><00:11:10.959><c> our</c><00:11:11.200><c> struct</c>
+
+00:11:11.750 --> 00:11:11.760 align:start position:0%
+will bit by bit copy whatever our struct
+ 
+
+00:11:11.760 --> 00:11:16.269 align:start position:0%
+will bit by bit copy whatever our struct
+is<00:11:12.760><c> a</c><00:11:12.959><c> side</c><00:11:13.240><c> note</c><00:11:13.560><c> here</c><00:11:14.279><c> clone</c><00:11:15.279><c> is</c><00:11:15.760><c> also</c>
+
+00:11:16.269 --> 00:11:16.279 align:start position:0%
+is a side note here clone is also
+ 
+
+00:11:16.279 --> 00:11:18.470 align:start position:0%
+is a side note here clone is also
+required<00:11:16.800><c> here</c><00:11:16.959><c> to</c><00:11:17.160><c> derive</c><00:11:17.720><c> because</c><00:11:18.000><c> it</c><00:11:18.120><c> is</c><00:11:18.279><c> a</c>
+
+00:11:18.470 --> 00:11:18.480 align:start position:0%
+required here to derive because it is a
+ 
+
+00:11:18.480 --> 00:11:21.069 align:start position:0%
+required here to derive because it is a
+super<00:11:18.839><c> trade</c><00:11:19.200><c> of</c><00:11:19.519><c> copy</c><00:11:20.519><c> however</c><00:11:20.800><c> we're</c><00:11:20.959><c> not</c>
+
+00:11:21.069 --> 00:11:21.079 align:start position:0%
+super trade of copy however we're not
+ 
+
+00:11:21.079 --> 00:11:22.990 align:start position:0%
+super trade of copy however we're not
+going<00:11:21.320><c> into</c><00:11:21.560><c> Super</c><00:11:21.839><c> trades</c><00:11:22.160><c> in</c><00:11:22.279><c> this</c><00:11:22.480><c> video</c><00:11:22.760><c> to</c>
+
+00:11:22.990 --> 00:11:23.000 align:start position:0%
+going into Super trades in this video to
+ 
+
+00:11:23.000 --> 00:11:24.509 align:start position:0%
+going into Super trades in this video to
+not<00:11:23.200><c> make</c><00:11:23.399><c> things</c><00:11:23.600><c> more</c><00:11:23.880><c> complicated</c><00:11:24.399><c> than</c>
+
+00:11:24.509 --> 00:11:24.519 align:start position:0%
+not make things more complicated than
+ 
+
+00:11:24.519 --> 00:11:26.990 align:start position:0%
+not make things more complicated than
+they<00:11:24.639><c> need</c><00:11:24.839><c> to</c><00:11:24.959><c> be</c><00:11:25.720><c> just</c><00:11:25.920><c> be</c><00:11:26.120><c> aware</c><00:11:26.680><c> that</c><00:11:26.880><c> this</c>
+
+00:11:26.990 --> 00:11:27.000 align:start position:0%
+they need to be just be aware that this
+ 
+
+00:11:27.000 --> 00:11:29.509 align:start position:0%
+they need to be just be aware that this
+is<00:11:27.160><c> why</c><00:11:27.360><c> clone</c><00:11:27.720><c> is</c><00:11:27.920><c> listed</c><00:11:28.279><c> here</c><00:11:28.519><c> as</c><00:11:28.680><c> well</c><00:11:29.360><c> and</c>
+
+00:11:29.509 --> 00:11:29.519 align:start position:0%
+is why clone is listed here as well and
+ 
+
+00:11:29.519 --> 00:11:31.430 align:start position:0%
+is why clone is listed here as well and
+now<00:11:29.680><c> to</c><00:11:29.880><c> finish</c><00:11:30.200><c> up</c><00:11:30.399><c> our</c><00:11:30.639><c> first</c><00:11:30.880><c> impression</c><00:11:31.279><c> of</c>
+
+00:11:31.430 --> 00:11:31.440 align:start position:0%
+now to finish up our first impression of
+ 
+
+00:11:31.440 --> 00:11:34.710 align:start position:0%
+now to finish up our first impression of
+Trades<00:11:32.440><c> how</c><00:11:32.920><c> would</c><00:11:33.120><c> we</c><00:11:33.279><c> Implement</c><00:11:33.800><c> a</c><00:11:34.000><c> copy</c><00:11:34.560><c> how</c>
+
+00:11:34.710 --> 00:11:34.720 align:start position:0%
+Trades how would we Implement a copy how
+ 
+
+00:11:34.720 --> 00:11:35.990 align:start position:0%
+Trades how would we Implement a copy how
+can<00:11:34.880><c> we</c><00:11:35.040><c> do</c>
+
+00:11:35.990 --> 00:11:36.000 align:start position:0%
+can we do
+ 
+
+00:11:36.000 --> 00:11:38.269 align:start position:0%
+can we do
+this<00:11:37.000><c> the</c><00:11:37.160><c> simplest</c><00:11:37.560><c> way</c><00:11:37.760><c> that</c><00:11:37.880><c> we</c><00:11:38.000><c> already</c>
+
+00:11:38.269 --> 00:11:38.279 align:start position:0%
+this the simplest way that we already
+ 
+
+00:11:38.279 --> 00:11:42.030 align:start position:0%
+this the simplest way that we already
+saw<00:11:38.800><c> is</c><00:11:39.120><c> just</c><00:11:39.360><c> to</c><00:11:39.880><c> have</c><00:11:40.120><c> a</c><00:11:40.639><c> derive</c><00:11:41.639><c> however</c><00:11:41.920><c> if</c>
+
+00:11:42.030 --> 00:11:42.040 align:start position:0%
+saw is just to have a derive however if
+ 
+
+00:11:42.040 --> 00:11:44.470 align:start position:0%
+saw is just to have a derive however if
+you<00:11:42.200><c> have</c><00:11:42.399><c> a</c><00:11:42.560><c> more</c><00:11:43.120><c> complex</c><00:11:43.600><c> struct</c><00:11:44.279><c> for</c>
+
+00:11:44.470 --> 00:11:44.480 align:start position:0%
+you have a more complex struct for
+ 
+
+00:11:44.480 --> 00:11:46.350 align:start position:0%
+you have a more complex struct for
+example<00:11:44.920><c> if</c><00:11:45.079><c> you're</c><00:11:45.240><c> using</c><00:11:45.680><c> pointers</c><00:11:46.120><c> in</c>
+
+00:11:46.350 --> 00:11:46.360 align:start position:0%
+example if you're using pointers in
+ 
+
+00:11:46.360 --> 00:11:48.710 align:start position:0%
+example if you're using pointers in
+there<00:11:47.120><c> or</c><00:11:47.519><c> boxes</c><00:11:47.959><c> as</c><00:11:48.120><c> they</c><00:11:48.240><c> are</c><00:11:48.360><c> called</c><00:11:48.560><c> the</c>
+
+00:11:48.710 --> 00:11:48.720 align:start position:0%
+there or boxes as they are called the
+ 
+
+00:11:48.720 --> 00:11:51.790 align:start position:0%
+there or boxes as they are called the
+drust<00:11:49.720><c> then</c><00:11:50.360><c> deriving</c><00:11:50.839><c> it</c><00:11:51.040><c> directly</c><00:11:51.519><c> might</c>
+
+00:11:51.790 --> 00:11:51.800 align:start position:0%
+drust then deriving it directly might
+ 
+
+00:11:51.800 --> 00:11:54.750 align:start position:0%
+drust then deriving it directly might
+not<00:11:52.079><c> be</c><00:11:52.480><c> what</c><00:11:52.639><c> you</c><00:11:52.760><c> want</c><00:11:53.560><c> also</c><00:11:54.120><c> let's</c><00:11:54.360><c> say</c><00:11:54.600><c> if</c>
+
+00:11:54.750 --> 00:11:54.760 align:start position:0%
+not be what you want also let's say if
+ 
+
+00:11:54.760 --> 00:11:56.710 align:start position:0%
+not be what you want also let's say if
+there<00:11:54.920><c> would</c><00:11:55.120><c> be</c><00:11:55.320><c> a</c><00:11:55.519><c> file</c><00:11:55.839><c> handle</c><00:11:56.160><c> in</c><00:11:56.360><c> there</c>
+
+00:11:56.710 --> 00:11:56.720 align:start position:0%
+there would be a file handle in there
+ 
+
+00:11:56.720 --> 00:11:59.550 align:start position:0%
+there would be a file handle in there
+and<00:11:56.920><c> you</c><00:11:57.040><c> would</c><00:11:57.279><c> like</c><00:11:57.519><c> to</c><00:11:57.800><c> have</c><00:11:58.360><c> a</c><00:11:58.560><c> special</c><00:11:59.160><c> way</c>
+
+00:11:59.550 --> 00:11:59.560 align:start position:0%
+and you would like to have a special way
+ 
+
+00:11:59.560 --> 00:12:01.829 align:start position:0%
+and you would like to have a special way
+this<00:11:59.839><c> would</c><00:12:00.040><c> be</c><00:12:00.240><c> copied</c><00:12:00.880><c> you</c><00:12:01.040><c> can</c><00:12:01.279><c> Implement</c>
+
+00:12:01.829 --> 00:12:01.839 align:start position:0%
+this would be copied you can Implement
+ 
+
+00:12:01.839 --> 00:12:04.790 align:start position:0%
+this would be copied you can Implement
+copy<00:12:02.440><c> and</c><00:12:02.680><c> clone</c><00:12:03.200><c> manually</c><00:12:04.200><c> and</c><00:12:04.320><c> we</c><00:12:04.440><c> see</c><00:12:04.639><c> the</c>
+
+00:12:04.790 --> 00:12:04.800 align:start position:0%
+copy and clone manually and we see the
+ 
+
+00:12:04.800 --> 00:12:07.910 align:start position:0%
+copy and clone manually and we see the
+syntax<00:12:05.279><c> here</c><00:12:05.959><c> our</c><00:12:06.279><c> normal</c><00:12:06.680><c> imple</c><00:12:07.160><c> block</c><00:12:07.639><c> would</c>
+
+00:12:07.910 --> 00:12:07.920 align:start position:0%
+syntax here our normal imple block would
+ 
+
+00:12:07.920 --> 00:12:10.670 align:start position:0%
+syntax here our normal imple block would
+just<00:12:08.160><c> be</c><00:12:08.360><c> called</c><00:12:08.760><c> imple</c><00:12:09.440><c> myuct</c><00:12:10.240><c> and</c><00:12:10.399><c> then</c><00:12:10.560><c> we</c>
+
+00:12:10.670 --> 00:12:10.680 align:start position:0%
+just be called imple myuct and then we
+ 
+
+00:12:10.680 --> 00:12:12.990 align:start position:0%
+just be called imple myuct and then we
+would<00:12:10.920><c> put</c><00:12:11.320><c> any</c><00:12:11.560><c> functions</c><00:12:11.959><c> in</c><00:12:12.200><c> there</c><00:12:12.760><c> that</c><00:12:12.880><c> we</c>
+
+00:12:12.990 --> 00:12:13.000 align:start position:0%
+would put any functions in there that we
+ 
+
+00:12:13.000 --> 00:12:15.310 align:start position:0%
+would put any functions in there that we
+would<00:12:13.199><c> like</c><00:12:13.360><c> to</c><00:12:13.800><c> implement</c><00:12:14.800><c> if</c><00:12:15.040><c> you</c><00:12:15.160><c> would</c>
+
+00:12:15.310 --> 00:12:15.320 align:start position:0%
+would like to implement if you would
+ 
+
+00:12:15.320 --> 00:12:17.670 align:start position:0%
+would like to implement if you would
+like<00:12:15.519><c> to</c><00:12:15.680><c> implement</c><00:12:16.120><c> a</c><00:12:16.320><c> trade</c><00:12:16.800><c> for</c><00:12:17.000><c> a</c><00:12:17.160><c> struct</c>
+
+00:12:17.670 --> 00:12:17.680 align:start position:0%
+like to implement a trade for a struct
+ 
+
+00:12:17.680 --> 00:12:20.069 align:start position:0%
+like to implement a trade for a struct
+you<00:12:17.880><c> just</c><00:12:18.040><c> say</c><00:12:18.399><c> imple</c><00:12:19.240><c> then</c><00:12:19.600><c> name</c><00:12:19.800><c> of</c><00:12:19.920><c> the</c>
+
+00:12:20.069 --> 00:12:20.079 align:start position:0%
+you just say imple then name of the
+ 
+
+00:12:20.079 --> 00:12:24.230 align:start position:0%
+you just say imple then name of the
+trade<00:12:21.040><c> for</c><00:12:21.880><c> and</c><00:12:22.199><c> the</c><00:12:22.320><c> name</c><00:12:22.480><c> of</c><00:12:22.600><c> your</c><00:12:23.240><c> struct</c>
+
+00:12:24.230 --> 00:12:24.240 align:start position:0%
+trade for and the name of your struct
+ 
+
+00:12:24.240 --> 00:12:25.829 align:start position:0%
+trade for and the name of your struct
+this<00:12:24.360><c> will</c><00:12:24.560><c> automatically</c><00:12:25.160><c> imply</c><00:12:25.600><c> that</c><00:12:25.760><c> you</c>
+
+00:12:25.829 --> 00:12:25.839 align:start position:0%
+this will automatically imply that you
+ 
+
+00:12:25.839 --> 00:12:29.350 align:start position:0%
+this will automatically imply that you
+will<00:12:26.199><c> have</c><00:12:26.399><c> to</c><00:12:27.399><c> implement</c><00:12:28.120><c> all</c><00:12:28.320><c> the</c><00:12:28.480><c> function</c>
+
+00:12:29.350 --> 00:12:29.360 align:start position:0%
+will have to implement all the function
+ 
+
+00:12:29.360 --> 00:12:32.750 align:start position:0%
+will have to implement all the function
+that<00:12:29.680><c> this</c><00:12:29.920><c> tra</c><00:12:30.600><c> defines</c><00:12:31.600><c> in</c><00:12:31.800><c> this</c><00:12:32.000><c> case</c><00:12:32.560><c> the</c>
+
+00:12:32.750 --> 00:12:32.760 align:start position:0%
+that this tra defines in this case the
+ 
+
+00:12:32.760 --> 00:12:34.990 align:start position:0%
+that this tra defines in this case the
+Clone<00:12:33.120><c> trade</c><00:12:33.639><c> only</c><00:12:33.959><c> has</c><00:12:34.160><c> one</c><00:12:34.399><c> function</c><00:12:34.880><c> which</c>
+
+00:12:34.990 --> 00:12:35.000 align:start position:0%
+Clone trade only has one function which
+ 
+
+00:12:35.000 --> 00:12:37.509 align:start position:0%
+Clone trade only has one function which
+is<00:12:35.199><c> called</c><00:12:35.480><c> clone</c><00:12:36.360><c> takes</c><00:12:36.720><c> an</c><00:12:36.959><c> immutable</c>
+
+00:12:37.509 --> 00:12:37.519 align:start position:0%
+is called clone takes an immutable
+ 
+
+00:12:37.519 --> 00:12:40.230 align:start position:0%
+is called clone takes an immutable
+reference<00:12:37.880><c> to</c><00:12:38.079><c> self</c><00:12:38.880><c> and</c><00:12:39.040><c> needs</c><00:12:39.279><c> to</c><00:12:39.639><c> return</c><00:12:40.000><c> a</c>
+
+00:12:40.230 --> 00:12:40.240 align:start position:0%
+reference to self and needs to return a
+ 
+
+00:12:40.240 --> 00:12:42.310 align:start position:0%
+reference to self and needs to return a
+self<00:12:40.760><c> basically</c><00:12:41.279><c> which</c><00:12:41.399><c> in</c><00:12:41.519><c> this</c><00:12:41.720><c> case</c><00:12:41.959><c> is</c><00:12:42.079><c> the</c>
+
+00:12:42.310 --> 00:12:42.320 align:start position:0%
+self basically which in this case is the
+ 
+
+00:12:42.320 --> 00:12:44.949 align:start position:0%
+self basically which in this case is the
+myuct<00:12:43.320><c> and</c><00:12:43.480><c> in</c><00:12:43.760><c> here</c><00:12:44.079><c> you</c><00:12:44.240><c> can</c><00:12:44.480><c> make</c><00:12:44.720><c> an</c>
+
+00:12:44.949 --> 00:12:44.959 align:start position:0%
+myuct and in here you can make an
+ 
+
+00:12:44.959 --> 00:12:47.389 align:start position:0%
+myuct and in here you can make an
+implementation<00:12:45.639><c> that</c><00:12:45.760><c> is</c><00:12:46.000><c> as</c><00:12:46.240><c> complex</c><00:12:46.920><c> or</c>
+
+00:12:47.389 --> 00:12:47.399 align:start position:0%
+implementation that is as complex or
+ 
+
+00:12:47.399 --> 00:12:49.189 align:start position:0%
+implementation that is as complex or
+trivial<00:12:48.079><c> as</c><00:12:48.199><c> you</c><00:12:48.320><c> would</c>
+
+00:12:49.189 --> 00:12:49.199 align:start position:0%
+trivial as you would
+ 
+
+00:12:49.199 --> 00:12:52.870 align:start position:0%
+trivial as you would
+like<00:12:50.199><c> now</c><00:12:50.440><c> let</c><00:12:50.560><c> me</c><00:12:50.760><c> say</c><00:12:51.040><c> one</c><00:12:51.360><c> final</c><00:12:51.720><c> word</c><00:12:52.440><c> on</c>
+
+00:12:52.870 --> 00:12:52.880 align:start position:0%
+like now let me say one final word on
+ 
+
+00:12:52.880 --> 00:12:56.030 align:start position:0%
+like now let me say one final word on
+how<00:12:53.000><c> we</c><00:12:53.199><c> call</c><00:12:53.600><c> our</c><00:12:54.199><c> sum</c><00:12:54.560><c> of</c><00:12:54.760><c> elements</c><00:12:55.480><c> generic</c>
+
+00:12:56.030 --> 00:12:56.040 align:start position:0%
+how we call our sum of elements generic
+ 
+
+00:12:56.040 --> 00:12:58.389 align:start position:0%
+how we call our sum of elements generic
+in<00:12:56.240><c> this</c><00:12:56.480><c> case</c><00:12:57.160><c> over</c><00:12:57.519><c> our</c><00:12:57.760><c> normal</c><00:12:58.040><c> sum</c><00:12:58.279><c> of</c>
+
+00:12:58.389 --> 00:12:58.399 align:start position:0%
+in this case over our normal sum of
+ 
+
+00:12:58.399 --> 00:13:00.110 align:start position:0%
+in this case over our normal sum of
+elements
+
+00:13:00.110 --> 00:13:00.120 align:start position:0%
+elements
+ 
+
+00:13:00.120 --> 00:13:03.110 align:start position:0%
+elements
+our<00:13:00.360><c> sum</c><00:13:00.560><c> of</c><00:13:00.680><c> elements</c><00:13:01.120><c> generic</c><00:13:01.800><c> now</c><00:13:02.720><c> has</c><00:13:02.839><c> to</c>
+
+00:13:03.110 --> 00:13:03.120 align:start position:0%
+our sum of elements generic now has to
+ 
+
+00:13:03.120 --> 00:13:06.110 align:start position:0%
+our sum of elements generic now has to
+decide<00:13:03.760><c> which</c><00:13:03.920><c> act</c><00:13:04.519><c> type</c><00:13:04.959><c> will</c><00:13:05.160><c> be</c><00:13:05.600><c> replacing</c>
+
+00:13:06.110 --> 00:13:06.120 align:start position:0%
+decide which act type will be replacing
+ 
+
+00:13:06.120 --> 00:13:09.389 align:start position:0%
+decide which act type will be replacing
+the<00:13:06.519><c> T</c><00:13:07.519><c> in</c><00:13:07.680><c> this</c><00:13:07.920><c> case</c><00:13:08.240><c> the</c><00:13:08.360><c> rest</c><00:13:08.680><c> compiler</c><00:13:09.120><c> can</c>
+
+00:13:09.389 --> 00:13:09.399 align:start position:0%
+the T in this case the rest compiler can
+ 
+
+00:13:09.399 --> 00:13:12.269 align:start position:0%
+the T in this case the rest compiler can
+infer<00:13:10.399><c> that</c><00:13:11.079><c> because</c><00:13:11.360><c> we</c><00:13:11.519><c> have</c><00:13:11.680><c> only</c><00:13:11.959><c> one</c>
+
+00:13:12.269 --> 00:13:12.279 align:start position:0%
+infer that because we have only one
+ 
+
+00:13:12.279 --> 00:13:15.710 align:start position:0%
+infer that because we have only one
+parameter<00:13:12.880><c> and</c><00:13:13.120><c> this</c><00:13:13.480><c> is</c><00:13:13.720><c> an</c><00:13:13.959><c> array</c><00:13:14.360><c> of</c><00:13:14.560><c> T</c><00:13:15.560><c> and</c>
+
+00:13:15.710 --> 00:13:15.720 align:start position:0%
+parameter and this is an array of T and
+ 
+
+00:13:15.720 --> 00:13:18.230 align:start position:0%
+parameter and this is an array of T and
+in<00:13:15.839><c> this</c><00:13:16.000><c> case</c><00:13:16.199><c> we</c><00:13:16.279><c> will</c><00:13:16.440><c> send</c><00:13:16.680><c> in</c><00:13:16.880><c> an</c><00:13:17.040><c> array</c><00:13:17.320><c> of</c>
+
+00:13:18.230 --> 00:13:18.240 align:start position:0%
+in this case we will send in an array of
+ 
+
+00:13:18.240 --> 00:13:22.150 align:start position:0%
+in this case we will send in an array of
+I64<00:13:19.240><c> that</c><00:13:19.480><c> t</c><00:13:20.000><c> will</c><00:13:20.160><c> be</c><00:13:20.279><c> an</c><00:13:20.760><c> I64</c><00:13:21.760><c> the</c><00:13:21.920><c> rest</c>
+
+00:13:22.150 --> 00:13:22.160 align:start position:0%
+I64 that t will be an I64 the rest
+ 
+
+00:13:22.160 --> 00:13:24.470 align:start position:0%
+I64 that t will be an I64 the rest
+compiler<00:13:22.560><c> will</c><00:13:22.760><c> not</c><00:13:22.959><c> be</c><00:13:23.120><c> able</c><00:13:23.360><c> to</c><00:13:23.639><c> infer</c><00:13:24.279><c> this</c>
+
+00:13:24.470 --> 00:13:24.480 align:start position:0%
+compiler will not be able to infer this
+ 
+
+00:13:24.480 --> 00:13:27.150 align:start position:0%
+compiler will not be able to infer this
+type<00:13:25.040><c> under</c><00:13:25.320><c> any</c><00:13:25.800><c> circumstances</c><00:13:26.800><c> therefore</c>
+
+00:13:27.150 --> 00:13:27.160 align:start position:0%
+type under any circumstances therefore
+ 
+
+00:13:27.160 --> 00:13:29.670 align:start position:0%
+type under any circumstances therefore
+there's<00:13:27.360><c> the</c><00:13:27.600><c> possibility</c><00:13:28.519><c> to</c><00:13:28.920><c> explicitly</c>
+
+00:13:29.670 --> 00:13:29.680 align:start position:0%
+there's the possibility to explicitly
+ 
+
+00:13:29.680 --> 00:13:32.030 align:start position:0%
+there's the possibility to explicitly
+provides<00:13:30.120><c> the</c><00:13:30.320><c> type</c><00:13:30.639><c> as</c><00:13:30.760><c> a</c><00:13:30.959><c> developer</c><00:13:31.800><c> and</c><00:13:31.920><c> you</c>
+
+00:13:32.030 --> 00:13:32.040 align:start position:0%
+provides the type as a developer and you
+ 
+
+00:13:32.040 --> 00:13:35.509 align:start position:0%
+provides the type as a developer and you
+would<00:13:32.199><c> do</c><00:13:32.399><c> this</c><00:13:32.720><c> by</c><00:13:33.480><c> after</c><00:13:34.160><c> your</c><00:13:34.880><c> name</c><00:13:35.199><c> of</c><00:13:35.360><c> the</c>
+
+00:13:35.509 --> 00:13:35.519 align:start position:0%
+would do this by after your name of the
+ 
+
+00:13:35.519 --> 00:13:38.949 align:start position:0%
+would do this by after your name of the
+function<00:13:36.399><c> you</c><00:13:36.519><c> would</c><00:13:36.839><c> add</c><00:13:37.519><c> colon</c><00:13:37.920><c> colon</c><00:13:38.800><c> and</c>
+
+00:13:38.949 --> 00:13:38.959 align:start position:0%
+function you would add colon colon and
+ 
+
+00:13:38.959 --> 00:13:41.350 align:start position:0%
+function you would add colon colon and
+then<00:13:39.240><c> angle</c><00:13:39.600><c> brackets</c><00:13:40.560><c> and</c><00:13:40.760><c> this</c><00:13:40.880><c> is</c><00:13:41.160><c> where</c>
+
+00:13:41.350 --> 00:13:41.360 align:start position:0%
+then angle brackets and this is where
+ 
+
+00:13:41.360 --> 00:13:43.470 align:start position:0%
+then angle brackets and this is where
+you<00:13:41.760><c> specify</c><00:13:42.240><c> your</c><00:13:42.440><c> type</c><00:13:42.720><c> in</c><00:13:42.880><c> this</c><00:13:43.079><c> case</c><00:13:43.320><c> it</c>
+
+00:13:43.470 --> 00:13:43.480 align:start position:0%
+you specify your type in this case it
+ 
+
+00:13:43.480 --> 00:13:46.910 align:start position:0%
+you specify your type in this case it
+would<00:13:43.680><c> be</c><00:13:44.240><c> an</c><00:13:44.880><c> I64</c><00:13:45.880><c> and</c><00:13:46.040><c> you</c><00:13:46.160><c> close</c><00:13:46.440><c> the</c><00:13:46.560><c> angled</c>
+
+00:13:46.910 --> 00:13:46.920 align:start position:0%
+would be an I64 and you close the angled
+ 
+
+00:13:46.920 --> 00:13:49.550 align:start position:0%
+would be an I64 and you close the angled
+brackets<00:13:47.720><c> so</c><00:13:47.920><c> in</c><00:13:48.079><c> this</c><00:13:48.279><c> case</c><00:13:48.920><c> adding</c><00:13:49.320><c> this</c>
+
+00:13:49.550 --> 00:13:49.560 align:start position:0%
+brackets so in this case adding this
+ 
+
+00:13:49.560 --> 00:13:52.629 align:start position:0%
+brackets so in this case adding this
+type<00:13:49.880><c> here</c><00:13:50.240><c> is</c><00:13:50.720><c> purely</c><00:13:51.399><c> optional</c><00:13:52.399><c> but</c><00:13:52.519><c> it</c>
+
+00:13:52.629 --> 00:13:52.639 align:start position:0%
+type here is purely optional but it
+ 
+
+00:13:52.639 --> 00:13:55.030 align:start position:0%
+type here is purely optional but it
+might<00:13:52.959><c> be</c><00:13:53.320><c> reasonable</c><00:13:53.959><c> in</c><00:13:54.120><c> some</c><00:13:54.360><c> cases</c><00:13:54.639><c> to</c><00:13:54.800><c> do</c>
+
+00:13:55.030 --> 00:13:55.040 align:start position:0%
+might be reasonable in some cases to do
+ 
+
+00:13:55.040 --> 00:13:57.350 align:start position:0%
+might be reasonable in some cases to do
+this<00:13:55.920><c> by</c><00:13:56.040><c> the</c><00:13:56.160><c> way</c><00:13:56.399><c> if</c><00:13:56.519><c> you</c><00:13:56.680><c> add</c><00:13:56.880><c> the</c><00:13:57.040><c> wrong</c>
+
+00:13:57.350 --> 00:13:57.360 align:start position:0%
+this by the way if you add the wrong
+ 
+
+00:13:57.360 --> 00:13:59.350 align:start position:0%
+this by the way if you add the wrong
+type<00:13:57.720><c> here</c><00:13:58.440><c> of</c><00:13:58.560><c> course</c><00:13:58.720><c> of</c><00:13:58.800><c> course</c><00:13:59.040><c> the</c><00:13:59.160><c> code</c>
+
+00:13:59.350 --> 00:13:59.360 align:start position:0%
+type here of course of course the code
+ 
+
+00:13:59.360 --> 00:14:01.749 align:start position:0%
+type here of course of course the code
+will<00:13:59.519><c> not</c><00:13:59.720><c> compile</c><00:14:00.240><c> because</c><00:14:00.560><c> now</c><00:14:00.880><c> it</c><00:14:01.199><c> expects</c>
+
+00:14:01.749 --> 00:14:01.759 align:start position:0%
+will not compile because now it expects
+ 
+
+00:14:01.759 --> 00:14:04.310 align:start position:0%
+will not compile because now it expects
+to<00:14:01.959><c> get</c><00:14:02.160><c> an</c><00:14:02.320><c> area</c><00:14:02.639><c> of</c><00:14:02.759><c> I</c><00:14:02.959><c> 32s</c><00:14:03.639><c> but</c><00:14:03.759><c> we</c><00:14:03.959><c> provide</c>
+
+00:14:04.310 --> 00:14:04.320 align:start position:0%
+to get an area of I 32s but we provide
+ 
+
+00:14:04.320 --> 00:14:06.870 align:start position:0%
+to get an area of I 32s but we provide
+an<00:14:04.480><c> area</c><00:14:05.040><c> of</c><00:14:05.199><c> I</c>
+
+00:14:06.870 --> 00:14:06.880 align:start position:0%
+an area of I
+ 
+
+00:14:06.880 --> 00:14:09.790 align:start position:0%
+an area of I
+64s<00:14:07.880><c> and</c><00:14:08.000><c> to</c><00:14:08.160><c> round</c><00:14:08.440><c> this</c><00:14:08.639><c> video</c><00:14:08.920><c> up</c><00:14:09.360><c> I</c><00:14:09.519><c> already</c>
+
+00:14:09.790 --> 00:14:09.800 align:start position:0%
+64s and to round this video up I already
+ 
+
+00:14:09.800 --> 00:14:11.829 align:start position:0%
+64s and to round this video up I already
+said<00:14:10.079><c> that</c><00:14:10.279><c> we</c><00:14:10.440><c> have</c><00:14:10.600><c> been</c><00:14:10.800><c> using</c><00:14:11.199><c> generics</c>
+
+00:14:11.829 --> 00:14:11.839 align:start position:0%
+said that we have been using generics
+ 
+
+00:14:11.839 --> 00:14:14.550 align:start position:0%
+said that we have been using generics
+all<00:14:12.000><c> the</c><00:14:12.199><c> time</c><00:14:12.639><c> maybe</c><00:14:12.959><c> without</c><00:14:13.279><c> knowing</c><00:14:13.680><c> that</c>
+
+00:14:14.550 --> 00:14:14.560 align:start position:0%
+all the time maybe without knowing that
+ 
+
+00:14:14.560 --> 00:14:22.430 align:start position:0%
+all the time maybe without knowing that
+why<00:14:14.800><c> is</c><00:14:15.000><c> that</c><00:14:15.639><c> well</c><00:14:16.240><c> for</c><00:14:16.480><c> example</c><00:14:17.120><c> look</c><00:14:17.399><c> at</c><00:14:17.839><c> a</c>
+
+00:14:22.430 --> 00:14:22.440 align:start position:0%
+ 
+ 
+
+00:14:22.440 --> 00:14:28.230 align:start position:0%
+ 
+vector<00:14:23.440><c> if</c><00:14:23.720><c> we</c><00:14:24.240><c> use</c><00:14:24.880><c> the</c><00:14:25.839><c> macro</c><00:14:26.759><c> V</c><00:14:27.759><c> to</c><00:14:27.959><c> create</c>
+
+00:14:28.230 --> 00:14:28.240 align:start position:0%
+vector if we use the macro V to create
+ 
+
+00:14:28.240 --> 00:14:29.990 align:start position:0%
+vector if we use the macro V to create
+this<00:14:28.399><c> vector</c>
+
+00:14:29.990 --> 00:14:30.000 align:start position:0%
+this vector
+ 
+
+00:14:30.000 --> 00:14:31.870 align:start position:0%
+this vector
+it<00:14:30.079><c> will</c><00:14:30.279><c> automatically</c><00:14:30.920><c> assume</c><00:14:31.519><c> that</c><00:14:31.720><c> those</c>
+
+00:14:31.870 --> 00:14:31.880 align:start position:0%
+it will automatically assume that those
+ 
+
+00:14:31.880 --> 00:14:34.509 align:start position:0%
+it will automatically assume that those
+are<00:14:32.160><c> I</c><00:14:32.399><c> 32s</c><00:14:33.000><c> and</c><00:14:33.120><c> we</c><00:14:33.240><c> see</c><00:14:33.480><c> that</c><00:14:33.720><c> here</c><00:14:34.000><c> the</c><00:14:34.120><c> inlay</c>
+
+00:14:34.509 --> 00:14:34.519 align:start position:0%
+are I 32s and we see that here the inlay
+ 
+
+00:14:34.519 --> 00:14:38.389 align:start position:0%
+are I 32s and we see that here the inlay
+hint<00:14:34.759><c> says</c><00:14:35.079><c> it's</c><00:14:35.279><c> a</c><00:14:35.480><c> v</c><00:14:35.880><c> of</c><00:14:36.320><c> type</c><00:14:37.240><c> i32</c><00:14:38.240><c> which</c>
+
+00:14:38.389 --> 00:14:38.399 align:start position:0%
+hint says it's a v of type i32 which
+ 
+
+00:14:38.399 --> 00:14:41.670 align:start position:0%
+hint says it's a v of type i32 which
+means<00:14:38.639><c> that</c><00:14:38.839><c> V</c><00:14:39.160><c> is</c><00:14:39.320><c> also</c><00:14:39.759><c> a</c><00:14:40.040><c> generic</c><00:14:40.680><c> struct</c>
+
+00:14:41.670 --> 00:14:41.680 align:start position:0%
+means that V is also a generic struct
+ 
+
+00:14:41.680 --> 00:14:43.990 align:start position:0%
+means that V is also a generic struct
+that<00:14:42.000><c> has</c><00:14:42.320><c> one</c><00:14:42.639><c> type</c><00:14:43.079><c> that</c><00:14:43.199><c> we</c><00:14:43.320><c> can</c><00:14:43.519><c> choose</c><00:14:43.880><c> and</c>
+
+00:14:43.990 --> 00:14:44.000 align:start position:0%
+that has one type that we can choose and
+ 
+
+00:14:44.000 --> 00:14:46.069 align:start position:0%
+that has one type that we can choose and
+in<00:14:44.199><c> this</c><00:14:44.360><c> case</c><00:14:44.639><c> the</c><00:14:44.839><c> compiler</c><00:14:45.480><c> decided</c><00:14:45.880><c> to</c>
+
+00:14:46.069 --> 00:14:46.079 align:start position:0%
+in this case the compiler decided to
+ 
+
+00:14:46.079 --> 00:14:48.470 align:start position:0%
+in this case the compiler decided to
+automatically<00:14:46.759><c> infer</c><00:14:47.320><c> that</c><00:14:47.519><c> this</c><00:14:47.600><c> is</c><00:14:47.720><c> an</c>
+
+00:14:48.470 --> 00:14:48.480 align:start position:0%
+automatically infer that this is an
+ 
+
+00:14:48.480 --> 00:14:52.150 align:start position:0%
+automatically infer that this is an
+i32<00:14:49.480><c> however</c><00:14:49.880><c> if</c><00:14:50.000><c> we</c><00:14:50.160><c> would</c><00:14:50.399><c> say</c><00:14:51.120><c> this</c><00:14:51.360><c> is</c><00:14:51.680><c> an</c>
+
+00:14:52.150 --> 00:14:52.160 align:start position:0%
+i32 however if we would say this is an
+ 
+
+00:14:52.160 --> 00:14:57.110 align:start position:0%
+i32 however if we would say this is an
+f64<00:14:53.160><c> and</c><00:14:53.360><c> we</c><00:14:53.519><c> do</c><00:14:53.759><c> this</c><00:14:53.920><c> for</c>
+
+00:14:57.110 --> 00:14:57.120 align:start position:0%
+ 
+ 
+
+00:14:57.120 --> 00:14:59.430 align:start position:0%
+ 
+everything<00:14:58.120><c> suddenly</c><00:14:58.720><c> the</c><00:14:58.839><c> compiler</c><00:14:59.240><c> will</c>
+
+00:14:59.430 --> 00:14:59.440 align:start position:0%
+everything suddenly the compiler will
+ 
+
+00:14:59.440 --> 00:15:03.110 align:start position:0%
+everything suddenly the compiler will
+decide<00:14:59.920><c> that</c><00:15:00.160><c> this</c><00:15:00.399><c> is</c><00:15:00.639><c> an</c><00:15:00.800><c> f64</c>
+
+00:15:03.110 --> 00:15:03.120 align:start position:0%
+decide that this is an f64
+ 
+
+00:15:03.120 --> 00:15:06.150 align:start position:0%
+decide that this is an f64
+vector<00:15:04.120><c> and</c><00:15:04.360><c> on</c><00:15:04.560><c> top</c><00:15:04.720><c> of</c><00:15:04.920><c> that</c><00:15:05.519><c> we</c><00:15:05.680><c> could</c>
+
+00:15:06.150 --> 00:15:06.160 align:start position:0%
+vector and on top of that we could
+ 
+
+00:15:06.160 --> 00:15:08.790 align:start position:0%
+vector and on top of that we could
+explicitly<00:15:06.920><c> specify</c><00:15:07.399><c> the</c><00:15:07.560><c> type</c><00:15:07.880><c> here</c><00:15:08.360><c> by</c><00:15:08.600><c> just</c>
+
+00:15:08.790 --> 00:15:08.800 align:start position:0%
+explicitly specify the type here by just
+ 
+
+00:15:08.800 --> 00:15:12.110 align:start position:0%
+explicitly specify the type here by just
+saying<00:15:09.240><c> V</c><00:15:09.920><c> of</c><00:15:10.360><c> let's</c><00:15:10.600><c> say</c><00:15:10.800><c> this</c><00:15:11.000><c> would</c><00:15:11.199><c> be</c><00:15:11.399><c> an</c>
+
+00:15:12.110 --> 00:15:12.120 align:start position:0%
+saying V of let's say this would be an
+ 
+
+00:15:12.120 --> 00:15:14.990 align:start position:0%
+saying V of let's say this would be an
+I64<00:15:13.120><c> which</c><00:15:13.279><c> would</c><00:15:13.560><c> also</c><00:15:13.880><c> be</c><00:15:14.079><c> valid</c><00:15:14.880><c> and</c>
+
+00:15:14.990 --> 00:15:15.000 align:start position:0%
+I64 which would also be valid and
+ 
+
+00:15:15.000 --> 00:15:18.030 align:start position:0%
+I64 which would also be valid and
+suddenly<00:15:15.480><c> we</c><00:15:15.639><c> have</c><00:15:15.800><c> a</c><00:15:16.000><c> vector</c><00:15:16.360><c> of</c><00:15:16.759><c> I64</c><00:15:17.759><c> all</c>
+
+00:15:18.030 --> 00:15:18.040 align:start position:0%
+suddenly we have a vector of I64 all
+ 
+
+00:15:18.040 --> 00:15:20.470 align:start position:0%
+suddenly we have a vector of I64 all
+with<00:15:18.199><c> the</c><00:15:18.360><c> same</c><00:15:18.720><c> syntax</c><00:15:19.360><c> all</c><00:15:20.000><c> with</c><00:15:20.160><c> the</c><00:15:20.320><c> Same</c>
+
+00:15:20.470 --> 00:15:20.480 align:start position:0%
+with the same syntax all with the Same
+ 
+
+00:15:20.480 --> 00:15:23.069 align:start position:0%
+with the same syntax all with the Same
+struct<00:15:21.160><c> by</c><00:15:21.320><c> means</c><00:15:21.839><c> of</c>
+
+00:15:23.069 --> 00:15:23.079 align:start position:0%
+struct by means of
+ 
+
+00:15:23.079 --> 00:15:25.430 align:start position:0%
+struct by means of
+generics<00:15:24.079><c> with</c><00:15:24.240><c> this</c><00:15:24.480><c> exemplary</c><00:15:25.000><c> use</c><00:15:25.240><c> of</c>
+
+00:15:25.430 --> 00:15:25.440 align:start position:0%
+generics with this exemplary use of
+ 
+
+00:15:25.440 --> 00:15:27.910 align:start position:0%
+generics with this exemplary use of
+generics<00:15:25.880><c> And</c><00:15:26.079><c> Trades</c><00:15:26.920><c> we</c><00:15:27.040><c> merely</c><00:15:27.480><c> scratch</c>
+
+00:15:27.910 --> 00:15:27.920 align:start position:0%
+generics And Trades we merely scratch
+ 
+
+00:15:27.920 --> 00:15:30.710 align:start position:0%
+generics And Trades we merely scratch
+the<00:15:28.079><c> surface</c><00:15:28.759><c> of</c><00:15:28.920><c> what</c><00:15:29.120><c> is</c><00:15:29.279><c> possible</c><00:15:29.560><c> in</c><00:15:29.720><c> Rust</c>
+
+00:15:30.710 --> 00:15:30.720 align:start position:0%
+the surface of what is possible in Rust
+ 
+
+00:15:30.720 --> 00:15:32.990 align:start position:0%
+the surface of what is possible in Rust
+besides<00:15:31.040><c> on</c><00:15:31.279><c> functions</c><00:15:32.079><c> generics</c><00:15:32.680><c> can</c><00:15:32.839><c> be</c>
+
+00:15:32.990 --> 00:15:33.000 align:start position:0%
+besides on functions generics can be
+ 
+
+00:15:33.000 --> 00:15:35.910 align:start position:0%
+besides on functions generics can be
+used<00:15:33.279><c> with</c><00:15:33.440><c> structs</c><00:15:34.120><c> and</c><00:15:34.360><c> enums</c><00:15:35.360><c> and</c><00:15:35.519><c> traes</c>
+
+00:15:35.910 --> 00:15:35.920 align:start position:0%
+used with structs and enums and traes
+ 
+
+00:15:35.920 --> 00:15:37.910 align:start position:0%
+used with structs and enums and traes
+really<00:15:36.199><c> open</c><00:15:36.560><c> the</c><00:15:36.720><c> door</c><00:15:36.959><c> towards</c>
+
+00:15:37.910 --> 00:15:37.920 align:start position:0%
+really open the door towards
+ 
+
+00:15:37.920 --> 00:15:40.030 align:start position:0%
+really open the door towards
+polymorphism<00:15:38.920><c> there</c><00:15:39.040><c> is</c><00:15:39.240><c> so</c><00:15:39.440><c> much</c><00:15:39.680><c> more</c><00:15:39.880><c> to</c>
+
+00:15:40.030 --> 00:15:40.040 align:start position:0%
+polymorphism there is so much more to
+ 
+
+00:15:40.040 --> 00:15:42.309 align:start position:0%
+polymorphism there is so much more to
+learn<00:15:40.560><c> that</c><00:15:40.680><c> we</c><00:15:40.800><c> will</c><00:15:41.000><c> go</c><00:15:41.199><c> over</c><00:15:41.519><c> in</c><00:15:41.720><c> the</c><00:15:41.880><c> coming</c>
+
+00:15:42.309 --> 00:15:42.319 align:start position:0%
+learn that we will go over in the coming
+ 
+
+00:15:42.319 --> 00:15:44.749 align:start position:0%
+learn that we will go over in the coming
+videos<00:15:43.319><c> like</c><00:15:43.480><c> And</c><00:15:43.680><c> subscribe</c><00:15:44.240><c> if</c><00:15:44.360><c> you</c><00:15:44.440><c> haven't</c>
+
+00:15:44.749 --> 00:15:44.759 align:start position:0%
+videos like And subscribe if you haven't
+ 
+
+00:15:44.759 --> 00:15:47.350 align:start position:0%
+videos like And subscribe if you haven't
+done<00:15:44.959><c> so</c><00:15:45.240><c> already</c><00:15:45.959><c> I</c><00:15:46.079><c> see</c><00:15:46.240><c> you</c><00:15:46.440><c> next</c><00:15:46.720><c> time</c><00:15:47.199><c> at</c>
+
+00:15:47.350 --> 00:15:47.360 align:start position:0%
+done so already I see you next time at
+ 
+
+00:15:47.360 --> 00:15:57.590 align:start position:0%
+done so already I see you next time at
+Green<00:15:47.560><c> te</c>
+
+00:15:57.590 --> 00:15:57.600 align:start position:0%
+ 
+ 
+
+00:15:57.600 --> 00:16:01.430 align:start position:0%
+ 
+coding
+
+00:16:01.430 --> 00:16:01.440 align:start position:0%
+ 
+ 
+
+00:16:01.440 --> 00:16:04.269 align:start position:0%
+ 
+[Music]
+
+00:16:04.269 --> 00:16:04.279 align:start position:0%
+[Music]
+ 
+
+00:16:04.279 --> 00:16:07.279 align:start position:0%
+[Music]
+n
+

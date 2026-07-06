@@ -254,7 +254,7 @@ public class FfmpegVideoProcessor implements VideoProcessor {
             // 硬字幕（烧入画面）：所有编码器统一使用 subtitles filter
             // 用相对路径避免 Windows 冒号冲突
             command.add("-vf");
-            command.add("subtitles=filename='subtitles.srt':force_style='FontName=Arial,FontSize=24,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1'");
+            command.add("subtitles=filename='subtitles.srt':force_style='FontName=Noto Sans CJK SC,FontSize=20,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1'");
         }
 
         command.add("-map");

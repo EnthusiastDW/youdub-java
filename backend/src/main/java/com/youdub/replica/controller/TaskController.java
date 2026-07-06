@@ -43,8 +43,9 @@ public class TaskController {
             @RequestParam(value = "executionMode", required = false, defaultValue = "auto") String executionMode,
             @RequestParam(value = "direction", required = false, defaultValue = "en-zh") String direction,
             @RequestParam(value = "subtitleFile", required = false) MultipartFile subtitleFile,
-            @RequestParam(value = "youtubeVideoId", required = false, defaultValue = "") String youtubeVideoId) throws Exception {
-        return taskService.uploadLocalVideo(file, executionMode, direction, subtitleFile, youtubeVideoId);
+            @RequestParam(value = "youtubeVideoId", required = false, defaultValue = "") String youtubeVideoId,
+            @RequestParam(value = "notes", required = false, defaultValue = "") String notes) throws Exception {
+        return taskService.uploadLocalVideo(file, executionMode, direction, subtitleFile, youtubeVideoId, notes);
     }
 
     @GetMapping

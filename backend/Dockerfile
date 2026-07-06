@@ -26,6 +26,7 @@ RUN apt-get install -y --no-install-recommends \
         python3 \
         python3-pip \
         python3-venv \
+        fonts-noto-cjk \
     && rm -rf /var/lib/apt/lists/*
 
 RUN pip3 install --no-cache-dir --break-system-packages --upgrade --ignore-installed pip setuptools wheel \

@@ -99,7 +99,7 @@ public class TaskService {
     /**
      * 上传本地视频创建任务。
      */
-    public TaskResponse uploadLocalVideo(MultipartFile file, String executionMode, String direction, MultipartFile subtitleFile, String youtubeVideoId) throws IOException {
+    public TaskResponse uploadLocalVideo(MultipartFile file, String executionMode, String direction, MultipartFile subtitleFile, String youtubeVideoId, String notes) throws IOException {
         if (file == null || file.isEmpty()) {
             throw new IllegalArgumentException("上传文件不能为空");
         }
@@ -141,6 +141,7 @@ public class TaskService {
         task.setProgress(0.0);
         task.setCreatedAt(now());
         task.setYoutubeVideoId(youtubeVideoId == null ? "" : youtubeVideoId);
+        task.setNotes(notes == null ? "" : notes);
 
         taskRepository.insert(task);
         initStages(task.getId());

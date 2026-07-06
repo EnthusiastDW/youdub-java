@@ -285,7 +285,9 @@ public class SettingsService {
             }
         }
 
-        if (request.getYoutubeCookie() != null) {
+        if (request.getYoutubeCookie() != null
+                && request.getYoutubeCookie().getContent() != null
+                && !request.getYoutubeCookie().getContent().isBlank()) {
             saveYouTubeCookie(request.getYoutubeCookie().getContent());
         }
 

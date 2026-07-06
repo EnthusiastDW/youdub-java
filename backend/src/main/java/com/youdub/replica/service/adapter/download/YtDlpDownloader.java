@@ -71,6 +71,12 @@ public class YtDlpDownloader implements Downloader {
         command.add("ejs:github");
         command.add("--merge-output-format");
         command.add("mp4");
+        command.add("--write-subs");
+        command.add("--write-auto-subs");
+        command.add("--sub-langs");
+        command.add("en");
+        command.add("--sub-format");
+        command.add("vtt");
         command.add("-o");
         command.add(mediaDir.resolve(outputFilename).toString());
         if (proxy != null && !proxy.isBlank()) {
