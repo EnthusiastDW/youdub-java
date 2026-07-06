@@ -99,8 +99,13 @@ describe("HomePage", () => {
   it("renders task cards when tasks exist", () => {
     vi.mocked(useTasks).mockReturnValue({
       tasks: [createMockTask()],
+      total: 1,
       loading: false,
       error: null,
+      page: 0,
+      pageSize: 20,
+      totalPages: 1,
+      setPage: vi.fn(),
       refresh: vi.fn(),
     });
     renderWithProviders(<HomePage />);
@@ -110,8 +115,13 @@ describe("HomePage", () => {
   it("shows loading skeleton when loading", () => {
     vi.mocked(useTasks).mockReturnValue({
       tasks: [],
+      total: 0,
       loading: true,
       error: null,
+      page: 0,
+      pageSize: 20,
+      totalPages: 1,
+      setPage: vi.fn(),
       refresh: vi.fn(),
     });
     renderWithProviders(<HomePage />);
