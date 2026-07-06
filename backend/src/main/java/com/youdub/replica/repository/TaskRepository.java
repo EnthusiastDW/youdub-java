@@ -130,11 +130,20 @@ public class TaskRepository {
     }
 
     /**
-     * 查找任务列表（按创建时间倒序，不含阶段）。
+     * 查找任务列表（按创建时间倒序，不含阶段），支持分页。
      */
-    public List<Task> findAll(int limit) {
-        String sql = "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ?";
-        return jdbcTemplate.query(sql, TASK_ROW_MAPPER, limit);
+    public List<Task> findAll(int offset, int limit) {
+        String sql = "SELECT * FROM tasks ORDER BY created_at DESC LIMIT ? OFFSET ?";
+        return jdbcTemplate.query(sql, TASK_ROW_MAPPER, limit, offset);
+    }
+
+    /**
+     * 统计任务总数。
+     */
+    public int countAll() {
+        String sql = "SELECT COUNT(*) FROM tasks";
+        Integer count = jdbcTemplate.queryForObject(sql, Integer.class);
+        return count != null ? count : 0;
     }
 
     /**

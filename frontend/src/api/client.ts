@@ -90,8 +90,8 @@ export async function uploadLocalTask(
   return response.json() as Promise<Task>;
 }
 
-export function listTasks(limit = 20) {
-  return request<TaskListResponse>(`/api/tasks?limit=${limit}`);
+export function listTasks(offset = 0, limit = 20) {
+  return request<TaskListResponse>(`/api/tasks?offset=${offset}&limit=${limit}`);
 }
 
 export function getTask(taskId: string) {

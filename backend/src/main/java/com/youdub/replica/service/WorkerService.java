@@ -109,17 +109,11 @@ public class WorkerService {
     @PostConstruct
     public void recoverOnStartup() {
         log.info("启动时恢复任务状态...");
-        List<Task> allTasks = taskRepository.findAll(1000);
+        List<Task> allTasks = taskRepository.findAll(0, 1000);
         int failedCount = 0;
         int queuedCount = 0;
         for (Task task : allTasks) {
-            if (task.getStatus() == TaskStatus.RUNNING) {
-                // 重启时 running 状态的任务是孤立的，标记为 failed
-                taskRepository.updateStatus(task.getId(), TaskStatus.FAILED, task.getProgress());
-                taskRepository.updateField(task.getId(), "error_message", "后端在任务完成前重启。");
-                failedCount++;
-                log.info("将孤立运行任务标记为失败：{}", task.getId());
-            } else if (task.getStatus() == TaskStatus.QUEUED) {
+            if (task.getStatus() == TaskStatus.QUEUED || task.getStatus() == TaskStatus.RUNNING) {
                 // 重新入队 queued 任务
                 enqueue(task.getId());
                 queuedCount++;

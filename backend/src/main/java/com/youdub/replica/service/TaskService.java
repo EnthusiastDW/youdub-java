@@ -167,12 +167,19 @@ public class TaskService {
     }
 
     /**
-     * 任务列表。
+     * 任务列表（分页）。
      */
-    public List<TaskResponse> listTasks(int limit) {
-        return taskRepository.findAll(limit).stream()
+    public List<TaskResponse> listTasks(int offset, int limit) {
+        return taskRepository.findAll(offset, limit).stream()
                 .map(TaskResponse::from)
                 .toList();
+    }
+
+    /**
+     * 任务总数。
+     */
+    public int countTasks() {
+        return taskRepository.countAll();
     }
 
     /**

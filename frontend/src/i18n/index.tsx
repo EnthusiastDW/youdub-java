@@ -20,6 +20,7 @@ type Messages = {
     delete: string;
     retry: string;
     edit: string;
+    total: string;
   };
   home: Record<string, string>;
   task: Record<string, string>;
@@ -40,6 +41,7 @@ const messages: Record<UiLanguage, Messages> = {
       delete: "Delete",
       retry: "Retry",
       edit: "Edit",
+      total: "Total",
     },
     home: {
       title: "YouDub — Video Localization",
@@ -230,6 +232,7 @@ const messages: Record<UiLanguage, Messages> = {
       delete: "删除",
       retry: "重试",
       edit: "编辑",
+      total: "共",
     },
     home: {
       title: "YouDub — 视频本地化工具",

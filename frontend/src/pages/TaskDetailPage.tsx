@@ -27,7 +27,7 @@ export default function TaskDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { t, statusLabel, stageLabel } = useI18n();
-  const { task, log, loading, error } = useTask(id, 2000);
+  const { task, log, loading, error } = useTask(id, 10000);
 
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);

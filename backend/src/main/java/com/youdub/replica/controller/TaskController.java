@@ -51,8 +51,12 @@ public class TaskController {
     }
 
     @GetMapping
-    public Map<String, List<TaskResponse>> listTasks(@RequestParam(value = "limit", defaultValue = "20") int limit) {
-        return Map.of("tasks", taskService.listTasks(limit));
+    public Map<String, Object> listTasks(
+            @RequestParam(value = "offset", defaultValue = "0") int offset,
+            @RequestParam(value = "limit", defaultValue = "20") int limit) {
+        List<TaskResponse> tasks = taskService.listTasks(offset, limit);
+        int total = taskService.countTasks();
+        return Map.of("tasks", tasks, "total", total);
     }
 
     @GetMapping("/current")

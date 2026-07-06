@@ -48,6 +48,7 @@ export interface Task {
 
 export interface TaskListResponse {
   tasks: Task[];
+  total: number;
 }
 
 export interface YtdlpSettings {
