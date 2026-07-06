@@ -48,6 +48,32 @@ public class OpenAiTranslator extends AbstractTranslator {
     private final AdapterSkipTracker skipTracker;
 
     @Override
+    public String translateText(String text, String srcLang, String dstLang) throws Exception {
+        if (text == null || text.isBlank()) return text;
+        var cfg = settingsService.getProviderConfig(OPENAI, AppProperties.Translate.Openai.class);
+        String apiKey = cfg.getApiKey();
+        String chatUrl = cfg.getChatUrl();
+        String useModel = cfg.getModel();
+        if (apiKey.isBlank()) {
+            log.warn("OpenAI API key 未配置，跳过标题翻译");
+            return text;
+        }
+
+        String systemPrompt = "You are a professional translator. Translate the user-provided text from " + srcLang +
+                " to " + dstLang + " literally. Respond with ONLY the translated text — no extra words.";
+        ObjectNode requestBody = objectMapper.createObjectNode();
+        requestBody.put("model", useModel);
+        requestBody.put("temperature", 0.2);
+        ArrayNode messages = objectMapper.createArrayNode();
+        messages.add(objectMapper.createObjectNode().put("role", "system").put("content", systemPrompt));
+        messages.add(objectMapper.createObjectNode().put("role", "user").put("content", text));
+        requestBody.set("messages", messages);
+        String response = callChatApi(apiKey, chatUrl, useModel, requestBody);
+        JsonNode root = objectMapper.readTree(response);
+        return root.path("choices").path(0).path("message").path("content").asText("").trim();
+    }
+
+    @Override
     public void translate(Task task, Path asrPath, Path outputDir, String model, String srcLang, String dstLang) throws Exception {
         if (asrPath == null || !Files.exists(asrPath)) {
             throw new IllegalArgumentException("ASR 文件不存在：" + asrPath);

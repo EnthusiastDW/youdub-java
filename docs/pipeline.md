@@ -12,7 +12,9 @@
 │   ├── ytdlp_info.json             # 下载元数据
 │   ├── asr.json                    # ASR 识别结果
 │   ├── asr_fixed.json              # ASR 时间修正结果
-│   └── translation.{lang}.json     # 翻译结果
+│   ├── translation.{lang}.json     # 翻译结果
+│   ├── title_bilingual.json        # 标题翻译（翻译阶段生成）
+│   └── summary.md                  # 结构化小结（翻译阶段生成，可选）
 ├── segments/                       # 片段
 │   ├── vocals/                     # 按时间裁剪的人声片段
 │   │   ├── 0000.wav
@@ -149,6 +151,12 @@ end_time_fixed   = end_time + 300
 - `dst`: 目标语言译文（空字符串表示无声段/跳过）
 - `start_time` / `end_time`: 从 asr_fixed 继承的修正时间戳
 
+**附加产物**（翻译阶段结束前生成）:
+| 文件 | 格式 | 说明 |
+|------|------|------|
+| `metadata/title_bilingual.json` | `{"original":"...", "translated":"...", "original_lang":"...", "translated_lang":"..."}` | 视频标题的双语翻译结果，用于最终文件命名。源语言为空时不生成。 |
+| `metadata/summary.md` | Markdown | LLM 对英文原文生成的结构化中文小结（仅源语言为英文时有意义）。 |
+
 ---
 
 ## 阶段 6：split_audio（切分音频）
@@ -246,6 +254,12 @@ end   = end_time + 160ms              // 结束 padding
 |------|------|
 | **输入** | `media/video_source.mp4`、`tmp/audio_dubbing.wav`、`media/audio_bgm.wav`（可选）、`tmp/timings.json` |
 | **输出** | `media/video_final.mp4` |
+
+> **注意**：管线所有阶段完成后（在更新任务状态为 SUCCEEDED 之前），
+> 会自动执行**最终视频重命名**：读取 `metadata/title_bilingual.json`，
+> 将 `video_final.mp4` 重命名为 `{中文名} - {英文名}.mp4`（含中文语言对时）
+> 或 `{原语言名} - {目标语言名}.mp4`（不含中文时）。
+> 新路径写入 `task.final_video_path` 字段。
 | **操作** | 三步合成最终视频：生成 SRT 字幕、混音、编码输出。 |
 
 **步骤**:

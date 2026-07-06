@@ -16,6 +16,7 @@ import { useTask } from "@/hooks/useTask";
 import { useI18n } from "@/i18n/index";
 import { statusBadgeClass } from "@/lib/status";
 import { formatDateTime, getYoutubeThumbnailUrl, downloadImage } from "@/lib/utils";
+import { coverDownloadName } from "@/utils/fileName";
 import { rerunTask, resumeTask, continueTask, deleteTask, redoStage, updateTaskNotes, updateTaskYoutubeVideoId, getTaskSummary, updateTaskSummary } from "@/api/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -267,7 +268,7 @@ export default function TaskDetailPage() {
                     onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }}
                   />
                   <button
-                    onClick={() => downloadImage(getYoutubeThumbnailUrl(task.youtubeVideoId!), "cover.jpg")}
+                    onClick={() => downloadImage(getYoutubeThumbnailUrl(task.youtubeVideoId!), coverDownloadName(task.title))}
                     className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/0 text-white opacity-0 transition-all group-hover:bg-black/30 group-hover:opacity-100"
                     style={{ aspectRatio: "16 / 9" }}
                     title={t.task.downloadCover}

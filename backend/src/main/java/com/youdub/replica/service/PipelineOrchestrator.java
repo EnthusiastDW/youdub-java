@@ -21,6 +21,7 @@ import com.youdub.replica.service.adapter.translate.Translator;
 import com.youdub.replica.service.adapter.tts.TtsProvider;
 import com.youdub.replica.service.adapter.video.VideoProcessor;
 import com.youdub.replica.util.DeviceResolver;
+import com.youdub.replica.util.FilenameUtils;
 import com.youdub.replica.util.TaskDirResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -96,6 +97,13 @@ public class PipelineOrchestrator {
             new StageDef("translate", "翻译"),
             new StageDef("merge_video", "合成视频")
     );
+
+    // -- 常量 --
+
+    private static final String CHINESE_LANG = "zh";
+    private static final String ENGLISH_LANG = "en";
+    private static final String TITLE_BILINGUAL_FILE = "title_bilingual.json";
+    private static final String VIDEO_FINAL_FILE = "video_final.mp4";
 
     /**
      * 执行管线。
@@ -185,7 +193,9 @@ public class PipelineOrchestrator {
                 }
             }
 
-            // 所有阶段完成
+            // 所有阶段完成 → 重命名最终视频为双语文件名
+            renameFinalVideo(sessionDir, taskId);
+
             taskRepository.updateStatus(taskId, TaskStatus.SUCCEEDED, 100.0);
             taskRepository.updateField(taskId, "completed_at", nowIso());
             log.info("管线执行完成：task={}", taskId);
@@ -357,6 +367,27 @@ public class PipelineOrchestrator {
         String srcLang = task.getAsrLanguage();
         String dstLang = task.getTargetLanguage();
         translator.translate(task, asrPath, outputDir, null, srcLang, dstLang);
+
+        // 字幕翻译完成后，翻译视频标题用于文件命名
+        // 注意：task 是 execute() 开头取的，title 可能已被下载阶段更新，需重新查询
+        String title = taskRepository.findById(task.getId()).getTitle();
+        if (title != null && !title.isBlank()) {
+            Path titleFile = outputDir.resolve(TITLE_BILINGUAL_FILE);
+            if (!Files.exists(titleFile)) {
+                try {
+                    String translated = translator.translateText(title, srcLang, dstLang);
+                    ObjectNode titleInfo = objectMapper.createObjectNode();
+                    titleInfo.put("original", title);
+                    titleInfo.put("translated", translated.isBlank() ? title : translated);
+                    titleInfo.put("original_lang", srcLang);
+                    titleInfo.put("translated_lang", dstLang);
+                    Files.writeString(titleFile, objectMapper.writeValueAsString(titleInfo));
+                    log.info("标题翻译完成：task={}, original={}, translated={}", task.getId(), title, translated);
+                } catch (Exception e) {
+                    log.warn("标题翻译失败，跳过：task={}, error={}", task.getId(), e.getMessage());
+                }
+            }
+        }
     }
 
     private void executeSplitAudio(Task task, Path sessionDir) throws Exception {
@@ -399,6 +430,61 @@ public class PipelineOrchestrator {
             Path bgmPath = sessionDir.resolve("media").resolve("audio_bgm.wav");
             Path timingsPath = sessionDir.resolve("tmp").resolve("timings.json");
             processor.mergeVideo(task, videoPath, dubbingPath, bgmPath, timingsPath, outputDir);
+        }
+    }
+
+    /**
+     * 管线完成后重命名最终视频为双语文件名，格式由语言对决定：
+     * - 含中文时：{中文名} - {英文名}.mp4
+     * - 不含中文时：{原语言名} - {目标语言名}.mp4
+     */
+    private void renameFinalVideo(Path sessionDir, String taskId) {
+        Path titleFile = sessionDir.resolve("metadata").resolve(TITLE_BILINGUAL_FILE);
+        if (!Files.exists(titleFile)) {
+            return;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(Files.readString(titleFile));
+            String original = root.path("original").asText("");
+            String translated = root.path("translated").asText("");
+            String srcLang = root.path("original_lang").asText("");
+            String dstLang = root.path("translated_lang").asText("");
+
+            String leftName, rightName;
+            boolean srcIsZh = CHINESE_LANG.equals(srcLang);
+            boolean dstIsZh = CHINESE_LANG.equals(dstLang);
+            boolean srcIsEn = ENGLISH_LANG.equals(srcLang);
+            boolean dstIsEn = ENGLISH_LANG.equals(dstLang);
+
+            if (srcIsZh || dstIsZh) {
+                // 含中文：保证 {中文名} - {英文名}
+                leftName = srcIsZh ? original : translated;
+                rightName = srcIsEn ? original : (dstIsEn ? translated : (srcIsZh ? translated : original));
+                // 兜底：若另一侧不是英文，fallback 到对方
+                if (rightName.equals(leftName)) {
+                    if (srcIsZh) { rightName = translated; } else { rightName = original; }
+                }
+            } else {
+                // 不含中文：{original} - {translated}
+                leftName = original;
+                rightName = translated;
+            }
+
+            if (leftName.isBlank()) leftName = rightName;
+            if (rightName.isBlank()) rightName = leftName;
+
+            Path finalVideo = sessionDir.resolve("media").resolve(VIDEO_FINAL_FILE);
+            if (!Files.exists(finalVideo)) {
+                return;
+            }
+
+            String newName = FilenameUtils.sanitize(leftName, true) + " - " + FilenameUtils.sanitize(rightName, true) + ".mp4";
+            Path newPath = finalVideo.resolveSibling(newName);
+            Files.move(finalVideo, newPath);
+            log.info("最终视频重命名：{} → {}", finalVideo.getFileName(), newPath.getFileName());
+            taskRepository.updateField(taskId, "final_video_path", newPath.toAbsolutePath().toString());
+        } catch (Exception e) {
+            log.warn("重命名最终视频失败：task={}, error={}", taskId, e.getMessage());
         }
     }
 

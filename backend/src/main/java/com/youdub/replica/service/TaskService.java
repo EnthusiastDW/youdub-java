@@ -10,6 +10,7 @@ import com.youdub.replica.model.enums.StageStatus;
 import com.youdub.replica.model.enums.TaskStatus;
 import com.youdub.replica.repository.TaskRepository;
 import com.youdub.replica.service.adapter.AdapterConstants;
+import com.youdub.replica.util.FilenameUtils;
 import com.youdub.replica.util.TaskDirResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -132,7 +133,7 @@ public class TaskService {
         Task task = new Task();
         task.setId(taskId);
         task.setUrl("local://upload/" + taskId);
-        task.setTitle(file.getOriginalFilename());
+        task.setTitle(stripExtension(file.getOriginalFilename()));
         task.setStatus(TaskStatus.QUEUED);
         task.setExecutionMode(executionMode == null ? "auto" : executionMode);
         task.setSourceType(AdapterConstants.LOCAL);
@@ -486,7 +487,11 @@ public class TaskService {
 
     private String sanitize(String name) {
         if (name == null) return "upload";
-        return name.replaceAll("[\\\\/:*?\"<>|]", "_");
+        return FilenameUtils.sanitize(name);
+    }
+
+    private String stripExtension(String filename) {
+        return FilenameUtils.stripExtension(filename);
     }
 
     private record StageDef(String name, String label) {}

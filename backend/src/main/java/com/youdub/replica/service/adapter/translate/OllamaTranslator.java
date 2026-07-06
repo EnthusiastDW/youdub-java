@@ -48,6 +48,15 @@ public class OllamaTranslator extends AbstractTranslator {
     private final AdapterSkipTracker skipTracker;
 
     @Override
+    public String translateText(String text, String srcLang, String dstLang) throws Exception {
+        if (text == null || text.isBlank()) return text;
+        AppProperties.Translate.Ollama config = settingsService.getProviderConfig(OLLAMA, AppProperties.Translate.Ollama.class);
+        String chatUrl = resolveChatUrl(config.getBaseUrl());
+        String model = config.getModel();
+        return callOllama(chatUrl, model, srcLang, dstLang, text);
+    }
+
+    @Override
     public void translate(Task task, Path asrPath, Path outputDir, String model, String srcLang, String dstLang) throws Exception {
         if (asrPath == null || !Files.exists(asrPath)) {
             throw new IllegalArgumentException("ASR 文件不存在：" + asrPath);

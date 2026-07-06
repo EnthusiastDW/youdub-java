@@ -10,4 +10,7 @@ import java.nio.file.Path;
  */
 public interface Translator {
     void translate(Task task, Path asrPath, Path outputDir, String model, String srcLang, String dstLang) throws Exception;
+
+    /** 翻译单段文本（用于标题翻译等一次性调用） */
+    String translateText(String text, String srcLang, String dstLang) throws Exception;
 }

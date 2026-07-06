@@ -9,6 +9,7 @@ import { Button, buttonVariants } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { statusBadgeClass } from "@/lib/status";
 import { formatDateTime, getYoutubeThumbnailUrl, downloadImage } from "@/lib/utils";
+import { coverDownloadName } from "@/utils/fileName";
 
 interface TaskCardProps {
   task: Task;
@@ -38,7 +39,7 @@ export function TaskCard({ task, onResume, onRerun, onDelete }: TaskCardProps) {
                 onError={() => setThumbError(true)}
               />
               <button
-                onClick={() => downloadImage(getYoutubeThumbnailUrl(task.youtubeVideoId!), "cover.jpg")}
+                onClick={() => downloadImage(getYoutubeThumbnailUrl(task.youtubeVideoId!), coverDownloadName(task.title))}
                 className="absolute inset-0 flex items-center justify-center rounded-lg bg-black/0 text-white opacity-0 transition-all group-hover:bg-black/30 group-hover:opacity-100"
                 title={t.task.downloadCover}
               >

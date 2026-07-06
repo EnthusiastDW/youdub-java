@@ -17,6 +17,8 @@ import org.springframework.web.multipart.MultipartFile;
 import com.youdub.replica.dto.TaskNotesRequest;
 import com.youdub.replica.dto.TaskSummaryRequest;
 import com.youdub.replica.dto.TaskYoutubeVideoIdRequest;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
@@ -128,7 +130,11 @@ public class TaskController {
         Resource resource = new FileSystemResource(video);
         HttpHeaders headers = new HttpHeaders();
         if (download) {
-            headers.setContentDispositionFormData("attachment", video.getFileName().toString());
+            String fileName = video.getFileName().toString();
+            String encodedName = URLEncoder.encode(fileName, StandardCharsets.UTF_8)
+                    .replace("+", "%20");
+            headers.add("Content-Disposition",
+                    "attachment; filename=" + encodedName);
         }
         headers.setContentType(MediaType.APPLICATION_OCTET_STREAM);
         return ResponseEntity.ok().headers(headers).body(resource);

@@ -254,7 +254,7 @@ public class FfmpegVideoProcessor implements VideoProcessor {
             // 硬字幕（烧入画面）：所有编码器统一使用 subtitles filter
             // 用相对路径避免 Windows 冒号冲突
             command.add("-vf");
-            command.add("subtitles=filename='subtitles.srt':force_style='FontName=Noto Sans CJK SC,FontSize=16,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=15'");
+            command.add("subtitles=filename='subtitles.srt':force_style='FontName=Noto Sans CJK SC,FontSize=16,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=1,MarginV=15'");
         }
 
         command.add("-map");
@@ -321,7 +321,7 @@ public class FfmpegVideoProcessor implements VideoProcessor {
         boolean hasSrt = Files.exists(srtFile);
         if (hasSrt) {
             command.add("-vf");
-            command.add("subtitles=filename='subtitles.srt':force_style='FontName=Noto Sans CJK SC,FontSize=16,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=2,Shadow=1,MarginV=15'");
+            command.add("subtitles=filename='subtitles.srt':force_style='FontName=Noto Sans CJK SC,FontSize=16,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=1,Shadow=1,MarginV=15'");
         }
 
         command.add("-c:v");
