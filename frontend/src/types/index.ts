@@ -73,6 +73,7 @@ export interface ProvidersData {
   tts: ProviderGroup;
   translate: ProviderGroup;
   separate: ProviderGroup;
+  asrCorrector: ProviderGroup;
 }
 
 export interface Settings {
@@ -94,6 +95,7 @@ export interface SettingsRequest {
     tts?: string;
     translate?: string;
     separate?: string;
+    asrCorrector?: string;
   };
   providerConfigs?: Record<string, string>;
   notesTemplate?: string;

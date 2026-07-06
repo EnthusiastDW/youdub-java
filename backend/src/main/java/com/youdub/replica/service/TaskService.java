@@ -29,12 +29,18 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Set;
 import java.util.UUID;
 
 /**
  * 任务服务。
  * 负责任务的创建、查询、状态转换与文件管理。
- * 实际的管线执行（9 阶段）由 PipelineOrchestrator 通过 WorkerService 触发，此处仅管理元数据。
+ * 实际的管线执行由 PipelineOrchestrator 通过 WorkerService 触发，此处仅管理元数据。
+ * 预创建的阶段列表根据执行模式和配置动态决定：
+ * <ul>
+ *   <li>简化模式（仅字幕）只创建与字幕相关的阶段</li>
+ *   <li>配置中禁用的功能（如 ASR 纠错）不会预创建对应阶段</li>
+ * </ul>
  */
 @Slf4j
 @Service
@@ -45,18 +51,25 @@ public class TaskService {
     private final AppProperties appProperties;
     private final TaskDirResolver taskDirResolver;
     private final WorkerService workerService;
+    private final SettingsService settingsService;
 
     private static final DateTimeFormatter ISO = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
     private static final List<StageDef> STAGE_DEFS = List.of(
             new StageDef("download", "下载"),
             new StageDef("separate", "Demucs"),
             new StageDef("asr", "Whisper"),
+            new StageDef("asr_correct", "ASR纠错"),
             new StageDef("asr_fix", "切分句子"),
             new StageDef("translate", "翻译"),
             new StageDef("split_audio", "切分音频"),
             new StageDef("tts", "VoxCPM"),
             new StageDef("merge_audio", "混合音频"),
             new StageDef("merge_video", "合成视频")
+    );
+
+    /** 简化模式（仅字幕）包含的阶段名，与 PipelineOrchestrator.SUBTITLE_ONLY_STAGES 保持同步 */
+    private static final Set<String> SUBTITLE_ONLY_STAGE_NAMES = Set.of(
+            "download", "separate", "asr", "asr_correct", "asr_fix", "translate", "merge_video"
     );
 
     /**
@@ -89,7 +102,7 @@ public class TaskService {
         task.setYoutubeVideoId(request.getYoutubeVideoId() == null ? "" : request.getYoutubeVideoId());
 
         taskRepository.insert(task);
-        initStages(task.getId());
+        initStages(task.getId(), task.getExecutionMode());
 
         log.info("创建任务：id={}, url={}", task.getId(), task.getUrl());
         TaskResponse response = TaskResponse.from(taskRepository.findById(task.getId()));
@@ -145,7 +158,7 @@ public class TaskService {
         task.setNotes(notes == null ? "" : notes);
 
         taskRepository.insert(task);
-        initStages(task.getId());
+        initStages(task.getId(), task.getExecutionMode());
 
         log.info("上传任务：id={}, file={}, direction={}", task.getId(), file.getOriginalFilename(), direction);
         TaskResponse response = TaskResponse.from(taskRepository.findById(task.getId()));
@@ -438,8 +451,29 @@ public class TaskService {
         return video;
     }
 
-    private void initStages(String taskId) {
+    /**
+     * 根据任务执行模式和当前配置预创建阶段。
+     * <ul>
+     *   <li>简化模式（仅字幕）只创建字幕管线包含的阶段</li>
+     *   <li>配置中禁用的功能（如 ASR 纠错已关闭）不会预创建对应阶段</li>
+     * </ul>
+     * 任务实际执行时仍以 PipelineOrchestrator 的 STAGES 为准，
+     * 未预创建的阶段会在执行到该步骤时动态添加。
+     */
+    private void initStages(String taskId, String executionMode) {
+        boolean subtitleOnly = "subtitle-only".equalsIgnoreCase(executionMode);
+
         for (StageDef def : STAGE_DEFS) {
+            // 简化模式：跳过不属于字幕管线的阶段
+            if (subtitleOnly && !SUBTITLE_ONLY_STAGE_NAMES.contains(def.name())) {
+                continue;
+            }
+
+            // 根据配置跳过被禁用的功能
+            if (!isStageFeatureEnabled(def.name())) {
+                continue;
+            }
+
             TaskStage stage = new TaskStage();
             stage.setTaskId(taskId);
             stage.setName(def.name());
@@ -450,6 +484,27 @@ public class TaskService {
             stage.setErrorMessage("");
             taskRepository.insertStage(stage);
         }
+    }
+
+    /**
+     * 检查某个阶段对应的功能是否在配置中启用。
+     * 默认所有阶段均启用，只有明确配置了 enabled=false 的可选功能会被跳过。
+     */
+    private boolean isStageFeatureEnabled(String stageName) {
+        return switch (stageName) {
+            case "asr_correct" -> {
+                try {
+                    var cfg = settingsService.getProviderConfig(
+                            AdapterConstants.OPENAI_ASR_CORRECTOR,
+                            AppProperties.AsrCorrectorConfig.OpenaiAsrCorrector.class);
+                    yield cfg.isEnabled();
+                } catch (Exception e) {
+                    log.warn("读取 ASR 纠错配置失败，默认启用: {}", e.getMessage());
+                    yield true;
+                }
+            }
+            default -> true;
+        };
     }
 
     private String generateId() {

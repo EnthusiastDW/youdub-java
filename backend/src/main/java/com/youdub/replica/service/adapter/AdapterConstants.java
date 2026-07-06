@@ -13,6 +13,8 @@ public final class AdapterConstants {
     public static final String WHISPER_API = "whisper-api";
     /** whisper.cpp 本地语音识别 */
     public static final String WHISPER_CPP = "whisper-cpp";
+    /** OpenAI LLM ASR 纠错 */
+    public static final String OPENAI_ASR_CORRECTOR = "openai-asr-corrector";
 
     // ────────────────────────────── TTS ──────────────────────────────
     /** Edge-TTS 语音合成（子进程） */

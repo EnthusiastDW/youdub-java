@@ -42,6 +42,10 @@ app:
       model: whisper-1
     whisper-cpp:
       model: ggml-large-v3-turbo.bin
+  asr-corrector:
+    provider: openai-asr-corrector
+    openai-asr-corrector:
+      enabled: false
 
   tts:
     provider: voxcpm

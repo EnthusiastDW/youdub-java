@@ -34,6 +34,7 @@ public class SettingsRequest {
         private String tts;
         private String translate;
         private String separate;
+        private String asrCorrector;
         /** Provider-specific config overrides: key = "step.provider.field", value = "..." */
         private Map<String, String> providerConfigs;
     }

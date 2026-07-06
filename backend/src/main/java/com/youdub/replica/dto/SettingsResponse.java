@@ -37,6 +37,7 @@ public class SettingsResponse {
         private ProviderGroup tts = new ProviderGroup();
         private ProviderGroup translate = new ProviderGroup();
         private ProviderGroup separate = new ProviderGroup();
+        private ProviderGroup asrCorrector = new ProviderGroup();
     }
 
     @Data

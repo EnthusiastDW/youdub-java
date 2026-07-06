@@ -43,6 +43,7 @@ public class SettingsService {
     static {
         PROVIDER_CATEGORY.put(WHISPER_API, "asr");
         PROVIDER_CATEGORY.put(WHISPER_CPP, "asr");
+        PROVIDER_CATEGORY.put(OPENAI_ASR_CORRECTOR, "asr-corrector");
         PROVIDER_CATEGORY.put(EDGE_TTS, "tts");
         PROVIDER_CATEGORY.put(VOXCPM, "tts");
         PROVIDER_CATEGORY.put(OPENAI_TTS, "tts");
@@ -60,6 +61,7 @@ public class SettingsService {
     static {
         DEFAULT_GETTER.put(WHISPER_API, ap -> ap.getAsr().getWhisperApi());
         DEFAULT_GETTER.put(WHISPER_CPP, ap -> ap.getAsr().getWhisperCpp());
+        DEFAULT_GETTER.put(OPENAI_ASR_CORRECTOR, ap -> ap.getAsrCorrector().getOpenaiAsrCorrector());
         DEFAULT_GETTER.put(EDGE_TTS, ap -> ap.getTts().getEdgeTts());
         DEFAULT_GETTER.put(VOXCPM, ap -> ap.getTts().getVoxcpm());
         DEFAULT_GETTER.put(OPENAI_TTS, ap -> ap.getTts().getOpenaiTts());
@@ -244,6 +246,7 @@ public class SettingsService {
             if (p.getTts() != null) settingsRepository.set("tts.provider", p.getTts());
             if (p.getTranslate() != null) settingsRepository.set("translate.provider", p.getTranslate());
             if (p.getSeparate() != null) settingsRepository.set("separate.provider", p.getSeparate());
+            if (p.getAsrCorrector() != null) settingsRepository.set("asr-corrector.provider", p.getAsrCorrector());
         }
 
         Map<String, String> configs = request.getProviderConfigs();
@@ -469,6 +472,7 @@ public class SettingsService {
         buildProviderGroup(data.getTts(), "tts");
         buildProviderGroup(data.getTranslate(), "translate");
         buildProviderGroup(data.getSeparate(), "separate");
+        buildProviderGroup(data.getAsrCorrector(), "asr-corrector");
 
         return data;
     }
@@ -479,6 +483,7 @@ public class SettingsService {
             case "tts" -> appProperties.getTts().getProvider();
             case "translate" -> appProperties.getTranslate().getProvider();
             case "separate" -> appProperties.getSeparate().getProvider();
+            case "asr-corrector" -> appProperties.getAsrCorrector().getProvider();
             default -> "";
         };
         group.setCurrent(settingsRepository.get(category + ".provider", defaultProvider));

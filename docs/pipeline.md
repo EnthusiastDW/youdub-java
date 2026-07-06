@@ -11,6 +11,7 @@
 ├── metadata/                       # 元数据
 │   ├── ytdlp_info.json             # 下载元数据
 │   ├── asr.json                    # ASR 识别结果
+│   ├── asr_corrected.json          # ASR 纠错结果（可选，asr_correct 阶段生成）
 │   ├── asr_fixed.json              # ASR 时间修正结果
 │   ├── translation.{lang}.json     # 翻译结果
 │   ├── title_bilingual.json        # 标题翻译（翻译阶段生成）

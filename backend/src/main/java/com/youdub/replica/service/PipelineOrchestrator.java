@@ -13,6 +13,7 @@ import com.youdub.replica.model.enums.TaskStatus;
 import com.youdub.replica.repository.SettingsRepository;
 import com.youdub.replica.repository.TaskRepository;
 import com.youdub.replica.service.adapter.AdapterSkipTracker;
+import com.youdub.replica.service.adapter.asr.AsrCorrector;
 import com.youdub.replica.service.adapter.asr.SpeechRecognizer;
 import com.youdub.replica.service.adapter.audio.AudioProcessor;
 import com.youdub.replica.service.adapter.download.Downloader;
@@ -41,7 +42,7 @@ import static com.youdub.replica.service.adapter.AdapterConstants.*;
 
 /**
  * 管线编排器。
- * 按 9 个阶段顺序执行任务，支持缓存命中、暂停/取消检查、手动模式。
+ * 按 10 个阶段顺序执行任务，支持缓存命中、暂停/取消检查、手动模式。
  */
 @Slf4j
 @Service
@@ -50,6 +51,7 @@ public class PipelineOrchestrator {
 
     private final TaskRepository taskRepository;
     private final SettingsRepository settingsRepository;
+    private final SettingsService settingsService;
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient;
@@ -63,6 +65,7 @@ public class PipelineOrchestrator {
     private final Map<String, Downloader> downloaders;
     private final Map<String, SourceSeparator> separators;
     private final Map<String, SpeechRecognizer> recognizers;
+    private final Map<String, AsrCorrector> asrCorrectors;
     private final Map<String, Translator> translators;
     private final Map<String, TtsProvider> ttsProviders;
     private final Map<String, AudioProcessor> audioProcessors;
@@ -75,26 +78,17 @@ public class PipelineOrchestrator {
      */
     static final Map<String, Map<String, String[]>> stageTimestampsBackup = new ConcurrentHashMap<>();
 
-    /** 9 个阶段定义 */
+    /** 10 个阶段定义 */
     private static final List<StageDef> STAGES = List.of(
             new StageDef("download", "下载"),
             new StageDef("separate", "Demucs"),
             new StageDef("asr", "Whisper"),
+            new StageDef("asr_correct", "ASR纠错"),
             new StageDef("asr_fix", "切分句子"),
             new StageDef("translate", "翻译"),
             new StageDef("split_audio", "切分音频"),
             new StageDef("tts", "VoxCPM"),
             new StageDef("merge_audio", "混合音频"),
-            new StageDef("merge_video", "合成视频")
-    );
-
-    /** 简化模式（仅字幕）的 6 个阶段：不做 TTS、不替换音频 */
-    private static final List<StageDef> SUBTITLE_ONLY_STAGES = List.of(
-            new StageDef("download", "下载"),
-            new StageDef("separate", "Demucs"),
-            new StageDef("asr", "Whisper"),
-            new StageDef("asr_fix", "切分句子"),
-            new StageDef("translate", "翻译"),
             new StageDef("merge_video", "合成视频")
     );
 
@@ -114,7 +108,15 @@ public class PipelineOrchestrator {
             throw new RuntimeException("任务不存在：" + taskId);
         }
 
-        log.info("开始执行管线：task={}, url={}", taskId, task.getUrl());
+        // 根据 DB 中预创建的阶段确定活跃阶段列表（initStages 已按模式+配置过滤）
+        List<String> activeStageNames = task.getStages().stream()
+                .map(TaskStage::getName)
+                .toList();
+        List<StageDef> activeStages = STAGES.stream()
+                .filter(s -> activeStageNames.contains(s.name))
+                .toList();
+        log.info("任务 {} 选用阶段：{}", taskId, activeStages.stream().map(StageDef::name).toList());
+
         taskRepository.updateStatus(taskId, TaskStatus.RUNNING, 0.0);
         taskRepository.updateField(taskId, "started_at", nowIso());
         taskRepository.updateField(taskId, "error_message", "");
@@ -126,10 +128,6 @@ public class PipelineOrchestrator {
                 taskRepository.updateField(taskId, "session_path", sessionDir.toString());
                 task.setSessionPath(sessionDir.toString());
             }
-
-            List<StageDef> activeStages = "subtitle-only".equalsIgnoreCase(task.getExecutionMode())
-                    ? SUBTITLE_ONLY_STAGES
-                    : STAGES;
 
             for (StageDef stage : STAGES) {
                 // 检查任务是否被暂停或取消
@@ -145,15 +143,12 @@ public class PipelineOrchestrator {
                     return;
                 }
 
-                // 简化模式：跳过不在活跃列表中的阶段
-                if (!activeStages.contains(stage)) {
-                    log.info("简化模式跳过阶段：task={}, stage={}", taskId, stage.name);
-                    taskRepository.updateStageStatus(taskId, stage.name, StageStatus.SUCCEEDED, 100, "");
+                TaskStage stageState = findStage(current.getStages(), stage.name);
+                // 阶段未被预创建（因模式或配置跳过），不执行
+                if (stageState == null) {
                     continue;
                 }
-
-                TaskStage stageState = findStage(current.getStages(), stage.name);
-                if (stageState != null && stageState.getStatus() == StageStatus.SUCCEEDED) {
+                if (stageState.getStatus() == StageStatus.SUCCEEDED) {
                     log.info("阶段已成功，跳过：task={}, stage={}", taskId, stage.name);
                     continue;
                 }
@@ -228,6 +223,7 @@ public class PipelineOrchestrator {
             case "download" -> executeDownload(task, sessionDir);
             case "separate" -> executeSeparate(task, sessionDir);
             case "asr" -> executeAsr(task, sessionDir);
+            case "asr_correct" -> executeAsrCorrect(task, sessionDir);
             case "asr_fix" -> executeAsrFix(task, sessionDir);
             case "translate" -> executeTranslate(task, sessionDir);
             case "split_audio" -> executeSplitAudio(task, sessionDir);
@@ -284,6 +280,30 @@ public class PipelineOrchestrator {
         recognizer.transcribe(task, audioPath, outputDir, language);
     }
 
+    private void executeAsrCorrect(Task task, Path sessionDir) throws Exception {
+        var correctorCfg = settingsService.getProviderConfig(OPENAI_ASR_CORRECTOR,
+                AppProperties.AsrCorrectorConfig.OpenaiAsrCorrector.class);
+        if (!correctorCfg.isEnabled()) {
+            log.info("ASR 纠错未启用，跳过：task={}", task.getId());
+            return;
+        }
+
+        Path metadataDir = sessionDir.resolve("metadata");
+        Path asrFile = metadataDir.resolve("asr.json");
+        if (!Files.exists(asrFile)) {
+            log.warn("ASR 文件不存在，跳过纠错：task={}", task.getId());
+            return;
+        }
+
+        String provider = OPENAI_ASR_CORRECTOR;
+        AsrCorrector corrector = asrCorrectors.get(provider);
+        if (corrector == null) {
+            throw new RuntimeException("未找到 ASR 纠错适配器：" + provider);
+        }
+
+        corrector.correct(task, asrFile, metadataDir);
+    }
+
     /**
      * 将字幕段列表写入 asr.json，格式与 WhisperApiRecognizer.convertToStandardFormat 一致。
      */
@@ -324,8 +344,10 @@ public class PipelineOrchestrator {
     }
 
     private void executeAsrFix(Task task, Path sessionDir) throws Exception {
-        Path asrFile = sessionDir.resolve("metadata").resolve("asr.json");
-        Path fixedFile = sessionDir.resolve("metadata").resolve("asr_fixed.json");
+        Path metadataDir = sessionDir.resolve("metadata");
+        Path correctedFile = metadataDir.resolve("asr_corrected.json");
+        Path asrFile = Files.exists(correctedFile) ? correctedFile : metadataDir.resolve("asr.json");
+        Path fixedFile = metadataDir.resolve("asr_fixed.json");
         if (Files.exists(fixedFile)) {
             log.info("asr_fixed 已存在，跳过：{}", fixedFile);
             skipTracker.markSkipped();

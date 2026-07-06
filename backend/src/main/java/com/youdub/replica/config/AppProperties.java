@@ -20,6 +20,7 @@ public class AppProperties {
 
     private Ytdlp ytdlp = new Ytdlp();
     private Asr asr = new Asr();
+    private AsrCorrectorConfig asrCorrector = new AsrCorrectorConfig();
     private Tts tts = new Tts();
     private Translate translate = new Translate();
     private Separate separate = new Separate();
@@ -49,6 +50,20 @@ public class AppProperties {
 
         @Data
         public static class WhisperCpp {
+            private String model;
+        }
+    }
+
+    @Data
+    public static class AsrCorrectorConfig {
+        private String provider = "openai-asr-corrector";
+        private OpenaiAsrCorrector openaiAsrCorrector = new OpenaiAsrCorrector();
+
+        @Data
+        public static class OpenaiAsrCorrector {
+            private boolean enabled = false;
+            private String chatUrl;
+            private String apiKey;
             private String model;
         }
     }
