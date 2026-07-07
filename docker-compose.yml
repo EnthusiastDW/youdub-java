@@ -14,6 +14,8 @@ services:
     ports:
       - "8001:8001"
     environment:
+      - TZ=${TZ:-Asia/Shanghai}
+
       # ── Audio Separator ────────────────────────────────
       - SEPARATOR_MODEL=${SEPARATOR_MODEL:-UVR-MDX-NET-Inst_HQ_3.onnx}
       - OMP_NUM_THREADS=${OMP_NUM_THREADS:-4}
@@ -80,6 +82,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - TZ=${TZ:-Asia/Shanghai}
       - APP_TTS_PROVIDER=${TTS_PROVIDER:-voxcpm}
       - APP_TTS_VOXCPM_SERVICE_URL=${VOXCPM_SERVICE_URL:-http://python-services:8001}
       - APP_SEPARATE_AUDIO_SEPARATOR_API_SERVICE_URL=${AUDIO_SEPARATOR_SERVICE_URL:-http://python-services:8001}
@@ -113,6 +116,8 @@ services:
     container_name: youdub-frontend
     ports:
       - "3000:3000"
+    environment:
+      - TZ=${TZ:-Asia/Shanghai}
     restart: unless-stopped
     networks:
       - youdub-network
