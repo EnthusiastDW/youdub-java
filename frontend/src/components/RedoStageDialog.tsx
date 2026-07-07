@@ -12,7 +12,7 @@ interface RedoStageDialogProps {
   loading: boolean;
 }
 
-export function RedoStageDialog({ open, onClose, stageName, stageLabel, onConfirm, loading }: RedoStageDialogProps) {
+export function RedoStageDialog({ open, onClose, stageLabel, onConfirm, loading }: RedoStageDialogProps) {
   const { t } = useI18n();
 
   return (
