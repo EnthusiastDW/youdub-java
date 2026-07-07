@@ -9,9 +9,10 @@ interface TaskListProps {
   onResume?: (task: Task) => void;
   onRerun?: (task: Task) => void;
   onDelete?: (task: Task) => void;
+  onStop?: (task: Task) => void;
 }
 
-export function TaskList({ tasks, loading, error, onResume, onRerun, onDelete }: TaskListProps) {
+export function TaskList({ tasks, loading, error, onResume, onRerun, onDelete, onStop }: TaskListProps) {
   const { t } = useI18n();
 
   if (loading && tasks.length === 0) {
@@ -53,6 +54,7 @@ export function TaskList({ tasks, loading, error, onResume, onRerun, onDelete }:
           onResume={onResume}
           onRerun={onRerun}
           onDelete={onDelete}
+          onStop={onStop}
         />
       ))}
     </div>

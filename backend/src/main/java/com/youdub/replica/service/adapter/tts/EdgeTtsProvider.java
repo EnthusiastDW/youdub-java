@@ -18,9 +18,13 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 /**
@@ -82,6 +86,8 @@ public class EdgeTtsProvider implements TtsProvider {
         log.info("执行 Edge-TTS：task={}, 共 {} 句, voice={}", task.getId(), items.size(), useVoice);
         Semaphore semaphore = new Semaphore(CONCURRENCY);
         AtomicInteger completed = new AtomicInteger(0);
+        AtomicBoolean stopped = new AtomicBoolean(false);
+        Set<Process> activeProcesses = ConcurrentHashMap.newKeySet();
         int total = items.size();
 
         List<CompletableFuture<Void>> futures = new ArrayList<>();
@@ -90,6 +96,11 @@ public class EdgeTtsProvider implements TtsProvider {
                 try {
                     semaphore.acquire();
                     try {
+                        // 停止检查：被取消后不再启动新的 edge-tts 进程
+                        if (stopped.get() || Thread.currentThread().isInterrupted()) {
+                            return;
+                        }
+
                         Path outputFile = ttsDir.resolve(String.format("%04d.wav", item.index));
                         if (Files.exists(outputFile) && Files.size(outputFile) > 0) {
                             log.debug("TTS 输出已存在，跳过：{}", outputFile);
@@ -105,7 +116,8 @@ public class EdgeTtsProvider implements TtsProvider {
                         command.add("--write-media");
                         command.add(outputFile.toString());
 
-                        CommandRunner.run(Command.builder().add(command).timeout(TIMEOUT_MS).workDir(ttsDir).build());
+                        CommandRunner.run(Command.builder().add(command).timeout(TIMEOUT_MS).workDir(ttsDir).build(),
+                                process -> activeProcesses.add(process));
                         int done = completed.incrementAndGet();
                         if (done % 10 == 0 || done == total) {
                             log.info("TTS 进度：{}/{}", done, total);
@@ -115,7 +127,6 @@ public class EdgeTtsProvider implements TtsProvider {
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                    throw new RuntimeException("TTS 被中断", e);
                 } catch (Exception e) {
                     throw new RuntimeException("Edge-TTS 失败：" + item.text, e);
                 }
@@ -123,8 +134,27 @@ public class EdgeTtsProvider implements TtsProvider {
             futures.add(future);
         }
 
-        for (CompletableFuture<Void> f : futures) {
-            f.join();
+        try {
+            for (CompletableFuture<Void> f : futures) {
+                f.get();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            stopped.set(true);
+            futures.forEach(f -> f.cancel(true));
+            // 直接杀所有已启动的 edge-tts 进程
+            for (Process p : activeProcesses) {
+                if (p.isAlive()) {
+                    p.descendants().forEach(ProcessHandle::destroyForcibly);
+                    p.destroyForcibly();
+                }
+            }
+            throw new RuntimeException("TTS 被用户中止", e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException re) throw re;
+            if (cause instanceof Error err) throw err;
+            throw new RuntimeException(cause);
         }
         log.info("Edge-TTS 完成：task={}, dir={}", task.getId(), ttsDir);
     }

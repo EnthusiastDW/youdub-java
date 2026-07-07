@@ -6,7 +6,7 @@ import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.repository.TaskRepository;
 import com.youdub.replica.service.SettingsService;
-import com.youdub.replica.service.adapter.AdapterSkipTracker;
+
 import com.youdub.replica.util.Command;
 import com.youdub.replica.util.CommandRunner;
 import lombok.RequiredArgsConstructor;
@@ -51,7 +51,6 @@ public class FfmpegVideoProcessor implements VideoProcessor {
     private final ObjectMapper objectMapper;
     private final SettingsService settingsService;
     private final TaskRepository taskRepository;
-    private final AdapterSkipTracker skipTracker;
 
     /**
      * Auto-detect the best available video encoder.
@@ -217,7 +216,6 @@ public class FfmpegVideoProcessor implements VideoProcessor {
         if (Files.exists(finalVideo) && Files.size(finalVideo) > 0) {
             log.info("最终视频已存在，跳过：{}", finalVideo);
             taskRepository.updateField(task.getId(), "final_video_path", finalVideo.toAbsolutePath().toString());
-            skipTracker.markSkipped();
             return;
         }
 
@@ -297,7 +295,6 @@ public class FfmpegVideoProcessor implements VideoProcessor {
         if (Files.exists(finalVideo) && Files.size(finalVideo) > 0) {
             log.info("最终视频已存在，跳过：{}", finalVideo);
             taskRepository.updateField(task.getId(), "final_video_path", finalVideo.toAbsolutePath().toString());
-            skipTracker.markSkipped();
             return;
         }
 

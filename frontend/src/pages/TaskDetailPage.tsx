@@ -1,8 +1,9 @@
 import { useState, useEffect } from "react";
 import { useParams, useNavigate, Link } from "react-router-dom";
-import { ArrowLeft, Download, Play, RotateCcw, Trash2, Loader2, AlertCircle, Pencil, Check, X, Copy } from "lucide-react";
+import { ArrowLeft, Download, Play, RotateCcw, Square, Trash2, Loader2, AlertCircle, Pencil, Check, X, Copy } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { StageProgress } from "@/components/StageProgress";
+import { RedoStageDialog } from "@/components/RedoStageDialog";
 import { LogViewer } from "@/components/LogViewer";
 import { VideoPlayer } from "@/components/VideoPlayer";
 import { DeleteTaskDialog } from "@/components/DeleteTaskDialog";
@@ -17,7 +18,7 @@ import { useI18n } from "@/i18n/index";
 import { statusBadgeClass } from "@/lib/status";
 import { formatDateTime, getYoutubeThumbnailUrl, downloadImage } from "@/lib/utils";
 import { coverDownloadName } from "@/utils/fileName";
-import { rerunTask, resumeTask, continueTask, deleteTask, redoStage, updateTaskNotes, updateTaskYoutubeVideoId, getTaskSummary, updateTaskSummary } from "@/api/client";
+import { rerunTask, resumeTask, continueTask, deleteTask, redoStage, stopTask, updateTaskNotes, updateTaskYoutubeVideoId, getTaskSummary, updateTaskSummary } from "@/api/client";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { marked } from "marked";
@@ -27,10 +28,11 @@ export default function TaskDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { t, statusLabel, stageLabel } = useI18n();
-  const { task, log, loading, error } = useTask(id, 10000);
+  const { task, log, loading, error, refresh } = useTask(id, 10000);
 
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+const [redoStageTarget, setRedoStageTarget] = useState<{ name: string; label: string } | null>(null);
 
   // ── Notes edit ──
   const [editingNotes, setEditingNotes] = useState(false);
@@ -110,18 +112,23 @@ export default function TaskDetailPage() {
   const isFailed = task.status === "failed";
   const isPaused = task.status === "paused";
   const isSucceeded = task.status === "succeeded";
-  const canRedo = task.executionMode === "manual" && !isRunning;
+  const canRedo = !isRunning;
 
   const handleAction = async (action: string, fn: () => Promise<unknown>) => {
     setActionLoading(action);
     try {
       await fn();
+      refresh();
     } finally {
       setActionLoading(null);
     }
   };
 
   const handleResume = () => handleAction("resume", () => resumeTask(task.id));
+  const handleStop = () => {
+    if (!window.confirm(t.task.stopConfirm)) return;
+    handleAction("stop", () => stopTask(task.id));
+  };
   const handleRerun = () =>
     handleAction("rerun", async () => {
       if (!window.confirm(t.task.rerunTitle)) return;
@@ -140,11 +147,15 @@ export default function TaskDetailPage() {
       setActionLoading(null);
     }
   };
-  const handleRedoStage = (stageName: string) =>
-    handleAction(`redo-${stageName}`, async () => {
-      if (!window.confirm(t.task.redoStageTitle)) return;
-      await redoStage(task.id, stageName);
-    });
+  const handleRedoStage = (stageName: string) => {
+    const stage = task.stages.find(s => s.name === stageName);
+    setRedoStageTarget({ name: stageName, label: stageLabel(stageName, stage?.label) });
+  };
+  const handleConfirmRedoStage = async () => {
+    if (!redoStageTarget) return;
+    await handleAction(`redo-${redoStageTarget.name}`, () => redoStage(task.id, redoStageTarget.name));
+    setRedoStageTarget(null);
+  };
 
   // ── Notes edit ──
   const startEditNotes = () => {
@@ -409,6 +420,20 @@ export default function TaskDetailPage() {
                   </Button>
                 </>
               )}
+              {isRunning && (
+                <Button
+                  variant="outline"
+                  onClick={handleStop}
+                  disabled={actionLoading === "stop"}
+                >
+                  {actionLoading === "stop" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Square className="h-4 w-4" />
+                  )}
+                  {t.task.stopTask}
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 onClick={handleRerun}
@@ -515,6 +540,17 @@ export default function TaskDetailPage() {
           task={task}
           onConfirm={handleConfirmDelete}
           loading={actionLoading === "delete"}
+        />
+      )}
+
+      {redoStageTarget && (
+        <RedoStageDialog
+          open={!!redoStageTarget}
+          onClose={() => setRedoStageTarget(null)}
+          stageName={redoStageTarget.name}
+          stageLabel={redoStageTarget.label}
+          onConfirm={handleConfirmRedoStage}
+          loading={actionLoading?.startsWith("redo-") ?? false}
         />
       )}
     </div>

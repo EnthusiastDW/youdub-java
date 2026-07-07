@@ -2,8 +2,9 @@ package com.youdub.replica.service.adapter.separate;
 
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
-import com.youdub.replica.service.adapter.AdapterSkipTracker;
+
 import com.youdub.replica.service.SettingsService;
+import com.youdub.replica.util.HttpUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -37,7 +38,6 @@ public class AudioSeparatorApiSeparator extends BaseSourceSeparator {
 
     private final HttpClient httpClient;
     private final SettingsService settingsService;
-    private final AdapterSkipTracker skipTracker;
 
     @Override
     public void separate(Task task, Path audioPath, Path outputDir, String device) throws Exception {
@@ -56,7 +56,6 @@ public class AudioSeparatorApiSeparator extends BaseSourceSeparator {
         Path bgmOut = outputDir.resolve("audio_bgm.wav");
         if (Files.exists(vocalsOut)) {
             log.info("分离结果已存在，跳过：{}", outputDir);
-            skipTracker.markSkipped();
             return;
         }
 
@@ -103,12 +102,9 @@ public class AudioSeparatorApiSeparator extends BaseSourceSeparator {
             long tApi = System.currentTimeMillis();
             HttpResponse<byte[]> response;
             try {
-                response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+                response = HttpUtil.sendInterruptible(httpClient, request, HttpResponse.BodyHandlers.ofByteArray());
             } catch (IOException e) {
                 throw new RuntimeException("audio-separator 服务连接失败（请确认服务已启动且可达：" + apiUrl + "）：" + e.getMessage(), e);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new RuntimeException("audio-separator 请求被中断", e);
             }
             long apiElapsed = System.currentTimeMillis() - tApi;
 

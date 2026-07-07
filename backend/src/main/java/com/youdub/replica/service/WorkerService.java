@@ -3,6 +3,7 @@ package com.youdub.replica.service;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.model.enums.TaskStatus;
 import com.youdub.replica.repository.TaskRepository;
+import com.youdub.replica.util.CommandRunner;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -31,6 +32,7 @@ public class WorkerService {
     private final PipelineOrchestrator pipelineOrchestrator;
 
     private final Map<String, Future<?>> runningTasks = new ConcurrentHashMap<>();
+    private final Map<String, Thread> taskThreads = new ConcurrentHashMap<>();
 
     /**
      * 提交任务到线程池执行。
@@ -45,6 +47,7 @@ public class WorkerService {
         }
         log.info("入队任务：{}", taskId);
         Future<?> future = taskExecutor.submit(() -> {
+            taskThreads.put(taskId, Thread.currentThread());
             MDC.put("taskId", taskId);
             try {
                 log.info("开始执行任务：{}", taskId);
@@ -58,30 +61,12 @@ public class WorkerService {
                     log.error("更新任务状态失败：taskId={}", taskId, ex);
                 }
             } finally {
+                taskThreads.remove(taskId);
                 runningTasks.remove(taskId);
                 MDC.remove("taskId");
             }
         });
         runningTasks.put(taskId, future);
-    }
-
-    /**
-     * 取消运行中的任务。
-     */
-    public void cancelTask(String taskId) {
-        Future<?> future = runningTasks.get(taskId);
-        if (future != null) {
-            future.cancel(true);
-            runningTasks.remove(taskId);
-            log.info("已取消任务：{}", taskId);
-        } else {
-            log.warn("任务未在运行中：{}", taskId);
-        }
-        try {
-            taskRepository.updateStatus(taskId, TaskStatus.CANCELLED, 0.0);
-        } catch (Exception e) {
-            log.warn("更新任务状态为 CANCELLED 失败：{}", e.getMessage());
-        }
     }
 
     /**
@@ -93,12 +78,16 @@ public class WorkerService {
     }
 
     /**
-     * 取消所有运行中的任务。
-     * 用于测试清理或应用关闭时释放线程池资源。
+     * 中断任务线程（用于任务停止）。
      */
-    public void cancelAllRunningTasks() {
-        for (String taskId : new java.util.ArrayList<>(runningTasks.keySet())) {
-            cancelTask(taskId);
+    public void interruptTask(String taskId) {
+        Thread thread = taskThreads.get(taskId);
+        if (thread != null) {
+            thread.interrupt();
+            CommandRunner.killProcesses(thread);
+            log.info("已发送中断信号：task={}", taskId);
+        } else {
+            log.warn("任务线程不存在，无法中断：{}", taskId);
         }
     }
 

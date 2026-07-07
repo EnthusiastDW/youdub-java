@@ -1,7 +1,7 @@
 package com.youdub.replica.service.adapter.separate;
 
 import com.youdub.replica.model.entity.Task;
-import com.youdub.replica.service.adapter.AdapterSkipTracker;
+
 import com.youdub.replica.util.Command;
 import com.youdub.replica.util.CommandRunner;
 import lombok.RequiredArgsConstructor;
@@ -31,7 +31,6 @@ public class FfmpegSimpleSeparator extends BaseSourceSeparator {
 
     private static final long TIMEOUT_MS = 120_000L;
 
-    private final AdapterSkipTracker skipTracker;
 
     @Override
     public void separate(Task task, Path audioPath, Path outputDir, String device) throws Exception {
@@ -48,7 +47,6 @@ public class FfmpegSimpleSeparator extends BaseSourceSeparator {
         Path vocalsOut = outputDir.resolve("audio_vocals.wav");
         if (Files.exists(vocalsOut)) {
             log.info("人声分离结果已存在，跳过：{}", outputDir);
-            skipTracker.markSkipped();
             return;
         }
 

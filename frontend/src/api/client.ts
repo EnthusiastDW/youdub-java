@@ -122,6 +122,12 @@ export function continueTask(taskId: string, executionMode?: ExecutionMode) {
   });
 }
 
+export function stopTask(taskId: string) {
+  return request<Task>(`/api/tasks/${taskId}/stop`, {
+    method: "POST",
+  });
+}
+
 export function redoStage(taskId: string, stageName: string) {
   return request<Task>(`/api/tasks/${taskId}/stages/${stageName}/redo`, {
     method: "POST",

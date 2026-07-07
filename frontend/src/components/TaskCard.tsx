@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Download, Play, RotateCcw, Trash2, ArrowRight, AlertCircle } from "lucide-react";
+import { Download, Play, RotateCcw, Trash2, ArrowRight, AlertCircle, Square } from "lucide-react";
 import type { Task } from "@/types";
 import { useI18n } from "@/i18n/index";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,9 +16,10 @@ interface TaskCardProps {
   onResume?: (task: Task) => void;
   onRerun?: (task: Task) => void;
   onDelete?: (task: Task) => void;
+  onStop?: (task: Task) => void;
 }
 
-export function TaskCard({ task, onResume, onRerun, onDelete }: TaskCardProps) {
+export function TaskCard({ task, onResume, onRerun, onDelete, onStop }: TaskCardProps) {
   const { t, statusLabel, stageLabel } = useI18n();
   const isRunning = task.status === "running";
   const isFailed = task.status === "failed";
@@ -89,6 +90,16 @@ export function TaskCard({ task, onResume, onRerun, onDelete }: TaskCardProps) {
                 {t.task.overview}
                 <ArrowRight className="h-3.5 w-3.5" />
               </Link>
+              {isRunning && onStop && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => onStop(task)}
+                >
+                  <Square className="h-3.5 w-3.5" />
+                  {t.task.stopTask}
+                </Button>
+              )}
               {isFailed && onResume && (
                 <Button
                   size="sm"

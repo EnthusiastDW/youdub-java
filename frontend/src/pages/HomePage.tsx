@@ -8,7 +8,7 @@ import { DeleteTaskDialog } from "@/components/DeleteTaskDialog";
 import { Button } from "@/components/ui/button";
 import { useTasks } from "@/hooks/useTasks";
 import { useI18n } from "@/i18n/index";
-import { rerunTask, resumeTask, deleteTask } from "@/api/client";
+import { rerunTask, resumeTask, deleteTask, stopTask } from "@/api/client";
 import type { Task } from "@/types";
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
@@ -46,6 +46,16 @@ export default function HomePage() {
   const handleRerun = async (task: Task) => {
     try {
       await rerunTask(task.id);
+      refresh();
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleStop = async (task: Task) => {
+    if (!window.confirm(t.task.stopConfirm)) return;
+    try {
+      await stopTask(task.id);
       refresh();
     } catch {
       // ignore
@@ -97,6 +107,7 @@ export default function HomePage() {
             onResume={handleResume}
             onRerun={handleRerun}
             onDelete={handleDelete}
+            onStop={handleStop}
           />
 
           {total > pageSize && (

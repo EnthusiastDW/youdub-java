@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.repository.TaskRepository;
-import com.youdub.replica.service.adapter.AdapterSkipTracker;
+
 import com.youdub.replica.util.TaskDirResolver;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -30,7 +30,6 @@ public class LocalFileDownloader implements Downloader {
     private final TaskRepository taskRepository;
     private final TaskDirResolver taskDirResolver;
     private final ObjectMapper objectMapper;
-    private final AdapterSkipTracker skipTracker;
 
     @Override
     public void download(Task task, Path workFolder, Path cookiesDir, String proxy) throws Exception {
@@ -42,7 +41,6 @@ public class LocalFileDownloader implements Downloader {
         Path outputFile = mediaDir.resolve("video_source.mp4");
         if (Files.exists(outputFile) && Files.size(outputFile) > 0) {
             log.info("本地视频已存在，跳过复制：{}", outputFile);
-            skipTracker.markSkipped();
             taskRepository.updateField(task.getId(), "session_path", workFolder.toString());
             return;
         }

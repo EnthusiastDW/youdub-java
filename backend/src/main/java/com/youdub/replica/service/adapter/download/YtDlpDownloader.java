@@ -6,7 +6,7 @@ import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.repository.TaskRepository;
 import com.youdub.replica.service.SettingsService;
-import com.youdub.replica.service.adapter.AdapterSkipTracker;
+
 import com.youdub.replica.util.Command;
 import com.youdub.replica.util.CommandRunner;
 import lombok.RequiredArgsConstructor;
@@ -32,7 +32,6 @@ public class YtDlpDownloader implements Downloader {
     private final TaskRepository taskRepository;
     private final ObjectMapper objectMapper;
     private final SettingsService settingsService;
-    private final AdapterSkipTracker skipTracker;
 
     @Override
     public void download(Task task, Path workFolder, Path cookiesDir, String proxy) throws Exception {
@@ -53,7 +52,6 @@ public class YtDlpDownloader implements Downloader {
         Path outputFile = mediaDir.resolve(outputFilename);
         if (Files.exists(outputFile) && Files.size(outputFile) > 0) {
             log.info("视频已存在，跳过下载：{}", outputFile);
-            skipTracker.markSkipped();
             taskRepository.updateField(task.getId(), "session_path", workFolder.toString());
             return;
         }

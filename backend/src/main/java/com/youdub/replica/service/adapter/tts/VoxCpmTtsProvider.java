@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.service.SettingsService;
+import com.youdub.replica.util.HttpUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -21,6 +22,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -149,7 +151,7 @@ public class VoxCpmTtsProvider implements TtsProvider {
                                 .POST(HttpRequest.BodyPublishers.ofByteArray(bodyBuilder.toByteArray()))
                                 .build();
 
-                        HttpResponse<byte[]> response = httpClient.send(request, HttpResponse.BodyHandlers.ofByteArray());
+                        HttpResponse<byte[]> response = HttpUtil.sendInterruptible(httpClient, request, HttpResponse.BodyHandlers.ofByteArray());
                         if (response.statusCode() != 200) {
                             String errorBody = new String(response.body(), java.nio.charset.StandardCharsets.UTF_8);
                             throw new RuntimeException("VoxCPM API 调用失败 [" + response.statusCode() + "]: " + errorBody);
@@ -173,8 +175,19 @@ public class VoxCpmTtsProvider implements TtsProvider {
             futures.add(future);
         }
 
-        for (CompletableFuture<Void> f : futures) {
-            f.join();
+        try {
+            for (CompletableFuture<Void> f : futures) {
+                f.get();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            futures.forEach(f -> f.cancel(true));
+            throw new RuntimeException("TTS 被用户中止", e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException re) throw re;
+            if (cause instanceof Error err) throw err;
+            throw new RuntimeException(cause);
         }
         log.info("VoxCPM TTS 完成：task={}, dir={}", task.getId(), ttsDir);
     }

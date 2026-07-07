@@ -38,9 +38,7 @@ class WorkerServiceE2ETest {
 
     @BeforeEach
     void cleanup() throws InterruptedException {
-        // 先取消所有运行中的任务以释放线程池（任务可能已被删除但线程仍在运行）
-        workerService.cancelAllRunningTasks();
-        // 等待被中断的线程释放（yt-dlp 子进程销毁可能需要一些时间）
+        // 等待可能仍在运行的线程释放
         Thread.sleep(2000);
 
         // 清理数据库中的剩余任务
@@ -58,13 +56,6 @@ class WorkerServiceE2ETest {
                 }
             }
         }
-    }
-
-    @AfterEach
-    void cancelRunningTasks() throws InterruptedException {
-        // 每个测试结束后取消运行中的任务，释放线程池供下一个测试使用
-        workerService.cancelAllRunningTasks();
-        Thread.sleep(500);
     }
 
     @Test
@@ -145,27 +136,4 @@ class WorkerServiceE2ETest {
         assertFalse(task.getErrorMessage().isEmpty());
     }
 
-    @Test
-    void cancelTask_shouldUpdateStatus() {
-        // 创建任务
-        TaskCreateRequest request = new TaskCreateRequest();
-        request.setUrl("invalid://cancelTaskTest1");
-        request.setExecutionMode("auto");
-
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<TaskCreateRequest> entity = new HttpEntity<>(request, headers);
-
-        org.springframework.http.ResponseEntity<TaskResponse> resp =
-                restTemplate.postForEntity("/api/tasks", entity, TaskResponse.class);
-        String taskId = resp.getBody().getId();
-
-        // 取消任务
-        workerService.cancelTask(taskId);
-
-        // 验证状态已更新
-        Task task = taskRepository.findById(taskId);
-        assertNotNull(task);
-        assertEquals(TaskStatus.CANCELLED, task.getStatus());
-    }
 }

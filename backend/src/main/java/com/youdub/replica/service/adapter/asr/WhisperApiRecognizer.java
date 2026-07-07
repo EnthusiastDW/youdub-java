@@ -7,7 +7,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.service.SettingsService;
-import com.youdub.replica.service.adapter.AdapterSkipTracker;
+
+import com.youdub.replica.util.HttpUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -35,7 +36,6 @@ public class WhisperApiRecognizer implements SpeechRecognizer {
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final SettingsService settingsService;
-    private final AdapterSkipTracker skipTracker;
 
     @Override
     public void transcribe(Task task, Path audioPath, Path outputDir, String language) throws Exception {
@@ -49,7 +49,6 @@ public class WhisperApiRecognizer implements SpeechRecognizer {
         Path asrFile = outputDir.resolve("asr.json");
         if (Files.exists(asrFile)) {
             log.info("ASR 结果已存在，跳过：{}", asrFile);
-            skipTracker.markSkipped();
             return;
         }
 
@@ -83,7 +82,7 @@ public class WhisperApiRecognizer implements SpeechRecognizer {
                 .build();
 
         log.info("调用 OpenAI Whisper API：task={}, audio={}, url={}", task.getId(), audioPath, urlBuilder);
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        HttpResponse<String> response = HttpUtil.sendInterruptible(httpClient, request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
 
         if (response.statusCode() != 200) {
             throw new RuntimeException("Whisper API 调用失败 [" + response.statusCode() + "]：" + response.body());

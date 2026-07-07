@@ -39,9 +39,7 @@ class TaskControllerE2ETest {
 
     @BeforeEach
     void cleanup() throws InterruptedException {
-        // 先取消所有运行中的任务以释放线程池（删除数据库记录不会停止运行中的线程）
-        workerService.cancelAllRunningTasks();
-        // 等待被中断的线程释放
+        // 等待可能仍在运行的线程释放
         Thread.sleep(500);
 
         // 清理已有任务，避免重复检测干扰
@@ -59,13 +57,6 @@ class TaskControllerE2ETest {
                 }
             }
         }
-    }
-
-    @AfterEach
-    void cancelRunningTasks() throws InterruptedException {
-        // 每个测试结束后取消运行中的任务，避免线程池被耗尽影响后续测试类
-        workerService.cancelAllRunningTasks();
-        Thread.sleep(500);
     }
 
     @Test

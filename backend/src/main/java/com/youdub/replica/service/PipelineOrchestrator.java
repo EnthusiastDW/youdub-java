@@ -5,16 +5,15 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
-import com.youdub.replica.service.adapter.asr.SubtitleParser;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.model.entity.TaskStage;
 import com.youdub.replica.model.enums.StageStatus;
 import com.youdub.replica.model.enums.TaskStatus;
 import com.youdub.replica.repository.SettingsRepository;
 import com.youdub.replica.repository.TaskRepository;
-import com.youdub.replica.service.adapter.AdapterSkipTracker;
 import com.youdub.replica.service.adapter.asr.AsrCorrector;
 import com.youdub.replica.service.adapter.asr.SpeechRecognizer;
+import com.youdub.replica.service.adapter.asr.SubtitleParser;
 import com.youdub.replica.service.adapter.audio.AudioProcessor;
 import com.youdub.replica.service.adapter.download.Downloader;
 import com.youdub.replica.service.adapter.separate.SourceSeparator;
@@ -24,20 +23,18 @@ import com.youdub.replica.service.adapter.video.VideoProcessor;
 import com.youdub.replica.util.DeviceResolver;
 import com.youdub.replica.util.FilenameUtils;
 import com.youdub.replica.util.TaskDirResolver;
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Service;
 
-import java.net.http.HttpClient;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
 import java.util.Map;
-import jakarta.annotation.PostConstruct;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
 
 import static com.youdub.replica.service.adapter.AdapterConstants.*;
@@ -56,10 +53,7 @@ public class PipelineOrchestrator {
     private final SettingsService settingsService;
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
-    private final HttpClient httpClient;
 
-    @Qualifier("virtualExecutor")
-    private final ExecutorService virtualExecutor;
     private final TaskDirResolver taskDirResolver;
     private final DeviceResolver deviceResolver;
 
@@ -72,9 +66,22 @@ public class PipelineOrchestrator {
     private final Map<String, TtsProvider> ttsProviders;
     private final Map<String, AudioProcessor> audioProcessors;
     private final Map<String, VideoProcessor> videoProcessors;
-    private final AdapterSkipTracker skipTracker;
 
     private final Map<String, Semaphore> stageGates = new ConcurrentHashMap<>();
+    private final Set<String> taskStopFlags = ConcurrentHashMap.newKeySet();
+
+    /** 标记任务需要停止（由 TaskService 触发）。停止时整个任务退出，不会继续执行下一阶段。 */
+    public void markTaskStop(String taskId) {
+        taskStopFlags.add(taskId);
+    }
+
+    private boolean isTaskStopped(String taskId) {
+        return taskStopFlags.contains(taskId);
+    }
+
+    private void clearTaskStop(String taskId) {
+        taskStopFlags.remove(taskId);
+    }
 
     private static final Map<String, Integer> DEFAULT_STAGE_CONCURRENCY = Map.ofEntries(
             Map.entry("download", 2),
@@ -98,12 +105,6 @@ public class PipelineOrchestrator {
             log.info("步骤并发门控初始化：{} = {}", stage, permits);
         });
     }
-
-    /**
-     * 重跑/重做时的阶段时间戳备份（taskId -> {stageName -> [startedAt, completedAt]}）。
-     * TaskService 在 resetStagesFrom 前写入，PipelineOrchestrator 在阶段执行后消费并清理。
-     */
-    static final Map<String, Map<String, String[]>> stageTimestampsBackup = new ConcurrentHashMap<>();
 
     /** 10 个阶段定义 */
     private static final List<StageDef> STAGES = List.of(
@@ -161,12 +162,19 @@ public class PipelineOrchestrator {
                 Task current = taskRepository.findById(taskId);
                 if (current.getStatus() == TaskStatus.PAUSED) {
                     log.info("任务已暂停，退出管线：task={}, stage={}", taskId, stage.name);
-                    stageTimestampsBackup.remove(taskId);
                     return;
                 }
                 if (current.getStatus() == TaskStatus.CANCELLED) {
                     log.info("任务已取消，退出管线：task={}", taskId);
-                    stageTimestampsBackup.remove(taskId);
+                    return;
+                }
+                // 检查任务停止标记（用户点击停止按钮时触发）
+                if (isTaskStopped(taskId)) {
+                    log.warn("任务已被用户停止：task={}", taskId);
+                    clearTaskStop(taskId);
+                    taskRepository.updateStatus(taskId, TaskStatus.FAILED, task.getProgress());
+                    taskRepository.updateField(taskId, "error_message", "用户停止");
+                    taskRepository.updateField(taskId, "completed_at", nowIso());
                     return;
                 }
 
@@ -188,17 +196,22 @@ public class PipelineOrchestrator {
                 try {
                     executeStage(stage.name, task, sessionDir);
                     taskRepository.updateStageStatus(taskId, stage.name, StageStatus.SUCCEEDED, 100, "");
-
-                    // adapter 显式标记跳过 → 恢复原始时间戳
-                    if (skipTracker.isSkipped()) {
-                        restoreStageTimestampsIfSkipped(taskId, stage.name);
-                    }
-                    skipTracker.clear();
-
                     double overallProgress = ((activeStages.indexOf(stage) + 1) * 100.0) / activeStages.size();
                     taskRepository.updateStatus(taskId, TaskStatus.RUNNING, overallProgress);
                     log.info("阶段完成：task={}, stage={}", taskId, stage.name);
                 } catch (Exception e) {
+                    // 用户停止整个任务 → 标记为 FAILED，退出管线
+                    if (isTaskStopped(taskId)) {
+                        log.warn("任务被用户停止：task={}, stage={}", taskId, stage.name);
+                        clearTaskStop(taskId);
+                        Thread.interrupted();
+                        taskRepository.updateStageStatus(taskId, stage.name, StageStatus.FAILED, 0, "用户停止");
+                        taskRepository.updateStatus(taskId, TaskStatus.FAILED, stageProgressBase);
+                        taskRepository.updateField(taskId, "error_message", "用户停止");
+                        taskRepository.updateField(taskId, "completed_at", nowIso());
+                        return;
+                    }
+                    // 真实失败 → 退出整个任务
                     log.error("阶段失败：task={}, stage={}", taskId, stage.name, e);
                     taskRepository.updateStageStatus(taskId, stage.name, StageStatus.FAILED, 0, e.getMessage());
                     taskRepository.updateStatus(taskId, TaskStatus.FAILED, stageProgressBase);
@@ -208,7 +221,7 @@ public class PipelineOrchestrator {
                 }
 
                 // 手动模式下，每个阶段成功后暂停
-                if ("manual".equalsIgnoreCase(task.getExecutionMode())) {
+                if (isManualMode(task)) {
                     log.info("手动模式，暂停任务：task={}, stage={}", taskId, stage.name);
                     taskRepository.updateStatus(taskId, TaskStatus.PAUSED, stageProgressBase + 100.0 / activeStages.size());
                     return;
@@ -228,8 +241,7 @@ public class PipelineOrchestrator {
             taskRepository.updateField(taskId, "error_message", e.getMessage());
             taskRepository.updateField(taskId, "completed_at", nowIso());
         } finally {
-            skipTracker.clear();
-            stageTimestampsBackup.remove(taskId);
+            taskStopFlags.remove(taskId);
         }
     }
 
@@ -386,11 +398,6 @@ public class PipelineOrchestrator {
         Path correctedFile = metadataDir.resolve("asr_corrected.json");
         Path asrFile = Files.exists(correctedFile) ? correctedFile : metadataDir.resolve("asr.json");
         Path fixedFile = metadataDir.resolve("asr_fixed.json");
-        if (Files.exists(fixedFile)) {
-            log.info("asr_fixed 已存在，跳过：{}", fixedFile);
-            skipTracker.markSkipped();
-            return;
-        }
         if (!Files.exists(asrFile)) {
             throw new RuntimeException("ASR 文件不存在：" + asrFile);
         }
@@ -548,30 +555,15 @@ public class PipelineOrchestrator {
         }
     }
 
-    /**
-     * 阶段执行完后检查：如果 adapter 显式标记跳过（输出文件已存在），
-     * 且备份中有该阶段的原始时间戳，则恢复之，保留上次的耗时数据。
-     */
-    private void restoreStageTimestampsIfSkipped(String taskId, String stageName) {
-        Map<String, String[]> backup = stageTimestampsBackup.get(taskId);
-        if (backup == null) {
-            return;
-        }
-
-        String[] orig = backup.get(stageName);
-        if (orig == null || orig[0] == null) {
-            return;
-        }
-
-        log.info("阶段 {} 缓存命中，恢复原始时间戳", stageName);
-        taskRepository.updateStageTimestamps(taskId, stageName, orig[0], orig[1]);
-    }
-
     private TaskStage findStage(List<TaskStage> stages, String name) {
         if (stages == null) {
             return null;
         }
         return stages.stream().filter(s -> name.equals(s.getName())).findFirst().orElse(null);
+    }
+
+    private boolean isManualMode(Task task) {
+        return "manual".equalsIgnoreCase(task.getExecutionMode());
     }
 
     private String nowIso() {

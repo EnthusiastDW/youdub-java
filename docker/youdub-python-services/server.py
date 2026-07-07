@@ -29,7 +29,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, APIRouter, File, Form, HTTPException, UploadFile, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import Response as FastAPIResponse
+from fastapi.responses import Response as FastAPIResponse, StreamingResponse
 
 # ============================================================
 # Logging Configuration
@@ -177,8 +177,9 @@ def _get_separator(model_filename: str):
         _separator_instance = Separator(
             model_file_dir=str(MODEL_DIR),
             output_format="WAV",
-            # 5 分钟一大块，避免整段加载爆内存，同时把磁盘 I/O 开销控制在 43 块
-            chunk_duration=900,
+            # 10 分钟一大块，避免整段加载爆内存，同时把磁盘 I/O 开销控制在 43 块
+            chunk_duration=600,
+            use_soundfile=True,
         )
         _separator_instance.load_model(model_filename=model_filename)
         _separator_instance._loaded_model = model_filename
@@ -192,7 +193,7 @@ async def list_separator_models():
     return {"model_dir": str(MODEL_DIR), "models": files}
 
 
-@separator_router.post("/separate", response_class=FastAPIResponse)
+@separator_router.post("/separate", response_class=StreamingResponse)
 async def separate_audio(
     file: UploadFile = File(...),
     model_filename: str = Form(SEPARATOR_MODEL),
@@ -208,7 +209,8 @@ async def separate_audio(
     t_total = time.time()
     input_size = 0
 
-    with tempfile.TemporaryDirectory(prefix="audio-sep-") as tmp:
+    tmp = tempfile.mkdtemp(prefix="audio-sep-")
+    try:
         input_path = Path(tmp) / _safe_filename(file.filename)
         try:
             # 流式写入磁盘，避免大文件全量加载到内存
@@ -253,25 +255,38 @@ async def separate_audio(
             vocal_path = Path(output_files[0])
 
         t_zip = time.time()
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        zip_path = os.path.join(tmp, "separated.zip")
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
             if vocal_path and vocal_path.exists():
                 zf.write(vocal_path, "vocals.wav")
             if instrumental_path and instrumental_path.exists():
                 zf.write(instrumental_path, "instrumental.wav")
 
-        buf.seek(0)
+        zip_size = os.path.getsize(zip_path)
         zip_elapsed = time.time() - t_zip
         total_elapsed = time.time() - t_total
         logger.info("Separate done: file=%s, total=%.2fs, zip=%.2fs, response=%dbytes, device=%s",
-                    file.filename, total_elapsed, zip_elapsed, buf.getbuffer().nbytes, SEPARATOR_DEVICE)
-        return FastAPIResponse(
-            content=buf.read(),
+                    file.filename, total_elapsed, zip_elapsed, zip_size, SEPARATOR_DEVICE)
+
+        def zip_stream():
+            # 流式读取 ZIP，响应结束后清理整个临时目录
+            try:
+                with open(zip_path, "rb") as f:
+                    while chunk := f.read(4 * 1024 * 1024):
+                        yield chunk
+            finally:
+                shutil.rmtree(tmp, ignore_errors=True)
+
+        return StreamingResponse(
+            zip_stream(),
             media_type="application/zip",
             headers={
                 "Content-Disposition": f'attachment; filename="separated_{Path(file.filename).stem}.zip"'
             },
         )
+    except Exception:
+        shutil.rmtree(tmp, ignore_errors=True)
+        raise
 
 
 # ============================================================

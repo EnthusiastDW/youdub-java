@@ -7,7 +7,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.service.SettingsService;
-import com.youdub.replica.service.adapter.AdapterSkipTracker;
+
 import com.youdub.replica.util.Command;
 import com.youdub.replica.util.CommandRunner;
 import lombok.RequiredArgsConstructor;
@@ -34,7 +34,6 @@ public class WhisperCppRecognizer implements SpeechRecognizer {
 
     private final ObjectMapper objectMapper;
     private final SettingsService settingsService;
-    private final AdapterSkipTracker skipTracker;
 
     @Override
     public void transcribe(Task task, Path audioPath, Path outputDir, String language) throws Exception {
@@ -46,7 +45,6 @@ public class WhisperCppRecognizer implements SpeechRecognizer {
         Path asrFile = outputDir.resolve("asr.json");
         if (Files.exists(asrFile)) {
             log.info("ASR 结果已存在，跳过：{}", asrFile);
-            skipTracker.markSkipped();
             return;
         }
 

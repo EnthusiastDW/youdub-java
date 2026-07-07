@@ -7,7 +7,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.service.SettingsService;
-import com.youdub.replica.service.adapter.AdapterSkipTracker;
+
+import com.youdub.replica.util.HttpUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -25,6 +26,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -45,7 +47,6 @@ public class OpenAiTranslator extends AbstractTranslator {
     @Qualifier("virtualExecutor")
     private final ExecutorService virtualExecutor;
 
-    private final AdapterSkipTracker skipTracker;
 
     @Override
     public String translateText(String text, String srcLang, String dstLang) throws Exception {
@@ -83,7 +84,6 @@ public class OpenAiTranslator extends AbstractTranslator {
         Path translationFile = outputDir.resolve("translation." + dstLang + ".json");
         if (Files.exists(translationFile)) {
             log.info("翻译结果已存在，跳过：{}", translationFile);
-            skipTracker.markSkipped();
             return;
         }
 
@@ -176,10 +176,21 @@ public class OpenAiTranslator extends AbstractTranslator {
             futures.add(future);
         }
 
-        // 等待所有翻译完成
+        // 等待所有翻译完成（可中断）
         List<String> translations = new ArrayList<>();
-        for (CompletableFuture<String> f : futures) {
-            translations.add(f.join());
+        try {
+            for (CompletableFuture<String> f : futures) {
+                translations.add(f.get());
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            futures.forEach(f -> f.cancel(true));
+            throw new RuntimeException("翻译被用户中止", e);
+        } catch (ExecutionException e) {
+            Throwable cause = e.getCause();
+            if (cause instanceof RuntimeException re) throw re;
+            if (cause instanceof Error err) throw err;
+            throw new RuntimeException(cause);
         }
 
         // 合并结果
@@ -359,7 +370,7 @@ public class OpenAiTranslator extends AbstractTranslator {
                 .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestBody), StandardCharsets.UTF_8))
                 .build();
 
-        HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        HttpResponse<String> response = HttpUtil.sendInterruptible(httpClient, request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (response.statusCode() != 200) {
             throw new RuntimeException("Chat API 调用失败 [" + response.statusCode() + "]：" + response.body());
         }

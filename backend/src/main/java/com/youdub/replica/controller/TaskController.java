@@ -119,6 +119,11 @@ public class TaskController {
         return taskService.redoStage(id, stageName);
     }
 
+    @PostMapping("/{id}/stop")
+    public TaskResponse stopTask(@PathVariable String id) {
+        return taskService.stopTask(id);
+    }
+
     @GetMapping(value = "/{id}/log", produces = MediaType.TEXT_PLAIN_VALUE)
     public String getTaskLog(
             @PathVariable String id,

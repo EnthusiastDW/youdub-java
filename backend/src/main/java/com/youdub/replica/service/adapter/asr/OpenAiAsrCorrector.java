@@ -7,7 +7,8 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.service.SettingsService;
-import com.youdub.replica.service.adapter.AdapterSkipTracker;
+
+import com.youdub.replica.util.HttpUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -42,7 +43,6 @@ public class OpenAiAsrCorrector implements AsrCorrector {
     private final HttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final SettingsService settingsService;
-    private final AdapterSkipTracker skipTracker;
 
     /** 重试次数上限 */
     private static final int MAX_RETRIES = 3;
@@ -73,7 +73,6 @@ public class OpenAiAsrCorrector implements AsrCorrector {
         Path correctedFile = outputDir.resolve(CORRECTED_FILE);
         if (Files.exists(correctedFile)) {
             log.info("ASR 纠错结果已存在，跳过：{}", correctedFile);
-            skipTracker.markSkipped();
             return;
         }
 
@@ -278,7 +277,7 @@ public class OpenAiAsrCorrector implements AsrCorrector {
                         objectMapper.writeValueAsString(requestBody), StandardCharsets.UTF_8))
                 .build();
 
-        HttpResponse<String> response = httpClient.send(request,
+        HttpResponse<String> response = HttpUtil.sendInterruptible(httpClient, request,
                 HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
         if (response.statusCode() != 200) {
             throw new RuntimeException("Chat API 调用失败 [" + response.statusCode() + "]：" + response.body());

@@ -214,14 +214,6 @@ public class TaskRepository {
         return jdbcTemplate.query(sql, STAGE_ROW_MAPPER, taskId);
     }
     /**
-     * 直接更新阶段的 started_at/completed_at（用于恢复原始时间戳）。
-     */
-    public void updateStageTimestamps(String taskId, String stageName, String startedAt, String completedAt) {
-        String sql = "UPDATE task_stages SET started_at = ?, completed_at = ? WHERE task_id = ? AND name = ?";
-        jdbcTemplate.update(sql, startedAt, completedAt, taskId, stageName);
-    }
-
-    /**
      * 从指定阶段开始重置为 pending（包括该阶段）。
      */
     public void resetStagesFrom(String taskId, String stageName) {

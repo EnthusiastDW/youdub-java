@@ -19,15 +19,14 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.DirectoryStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.UUID;
@@ -51,6 +50,7 @@ public class TaskService {
     private final AppProperties appProperties;
     private final TaskDirResolver taskDirResolver;
     private final WorkerService workerService;
+    private final PipelineOrchestrator pipelineOrchestrator;
     private final SettingsService settingsService;
 
     private static final DateTimeFormatter ISO = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -253,19 +253,16 @@ public class TaskService {
     }
 
     /**
-     * 重跑任务（重置所有阶段）。
+     * 重跑任务（从头重做，删除所有阶段产物）。
      */
     public TaskResponse rerunTask(String id) {
         Task task = taskRepository.findById(id);
         if (task == null) {
             throw new NoSuchElementException("任务不存在：" + id);
         }
-        // 备份各阶段原始时间戳，供 PipelineOrchestrator 在 adapter 缓存命中时恢复
-        Map<String, String[]> backup = new HashMap<>();
-        for (TaskStage stage : task.getStages()) {
-            backup.put(stage.getName(), new String[]{stage.getStartedAt(), stage.getCompletedAt()});
-        }
-        PipelineOrchestrator.stageTimestampsBackup.put(id, backup);
+        // 删除所有阶段的磁盘产物
+        Path sessionDir = taskDirResolver.resolveTaskDir(task);
+        deleteStageOutputsFrom(sessionDir, "download");
 
         taskRepository.resetStagesFrom(id, "download");
         taskRepository.updateStatus(id, TaskStatus.QUEUED, 0.0);
@@ -326,16 +323,9 @@ public class TaskService {
         if (task == null) {
             throw new NoSuchElementException("任务不存在：" + id);
         }
-        // 备份从该阶段开始的原始时间戳（后续阶段可能 adapter 缓存命中）
-        Map<String, String[]> backup = new HashMap<>();
-        boolean found = false;
-        for (TaskStage stage : task.getStages()) {
-            if (stage.getName().equals(stageName)) found = true;
-            if (found) {
-                backup.put(stage.getName(), new String[]{stage.getStartedAt(), stage.getCompletedAt()});
-            }
-        }
-        PipelineOrchestrator.stageTimestampsBackup.put(id, backup);
+        // 删除该阶段及后续所有阶段的磁盘产物
+        Path sessionDir = taskDirResolver.resolveTaskDir(task);
+        deleteStageOutputsFrom(sessionDir, stageName);
 
         taskRepository.resetStagesFrom(id, stageName);
         taskRepository.updateStatus(id, TaskStatus.QUEUED, task.getProgress());
@@ -344,6 +334,20 @@ public class TaskService {
         TaskResponse response = TaskResponse.from(taskRepository.findById(id));
         workerService.enqueue(id);
         return response;
+    }
+
+    /**
+     * 停止运行中的任务（中断当前阶段，整个任务标记为失败，不继续执行下一阶段）。
+     */
+    public TaskResponse stopTask(String id) {
+        Task task = taskRepository.findById(id);
+        if (task == null) {
+            throw new NoSuchElementException("任务不存在：" + id);
+        }
+        pipelineOrchestrator.markTaskStop(id);
+        workerService.interruptTask(id);
+        log.info("停止任务：{}", id);
+        return TaskResponse.from(taskRepository.findById(id));
     }
 
     /**
@@ -554,6 +558,107 @@ public class TaskService {
 
     private String stripExtension(String filename) {
         return FilenameUtils.stripExtension(filename);
+    }
+
+    // ── 阶段产物清理 ──
+
+    private void deleteStageOutputsFrom(Path sessionDir, String stageName) {
+        boolean found = false;
+        for (StageDef stage : STAGE_DEFS) {
+            if (stage.name().equals(stageName)) found = true;
+            if (found) {
+                deleteStageOutputs(sessionDir, stage.name());
+            }
+        }
+    }
+
+    private void deleteStageOutputs(Path sessionDir, String stageName) {
+        try {
+            switch (stageName) {
+                case "download" -> {
+                    deletePath(sessionDir.resolve("media/video_source.mp4"));
+                    deletePath(sessionDir.resolve("media/video_source.en.vtt"));
+                    deletePath(sessionDir.resolve("metadata/ytdlp_info.json"));
+                    deletePath(sessionDir.resolve("metadata/local_info.json"));
+                }
+                case "separate" -> {
+                    deletePath(sessionDir.resolve("media/audio_vocals.wav"));
+                    deletePath(sessionDir.resolve("media/audio_bgm.wav"));
+                    deletePath(sessionDir.resolve("media/temp_audio.wav"));
+                    deletePath(sessionDir.resolve("media/htdemucs_ft"));
+                }
+                case "asr" -> {
+                    deletePath(sessionDir.resolve("metadata/asr.json"));
+                    deletePath(sessionDir.resolve("metadata/asr"));
+                }
+                case "asr_correct" -> {
+                    deletePath(sessionDir.resolve("metadata/asr_corrected.json"));
+                }
+                case "asr_fix" -> {
+                    deletePath(sessionDir.resolve("metadata/asr_fixed.json"));
+                }
+                case "translate" -> {
+                    deleteFilesWithPrefix(sessionDir.resolve("metadata"), "translation.");
+                    deletePath(sessionDir.resolve("metadata/title_bilingual.json"));
+                    deletePath(sessionDir.resolve("metadata/translation_preprocess.json"));
+                    deletePath(sessionDir.resolve("metadata/summary.md"));
+                }
+                case "split_audio" -> {
+                    deletePath(sessionDir.resolve("segments"));
+                }
+                case "tts" -> {
+                    deletePath(sessionDir.resolve("segments/tts"));
+                }
+                case "merge_audio" -> {
+                    deletePath(sessionDir.resolve("tmp"));
+                }
+                case "merge_video" -> {
+                    deletePath(sessionDir.resolve("media/video_final.mp4"));
+                    // 删除已重命名的最终视频（双语文件名）
+                    Path mediaDir = sessionDir.resolve("media");
+                    if (Files.exists(mediaDir)) {
+                        try (DirectoryStream<Path> ds = Files.newDirectoryStream(mediaDir, "* - *.mp4")) {
+                            for (Path p : ds) {
+                                Files.deleteIfExists(p);
+                            }
+                        }
+                    }
+                    deletePath(sessionDir.resolve("media/subtitles.srt"));
+                    deletePath(sessionDir.resolve("media/audio_mixed.m4a"));
+                }
+            }
+        } catch (Exception e) {
+            log.warn("删除阶段产物失败：stage={}, error={}", stageName, e.getMessage());
+        }
+    }
+
+    private void deletePath(Path path) {
+        try {
+            if (!Files.exists(path)) return;
+            if (Files.isDirectory(path)) {
+                try (var walk = Files.walk(path)) {
+                    walk.sorted(java.util.Comparator.reverseOrder())
+                        .forEach(p -> {
+                            try { Files.deleteIfExists(p); } catch (IOException e) { /* ignore */ }
+                        });
+                }
+            } else {
+                Files.deleteIfExists(path);
+            }
+        } catch (IOException e) {
+            log.warn("删除路径失败：{}", path, e);
+        }
+    }
+
+    private void deleteFilesWithPrefix(Path dir, String prefix) {
+        if (!Files.exists(dir)) return;
+        try (DirectoryStream<Path> ds = Files.newDirectoryStream(dir, prefix + "*")) {
+            for (Path p : ds) {
+                Files.deleteIfExists(p);
+            }
+        } catch (IOException e) {
+            log.warn("删除前缀文件失败：{} in {}", prefix, dir, e);
+        }
     }
 
     private record StageDef(String name, String label) {}
