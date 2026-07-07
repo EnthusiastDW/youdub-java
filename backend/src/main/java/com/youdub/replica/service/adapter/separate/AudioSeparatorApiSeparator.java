@@ -11,8 +11,8 @@ import org.springframework.stereotype.Component;
 
 import static com.youdub.replica.service.adapter.AdapterConstants.AUDIO_SEPARATOR_API;
 
-import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -100,30 +100,36 @@ public class AudioSeparatorApiSeparator extends BaseSourceSeparator {
             log.info("开始流式上传音频：task={}, size={}MB", task.getId(), audioSize / (1024 * 1024));
 
             long tApi = System.currentTimeMillis();
-            HttpResponse<byte[]> response;
+            Path zipTemp = outputDir.resolve("separated_" + task.getId() + "_" + UUID.randomUUID() + ".zip");
+            HttpResponse<Path> response;
             try {
-                response = HttpUtil.sendInterruptible(httpClient, request, HttpResponse.BodyHandlers.ofByteArray());
+                response = HttpUtil.sendInterruptible(httpClient, request, HttpResponse.BodyHandlers.ofFile(zipTemp));
             } catch (IOException e) {
                 throw new RuntimeException("audio-separator 服务连接失败（请确认服务已启动且可达：" + apiUrl + "）：" + e.getMessage(), e);
             }
             long apiElapsed = System.currentTimeMillis() - tApi;
 
             int statusCode = response.statusCode();
-            byte[] responseBody = response.body();
+            Path zipPath = response.body();
 
             if (statusCode != 200) {
-                String errorMsg = responseBody != null ? new String(responseBody) : "无响应内容";
+                String errorMsg = "无响应内容";
+                if (Files.exists(zipPath) && Files.size(zipPath) > 0) {
+                    errorMsg = Files.readString(zipPath, StandardCharsets.UTF_8);
+                    Files.deleteIfExists(zipPath);
+                }
                 throw new RuntimeException("audio-separator API 调用失败 [" + statusCode + "]：" + errorMsg);
             }
 
-            if (responseBody == null || responseBody.length == 0) {
+            if (zipPath == null || !Files.exists(zipPath) || Files.size(zipPath) == 0) {
                 throw new RuntimeException("audio-separator API 返回空响应");
             }
 
-            log.info("API 分离完成：task={}, duration={}ms, response={}bytes", task.getId(), apiElapsed, responseBody.length);
+            log.info("API 分离完成：task={}, duration={}ms, zip={}bytes",
+                    task.getId(), apiElapsed, Files.size(zipPath));
 
             long tZip = System.currentTimeMillis();
-            extractFromZip(responseBody, vocalsOut, bgmOut);
+            extractFromZip(zipPath, vocalsOut, bgmOut);
             log.info("ZIP 解压完成：task={}, duration={}ms", task.getId(), System.currentTimeMillis() - tZip);
 
             long vocalSize = Files.size(vocalsOut);
@@ -141,8 +147,9 @@ public class AudioSeparatorApiSeparator extends BaseSourceSeparator {
     /**
      * 从 ZIP 响应中提取 vocals.wav 和 instrumental.wav
      */
-    private void extractFromZip(byte[] zipData, Path vocalsOut, Path bgmOut) throws IOException {
-        try (ZipInputStream zis = new ZipInputStream(new ByteArrayInputStream(zipData))) {
+    private void extractFromZip(Path zipPath, Path vocalsOut, Path bgmOut) throws IOException {
+        try (InputStream is = Files.newInputStream(zipPath);
+             ZipInputStream zis = new ZipInputStream(is)) {
             ZipEntry entry;
             boolean foundVocals = false;
             boolean foundInstrumental = false;
@@ -172,6 +179,8 @@ public class AudioSeparatorApiSeparator extends BaseSourceSeparator {
             if (!foundInstrumental) {
                 throw new IOException("ZIP 响应中未找到 instrumental.wav");
             }
+        } finally {
+            Files.deleteIfExists(zipPath);
         }
     }
 }

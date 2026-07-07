@@ -270,8 +270,35 @@ logger.info("RSS: %.2f GB", process.memory_info().rss / 1024 / 1024 / 1024)
 
 ---
 
-## 8. 已落地改动
+## 8. 补充：为什么 370 MB、3.5 小时音频还会爆内存？
+
+这是一个关键疑问。文件只有 370 MB，但内存和 swap 在**分块开始前**就满了。
+
+根本原因是 **audio-separator 的 `AudioChunker.split_audio()` 用 `pydub.AudioSegment.from_file()` 先把整个音频解压并加载到内存，再分块**。音频文件大小 ≠ 内存占用：
+
+- 3.5 小时 = 12 600 秒
+- 即使按 Java 后端对大音频的降级参数 **16 kHz 单声道 16-bit** 估算：
+  - 解压后 PCM：`12600 × 16000 × 1 × 2 ≈ 403 MB`
+- 如果实际仍是 **44.1 kHz 立体声 16-bit**：
+  - 解压后 PCM：`12600 × 44100 × 2 × 2 ≈ 2.1 GB`
+
+而 `pydub` 的 `AudioSegment` 会保存未压缩 PCM 字节数组，并可能在 `from_file()` 和后续导出时创建额外拷贝。再加上：
+
+- 模型权重（MDX ONNX 模型约数百 MB）
+- 每个 chunk 在 `librosa.load()` 和 `MDXSeparator.demix()` 中的 `result` / `divider` 数组
+- 输出 stem 写文件时的 buffer
+- Python 进程本身的开销
+
+叠加之后，即使原始文件 370 MB，也很容易占满 12 GB 内存 + swap。这也说明**只调 `chunk_duration` 不够**，因为分块前的全量加载是内存大户。
+
+---
+
+## 9. 已落地改动
 
 - **2026-07-07**：已将 `docker/youdub-python-services/server.py` 中的 `Separator` 配置改为 `chunk_duration=600`（10 分钟分块）并启用 `use_soundfile=True`。
 - **2026-07-07**：已将 `/api/v1/separate` 的返回从 `FastAPIResponse(content=io.BytesIO().read())` 改为 `StreamingResponse`，ZIP 先写入磁盘临时文件，再以 4 MB 块流式返回，响应结束后清理临时目录。避免把整个 ZIP 读进内存。
-- 其余优化（Java 端流式接收、ffmpeg 分块）暂未实施。
+- **2026-07-07**：在 `server.py` 中 monkey-patch 了 `audio_separator.separator.audio_chunking.AudioChunker`，把 `split_audio` 和 `merge_chunks` 从 `pydub` 实现替换为 `ffmpeg` 实现：
+  - 分块：每个 chunk 目标 600 秒，后缘多取 2 秒作为 overlap；`ffmpeg -ss START -to END ...` 逐个截取，不预加载整段音频。
+  - 合并：相邻 chunk 之间用 `ffmpeg acrossfade=d=2` 做 2 秒交叉淡化，避免固定时间切分把词/句切两半。
+- **2026-07-07**：Java 端 `AudioSeparatorApiSeparator` 从 `HttpResponse.BodyHandlers.ofByteArray()` 改为 `HttpResponse.BodyHandlers.ofFile(zipTemp)`，响应体直接流式写入磁盘临时文件，ZIP 解压后再删除临时文件。避免整个 ZIP 进入 JVM 堆内存。
+- **2026-07-07**：流式返回的 `finally` 中也删除了 `vocal_path` / `instrumental_path` 两个输出文件，避免在 `/app` 工作目录中堆积中间文件。

@@ -22,6 +22,7 @@ import tempfile
 import traceback
 import asyncio
 import zipfile
+import subprocess
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
@@ -39,6 +40,105 @@ logging.basicConfig(
     format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
 )
 logger = logging.getLogger("unified-python-services")
+
+# ============================================================
+# Audio Separator Chunking Patch
+# 原因：audio-separator 内置 AudioChunker 用 pydub 全量加载输入音频再分块，
+# 对 3 小时以上的长音频会直接占满内存。这里用 ffmpeg 做分块/合并，全程磁盘 I/O。
+# ============================================================
+try:
+    from audio_separator.separator.audio_chunking import AudioChunker
+
+    def _ffmpeg_split_audio(self, input_path: str, output_dir: str) -> List[str]:
+        if not os.path.exists(input_path):
+            raise FileNotFoundError(f"Input file not found: {input_path}")
+        os.makedirs(output_dir, exist_ok=True)
+
+        chunk_seconds = self.chunk_duration_ms / 1000
+        overlap_seconds = 2.0
+
+        probe = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", input_path],
+            capture_output=True, text=True, check=True
+        )
+        total_duration = float(probe.stdout.strip())
+
+        chunk_paths = []
+        start = 0.0
+        idx = 0
+        while start < total_duration:
+            # 每块后缘多取 overlap_seconds，给下一块做 crossfade；
+            # 最后一块直接到文件末尾。
+            end = min(start + chunk_seconds + overlap_seconds, total_duration)
+            if end >= total_duration:
+                end = total_duration
+
+            out_path = os.path.join(output_dir, f"chunk_{idx:04d}.wav")
+            cmd = [
+                "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+                "-i", input_path,
+                "-ss", str(start), "-to", str(end),
+                "-c:a", "pcm_s16le",
+                "-ar", "44100",
+                "-ac", "2",
+                out_path,
+            ]
+            self.logger.info(
+                "Splitting chunk %d: [%.3f, %.3f] (overlap=%.1fs) from %s",
+                idx, start, end, overlap_seconds, input_path
+            )
+            subprocess.run(cmd, check=True)
+            chunk_paths.append(out_path)
+
+            start += chunk_seconds
+            idx += 1
+
+        self.logger.info("Created %d chunks with %.1fs crossfade overlap", len(chunk_paths), overlap_seconds)
+        return chunk_paths
+
+    def _ffmpeg_merge_chunks(self, chunk_paths: List[str], output_path: str) -> str:
+        if not chunk_paths:
+            raise ValueError("Cannot merge empty list of chunks")
+        for p in chunk_paths:
+            if not os.path.exists(p):
+                raise FileNotFoundError(f"Chunk file not found: {p}")
+
+        overlap_seconds = 2.0
+        if len(chunk_paths) == 1:
+            shutil.copy(chunk_paths[0], output_path)
+            return output_path
+
+        inputs = []
+        for p in chunk_paths:
+            inputs.extend(["-i", p])
+
+        # 相邻 chunk 之间做 2 秒 crossfade，避免简单拼接产生切痕。
+        filter_parts = []
+        prev = "[0]"
+        for i in range(1, len(chunk_paths)):
+            out = f"[out{i}]" if i < len(chunk_paths) - 1 else "[out]"
+            filter_parts.append(
+                f"{prev}[{i}]acrossfade=d={overlap_seconds}:c1=tri:c2=tri{out}"
+            )
+            prev = out
+
+        cmd = ["ffmpeg", "-y", "-hide_banner", "-loglevel", "error"] + inputs + [
+            "-filter_complex", ";".join(filter_parts),
+            "-map", "[out]",
+            output_path,
+        ]
+        self.logger.info(
+            "Merging %d chunks into %s with %.1fs crossfade using ffmpeg",
+            len(chunk_paths), output_path, overlap_seconds
+        )
+        subprocess.run(cmd, check=True)
+        return output_path
+
+    AudioChunker.split_audio = _ffmpeg_split_audio
+    AudioChunker.merge_chunks = _ffmpeg_merge_chunks
+except Exception as _chunking_patch_err:
+    logger.warning("Failed to patch AudioChunker with ffmpeg implementation: %s", _chunking_patch_err)
 
 # ============================================================
 # Environment Variables & Configuration
@@ -269,12 +369,18 @@ async def separate_audio(
                     file.filename, total_elapsed, zip_elapsed, zip_size, SEPARATOR_DEVICE)
 
         def zip_stream():
-            # 流式读取 ZIP，响应结束后清理整个临时目录
+            # 流式读取 ZIP，响应结束后清理临时目录和分离输出文件
             try:
                 with open(zip_path, "rb") as f:
                     while chunk := f.read(4 * 1024 * 1024):
                         yield chunk
             finally:
+                for p in (vocal_path, instrumental_path):
+                    if p:
+                        try:
+                            os.unlink(p)
+                        except Exception:
+                            pass
                 shutil.rmtree(tmp, ignore_errors=True)
 
         return StreamingResponse(
