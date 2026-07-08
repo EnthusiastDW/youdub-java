@@ -42,15 +42,29 @@ public abstract class AbstractTranslator implements Translator {
     }
 
     /**
+     * 字符数超过此阈值的句子不再参与合并，避免最终字幕过长。
+     */
+    private static final int MAX_MERGE_CHARS = 80;
+
+    /**
      * 合并从句片段：如果某句以逗号结尾而下一句以小写开头，
      * 说明 ASR 将一句话断成了两段，需要合并后再翻译，避免 LLM 脑补。
+     * 但如果句子已经较长（超过 {@link #MAX_MERGE_CHARS}），则不再合并，
+     * 防止累积产生超长字幕影响观看。
      */
     protected List<Utterance> mergeFragments(List<Utterance> items) {
         if (items.isEmpty()) return items;
         List<Utterance> result = new ArrayList<>();
         int i = 0;
         while (i < items.size()) {
-            StringBuilder text = new StringBuilder(items.get(i).text);
+            String currentText = items.get(i).text;
+            if (currentText.length() > MAX_MERGE_CHARS) {
+                result.add(items.get(i));
+                i++;
+                continue;
+            }
+
+            StringBuilder text = new StringBuilder(currentText);
             long startTime = items.get(i).startTime;
             long endTime = items.get(i).endTime;
             String speaker = items.get(i).speaker;
@@ -59,8 +73,13 @@ public abstract class AbstractTranslator implements Translator {
                     && items.get(j).text.endsWith(",")
                     && !items.get(j + 1).text.isEmpty()
                     && Character.isLowerCase(items.get(j + 1).text.charAt(0))) {
+                String nextText = items.get(j + 1).text;
+                int mergedLen = text.length() + 1 + nextText.length();
+                if (mergedLen > MAX_MERGE_CHARS) {
+                    break;
+                }
                 j++;
-                text.append(" ").append(items.get(j).text);
+                text.append(" ").append(nextText);
                 endTime = items.get(j).endTime;
             }
             result.add(new Utterance(text.toString(), startTime, endTime, speaker));
