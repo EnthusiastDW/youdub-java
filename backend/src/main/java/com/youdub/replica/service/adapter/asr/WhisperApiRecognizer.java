@@ -85,7 +85,7 @@ public class WhisperApiRecognizer implements SpeechRecognizer {
         log.info("调用 OpenAI Whisper API：task={}, audio={}, url={}", task.getId(), audioPath, urlBuilder);
         long s = System.currentTimeMillis();
         Response response = HttpUtil.sendInterruptible(httpClient, request);
-        log.info("调用 OpenAI Whisper API 耗时：{} min", (System.currentTimeMillis() - s) / 3600);
+        log.info("调用 OpenAI Whisper API 耗时：{} min", (System.currentTimeMillis() - s) / 60_000);
         String body = response.body() != null ? response.body().string() : "";
         if (response.code() != 200) {
             throw new RuntimeException("Whisper API 调用失败 [" + response.code() + "]：" + body);

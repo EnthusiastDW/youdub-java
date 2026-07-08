@@ -22,7 +22,6 @@ import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.RequestBody;
-import okhttp3.Response;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -363,9 +362,6 @@ public class OpenAiTranslator extends AbstractTranslator {
         return root.path("choices").path(0).path("message").path("content").asText("").trim();
     }
 
-    /**
-     * 调用 Chat Completions API。
-     */
     private String callChatApi(String apiKey, String chatUrl, String model, ObjectNode requestBody) throws Exception {
         Request request = new Request.Builder()
                 .url(chatUrl)
@@ -373,13 +369,7 @@ public class OpenAiTranslator extends AbstractTranslator {
                 .header("Content-Type", "application/json")
                 .post(RequestBody.create(objectMapper.writeValueAsString(requestBody), JSON_MEDIA_TYPE))
                 .build();
-
-        Response response = HttpUtil.sendInterruptible(httpClient, request);
-        String body = response.body() != null ? response.body().string() : "";
-        if (response.code() != 200) {
-            throw new RuntimeException("Chat API 调用失败 [" + response.code() + "]：" + body);
-        }
-        return body;
+        return HttpUtil.executeWithRetry(httpClient, request, 3);
     }
 
     /**

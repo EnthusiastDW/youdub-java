@@ -7,19 +7,12 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.service.SettingsService;
-
 import com.youdub.replica.util.HttpUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.*;
 import org.springframework.stereotype.Component;
 
-import java.nio.charset.StandardCharsets;
-
-import okhttp3.MediaType;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.RequestBody;
-import okhttp3.Response;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -279,13 +272,7 @@ public class OpenAiAsrCorrector implements AsrCorrector {
                 .post(RequestBody.create(
                         objectMapper.writeValueAsString(requestBody), JSON_MEDIA_TYPE))
                 .build();
-
-        Response response = HttpUtil.sendInterruptible(httpClient, request);
-        String body = response.body() != null ? response.body().string() : "";
-        if (response.code() != 200) {
-            throw new RuntimeException("Chat API 调用失败 [" + response.code() + "]：" + body);
-        }
-        return body;
+        return HttpUtil.executeWithRetry(httpClient, request, 3);
     }
 
     private static boolean isRefusal(String content) {
