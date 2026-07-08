@@ -13,11 +13,13 @@ import static com.youdub.replica.service.adapter.AdapterConstants.AUDIO_SEPARATO
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
+
+import okhttp3.MediaType;
+import okhttp3.MultipartBody;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -36,7 +38,7 @@ import java.util.zip.ZipInputStream;
 public class AudioSeparatorApiSeparator extends BaseSourceSeparator {
     private static final String SEPARATE_ENDPOINT = "/api/v1/separate";
 
-    private final HttpClient httpClient;
+    private final OkHttpClient httpClient;
     private final SettingsService settingsService;
 
     @Override
@@ -79,49 +81,49 @@ public class AudioSeparatorApiSeparator extends BaseSourceSeparator {
             }
 
             // 流式构建 multipart/form-data，避免将大文件全部读入堆内存
-            String boundary = "----WebKitFormBoundary" + UUID.randomUUID().toString().replace("-", "");
             String filename = audioToSend.getFileName().toString();
-            byte[] headerBytes = ("--" + boundary + "\r\n"
-                    + "Content-Disposition: form-data; name=\"file\"; filename=\"" + filename + "\"\r\n"
-                    + "Content-Type: application/octet-stream\r\n\r\n").getBytes(StandardCharsets.UTF_8);
-            byte[] footerBytes = ("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8);
+            RequestBody multipartBody = new MultipartBody.Builder()
+                    .setType(MultipartBody.FORM)
+                    .addFormDataPart("file", filename,
+                            RequestBody.create(audioToSend.toFile(), MediaType.parse("application/octet-stream")))
+                    .build();
 
-            var bodyPublisher = HttpRequest.BodyPublishers.concat(
-                    HttpRequest.BodyPublishers.ofByteArray(headerBytes),
-                    HttpRequest.BodyPublishers.ofFile(audioToSend),
-                    HttpRequest.BodyPublishers.ofByteArray(footerBytes));
-
-            HttpRequest request = HttpRequest.newBuilder()
-                    .uri(URI.create(apiUrl))
-                    .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-                    .POST(bodyPublisher)
+            Request request = new Request.Builder()
+                    .url(apiUrl)
+                    .post(multipartBody)
                     .build();
 
             log.info("开始流式上传音频：task={}, size={}MB", task.getId(), audioSize / (1024 * 1024));
 
             long tApi = System.currentTimeMillis();
             Path zipTemp = outputDir.resolve("separated_" + task.getId() + "_" + UUID.randomUUID() + ".zip");
-            HttpResponse<Path> response;
+            Response response;
             try {
-                response = HttpUtil.sendInterruptible(httpClient, request, HttpResponse.BodyHandlers.ofFile(zipTemp));
+                response = HttpUtil.sendInterruptible(httpClient, request);
             } catch (IOException e) {
                 throw new RuntimeException("audio-separator 服务连接失败（请确认服务已启动且可达：" + apiUrl + "）：" + e.getMessage(), e);
             }
             long apiElapsed = System.currentTimeMillis() - tApi;
 
-            int statusCode = response.statusCode();
-            Path zipPath = response.body();
+            int statusCode = response.code();
+            okhttp3.ResponseBody respBody = response.body();
 
             if (statusCode != 200) {
-                String errorMsg = "无响应内容";
-                if (Files.exists(zipPath) && Files.size(zipPath) > 0) {
-                    errorMsg = Files.readString(zipPath, StandardCharsets.UTF_8);
-                    Files.deleteIfExists(zipPath);
-                }
+                String errorMsg = respBody != null ? respBody.string() : "无响应内容";
                 throw new RuntimeException("audio-separator API 调用失败 [" + statusCode + "]：" + errorMsg);
             }
 
-            if (zipPath == null || !Files.exists(zipPath) || Files.size(zipPath) == 0) {
+            if (respBody == null) {
+                throw new RuntimeException("audio-separator API 返回空响应");
+            }
+
+            try (var sink = Files.newOutputStream(zipTemp);
+                 var source = respBody.byteStream()) {
+                source.transferTo(sink);
+            }
+            Path zipPath = zipTemp;
+
+            if (Files.size(zipPath) == 0) {
                 throw new RuntimeException("audio-separator API 返回空响应");
             }
 

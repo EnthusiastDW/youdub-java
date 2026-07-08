@@ -14,10 +14,10 @@ import org.springframework.stereotype.Service;
 import com.youdub.replica.util.Command;
 import com.youdub.replica.util.CommandResult;
 import com.youdub.replica.util.CommandRunner;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import com.youdub.replica.util.HttpUtil;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -85,7 +85,7 @@ public class SettingsService {
     private final SettingsRepository settingsRepository;
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
-    private final HttpClient httpClient;
+    private final OkHttpClient httpClient;
 
     /**
      * 获取 provider 的完整配置，反序列化为指定类型。
@@ -320,19 +320,20 @@ public class SettingsService {
         }
 
         String normalizedUrl = normalizeBaseUrl(baseUrl) + "/models";
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(normalizedUrl))
+        Request request = new Request.Builder()
+                .url(normalizedUrl)
                 .header("Authorization", "Bearer " + apiKey)
-                .GET()
+                .get()
                 .build();
 
         try {
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-            if (response.statusCode() != 200) {
-                throw new RuntimeException("OpenAI API 调用失败 [" + response.statusCode() + "]：" + response.body());
+            Response response = HttpUtil.send(httpClient, request);
+            String body = response.body() != null ? response.body().string() : "";
+            if (response.code() != 200) {
+                throw new RuntimeException("OpenAI API 调用失败 [" + response.code() + "]：" + body);
             }
             List<String> models = new ArrayList<>();
-            JsonNode root = objectMapper.readTree(response.body());
+            JsonNode root = objectMapper.readTree(body);
             JsonNode data = root.path("data");
             if (data.isArray()) {
                 for (JsonNode node : data) {

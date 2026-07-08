@@ -16,11 +16,13 @@ import org.springframework.stereotype.Component;
 
 import static com.youdub.replica.service.adapter.AdapterConstants.OPENAI;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -40,7 +42,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 @RequiredArgsConstructor
 public class OpenAiTranslator extends AbstractTranslator {
 
-    private final HttpClient httpClient;
+    private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final SettingsService settingsService;
 
@@ -269,6 +271,8 @@ public class OpenAiTranslator extends AbstractTranslator {
         return result;
     }
 
+    private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json; charset=utf-8");
+
     private static final List<String> REFUSAL_PHRASES = List.of(
             "很抱歉",
             "没有足够的上下文",
@@ -363,18 +367,19 @@ public class OpenAiTranslator extends AbstractTranslator {
      * 调用 Chat Completions API。
      */
     private String callChatApi(String apiKey, String chatUrl, String model, ObjectNode requestBody) throws Exception {
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(chatUrl))
+        Request request = new Request.Builder()
+                .url(chatUrl)
                 .header("Authorization", "Bearer " + apiKey)
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestBody), StandardCharsets.UTF_8))
+                .post(RequestBody.create(objectMapper.writeValueAsString(requestBody), JSON_MEDIA_TYPE))
                 .build();
 
-        HttpResponse<String> response = HttpUtil.sendInterruptible(httpClient, request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("Chat API 调用失败 [" + response.statusCode() + "]：" + response.body());
+        Response response = HttpUtil.sendInterruptible(httpClient, request);
+        String body = response.body() != null ? response.body().string() : "";
+        if (response.code() != 200) {
+            throw new RuntimeException("Chat API 调用失败 [" + response.code() + "]：" + body);
         }
-        return response.body();
+        return body;
     }
 
     /**

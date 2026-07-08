@@ -16,11 +16,13 @@ import org.springframework.stereotype.Component;
 
 import static com.youdub.replica.service.adapter.AdapterConstants.OLLAMA;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -40,13 +42,14 @@ import java.util.concurrent.atomic.AtomicInteger;
 @RequiredArgsConstructor
 public class OllamaTranslator extends AbstractTranslator {
 
-    private final HttpClient httpClient;
+    private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final SettingsService settingsService;
 
     @Qualifier("virtualExecutor")
     private final ExecutorService virtualExecutor;
 
+    private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json; charset=utf-8");
 
     @Override
     public String translateText(String text, String srcLang, String dstLang) throws Exception {
@@ -202,16 +205,17 @@ public class OllamaTranslator extends AbstractTranslator {
         userMsg.put("content", fullText);
         messages.add(userMsg);
         requestBody.set("messages", messages);
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(chatUrl))
+        Request request = new Request.Builder()
+                .url(chatUrl)
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestBody), StandardCharsets.UTF_8))
+                .post(RequestBody.create(objectMapper.writeValueAsString(requestBody), JSON_MEDIA_TYPE))
                 .build();
-        HttpResponse<String> response = HttpUtil.sendInterruptible(httpClient, request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("Ollama API 调用失败 [" + response.statusCode() + "]：" + response.body());
+        Response response = HttpUtil.sendInterruptible(httpClient, request);
+        String body = response.body() != null ? response.body().string() : "";
+        if (response.code() != 200) {
+            throw new RuntimeException("Ollama API 调用失败 [" + response.code() + "]：" + body);
         }
-        JsonNode root = objectMapper.readTree(response.body());
+        JsonNode root = objectMapper.readTree(body);
         return root.path("message").path("content").asText("").trim();
     }
 
@@ -243,18 +247,19 @@ public class OllamaTranslator extends AbstractTranslator {
         messages.add(userMsg);
         requestBody.set("messages", messages);
 
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(chatUrl))
+        Request request = new Request.Builder()
+                .url(chatUrl)
                 .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(requestBody), StandardCharsets.UTF_8))
+                .post(RequestBody.create(objectMapper.writeValueAsString(requestBody), JSON_MEDIA_TYPE))
                 .build();
 
-        HttpResponse<String> response = HttpUtil.sendInterruptible(httpClient, request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("Ollama API 调用失败 [" + response.statusCode() + "]：" + response.body());
+        Response response = HttpUtil.sendInterruptible(httpClient, request);
+        String body = response.body() != null ? response.body().string() : "";
+        if (response.code() != 200) {
+            throw new RuntimeException("Ollama API 调用失败 [" + response.code() + "]：" + body);
         }
 
-        JsonNode root = objectMapper.readTree(response.body());
+        JsonNode root = objectMapper.readTree(body);
         String content = root.path("message").path("content").asText(text).trim();
         return content.isEmpty() ? text : content;
     }

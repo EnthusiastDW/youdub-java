@@ -13,14 +13,15 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 
-import java.net.URI;
-
 import static com.youdub.replica.service.adapter.AdapterConstants.WHISPER_API;
 import java.net.URLEncoder;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -33,7 +34,7 @@ import java.nio.file.Path;
 @RequiredArgsConstructor
 public class WhisperApiRecognizer implements SpeechRecognizer {
 
-    private final HttpClient httpClient;
+    private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final SettingsService settingsService;
 
@@ -74,21 +75,23 @@ public class WhisperApiRecognizer implements SpeechRecognizer {
         }
 
         // 直接发送原始二进制音频
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(urlBuilder.toString()))
+        Request request = new Request.Builder()
+                .url(urlBuilder.toString())
                 .header("Authorization", "Bearer " + apiKey)
                 .header("Content-Type", "application/octet-stream")
-                .POST(HttpRequest.BodyPublishers.ofByteArray(audioBytes))
+                .post(RequestBody.create(audioBytes, MediaType.parse("application/octet-stream")))
                 .build();
 
         log.info("调用 OpenAI Whisper API：task={}, audio={}, url={}", task.getId(), audioPath, urlBuilder);
-        HttpResponse<String> response = HttpUtil.sendInterruptible(httpClient, request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-
-        if (response.statusCode() != 200) {
-            throw new RuntimeException("Whisper API 调用失败 [" + response.statusCode() + "]：" + response.body());
+        long s = System.currentTimeMillis();
+        Response response = HttpUtil.sendInterruptible(httpClient, request);
+        log.info("调用 OpenAI Whisper API 耗时：{} min", (System.currentTimeMillis() - s) / 3600);
+        String body = response.body() != null ? response.body().string() : "";
+        if (response.code() != 200) {
+            throw new RuntimeException("Whisper API 调用失败 [" + response.code() + "]：" + body);
         }
 
-        JsonNode root = objectMapper.readTree(response.body());
+        JsonNode root = objectMapper.readTree(body);
         ObjectNode result = convertToStandardFormat(root, audioPath);
         Files.writeString(asrFile, objectMapper.writeValueAsString(result));
         log.info("ASR 完成：task={}, file={}", task.getId(), asrFile);

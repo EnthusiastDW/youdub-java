@@ -8,15 +8,10 @@ import com.youdub.replica.service.SettingsService;
 import com.youdub.replica.util.HttpUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.*;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
-import static com.youdub.replica.service.adapter.AdapterConstants.VOXCPM;
-
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -26,6 +21,8 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
+
+import static com.youdub.replica.service.adapter.AdapterConstants.VOXCPM;
 
 /**
  * VoxCPM TTS 适配器。
@@ -38,7 +35,7 @@ public class VoxCpmTtsProvider implements TtsProvider {
 
     private static final int CONCURRENCY = 4;
 
-    private final HttpClient httpClient;
+    private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final SettingsService settingsService;
 
@@ -145,18 +142,19 @@ public class VoxCpmTtsProvider implements TtsProvider {
                         bodyBuilder.write(("--" + boundary + "--").getBytes(java.nio.charset.StandardCharsets.UTF_8));
                         bodyBuilder.write(crlf);
 
-                        HttpRequest request = HttpRequest.newBuilder()
-                                .uri(URI.create(voxcpmUrl))
+                        Request request = new Request.Builder()
+                                .url(voxcpmUrl)
                                 .header("Content-Type", "multipart/form-data; boundary=" + boundary)
-                                .POST(HttpRequest.BodyPublishers.ofByteArray(bodyBuilder.toByteArray()))
+                                .post(RequestBody.create(bodyBuilder.toByteArray(), MediaType.parse("multipart/form-data; boundary=" + boundary)))
                                 .build();
 
-                        HttpResponse<byte[]> response = HttpUtil.sendInterruptible(httpClient, request, HttpResponse.BodyHandlers.ofByteArray());
-                        if (response.statusCode() != 200) {
-                            String errorBody = new String(response.body(), java.nio.charset.StandardCharsets.UTF_8);
-                            throw new RuntimeException("VoxCPM API 调用失败 [" + response.statusCode() + "]: " + errorBody);
+                        Response response = HttpUtil.sendInterruptible(httpClient, request);
+                        byte[] audioData = response.body() != null ? response.body().bytes() : new byte[0];
+                        if (response.code() != 200) {
+                            String errorBody = new String(audioData, java.nio.charset.StandardCharsets.UTF_8);
+                            throw new RuntimeException("VoxCPM API 调用失败 [" + response.code() + "]: " + errorBody);
                         }
-                        Files.write(outputFile, response.body());
+                        Files.write(outputFile, audioData);
 
                         int done = completed.incrementAndGet();
                         if (done % 10 == 0 || done == total) {
