@@ -14,6 +14,7 @@ import com.youdub.replica.repository.TaskRepository;
 import com.youdub.replica.service.adapter.asr.AsrCorrector;
 import com.youdub.replica.service.adapter.asr.SpeechRecognizer;
 import com.youdub.replica.service.adapter.asr.SubtitleParser;
+import com.youdub.replica.service.adapter.asr.UtteranceProcessor;
 import com.youdub.replica.service.adapter.audio.AudioProcessor;
 import com.youdub.replica.service.adapter.download.Downloader;
 import com.youdub.replica.service.adapter.separate.SourceSeparator;
@@ -66,6 +67,7 @@ public class PipelineOrchestrator {
     private final Map<String, TtsProvider> ttsProviders;
     private final Map<String, AudioProcessor> audioProcessors;
     private final Map<String, VideoProcessor> videoProcessors;
+    private final UtteranceProcessor utteranceProcessor;
 
     private final Map<String, Semaphore> stageGates = new ConcurrentHashMap<>();
     private final Set<String> taskStopFlags = ConcurrentHashMap.newKeySet();
@@ -402,22 +404,10 @@ public class PipelineOrchestrator {
         if (!Files.exists(asrFile)) {
             throw new RuntimeException("ASR 文件不存在：" + asrFile);
         }
-        // 简化版：直接复制 asr.json 为 asr_fixed.json，并应用时间 padding
+
         JsonNode root = objectMapper.readTree(Files.readString(asrFile));
-        ObjectNode fixedRoot = root.deepCopy();
-        JsonNode utterances = fixedRoot.path("result").path("utterances");
-        if (utterances.isArray()) {
-            for (JsonNode u : utterances) {
-                if (u instanceof ObjectNode obj) {
-                    long start = obj.path("start_time").asLong(0);
-                    long end = obj.path("end_time").asLong(0);
-                    // 应用 padding：起始 +100ms，结束 +300ms
-                    obj.put("start_time", Math.max(0, start - 100));
-                    obj.put("end_time", end + 300);
-                }
-            }
-        }
-        Files.writeString(fixedFile, objectMapper.writeValueAsString(fixedRoot));
+        ObjectNode result = utteranceProcessor.processAsrResult(root);
+        Files.writeString(fixedFile, objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(result));
         log.info("ASR 句子修正完成：task={}", task.getId());
     }
 
