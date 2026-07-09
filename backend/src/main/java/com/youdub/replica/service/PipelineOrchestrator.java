@@ -113,8 +113,8 @@ public class PipelineOrchestrator {
             new StageDef("download", "下载"),
             new StageDef("separate", "Demucs"),
             new StageDef("asr", "Whisper"),
-            new StageDef("asr_correct", "ASR纠错"),
             new StageDef("asr_fix", "切分句子"),
+            new StageDef("asr_correct", "ASR纠错"),
             new StageDef("translate", "翻译"),
             new StageDef("split_audio", "切分音频"),
             new StageDef("tts", "VoxCPM"),
@@ -271,8 +271,8 @@ public class PipelineOrchestrator {
             case "download" -> executeDownload(task, sessionDir);
             case "separate" -> executeSeparate(task, sessionDir);
             case "asr" -> executeAsr(task, sessionDir);
-            case "asr_correct" -> executeAsrCorrect(task, sessionDir);
             case "asr_fix" -> executeAsrFix(task, sessionDir);
+            case "asr_correct" -> executeAsrCorrect(task, sessionDir);
             case "translate" -> executeTranslate(task, sessionDir);
             case "split_audio" -> executeSplitAudio(task, sessionDir);
             case "tts" -> executeTts(task, sessionDir);
@@ -342,7 +342,7 @@ public class PipelineOrchestrator {
         }
 
         Path metadataDir = sessionDir.resolve("metadata");
-        Path asrFile = metadataDir.resolve("asr.json");
+        Path asrFile = metadataDir.resolve("asr_fixed.json");
         if (!Files.exists(asrFile)) {
             log.warn("ASR 文件不存在，跳过纠错：task={}", task.getId());
             return;
@@ -398,8 +398,7 @@ public class PipelineOrchestrator {
 
     private void executeAsrFix(Task task, Path sessionDir) throws Exception {
         Path metadataDir = sessionDir.resolve("metadata");
-        Path correctedFile = metadataDir.resolve("asr_corrected.json");
-        Path asrFile = Files.exists(correctedFile) ? correctedFile : metadataDir.resolve("asr.json");
+        Path asrFile = metadataDir.resolve("asr.json");
         Path fixedFile = metadataDir.resolve("asr_fixed.json");
         if (!Files.exists(asrFile)) {
             throw new RuntimeException("ASR 文件不存在：" + asrFile);
@@ -417,9 +416,9 @@ public class PipelineOrchestrator {
         if (translator == null) {
             throw new RuntimeException("未找到翻译适配器：" + provider);
         }
-        Path asrPath = sessionDir.resolve("metadata").resolve("asr_fixed.json");
+        Path asrPath = sessionDir.resolve("metadata").resolve("asr_corrected.json");
         if (!Files.exists(asrPath)) {
-            asrPath = sessionDir.resolve("metadata").resolve("asr.json");
+            asrPath = sessionDir.resolve("metadata").resolve("asr_fixed.json");
         }
         Path outputDir = sessionDir.resolve("metadata");
         String srcLang = task.getAsrLanguage();

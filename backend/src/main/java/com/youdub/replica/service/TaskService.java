@@ -58,8 +58,8 @@ public class TaskService {
             new StageDef("download", "下载"),
             new StageDef("separate", "Demucs"),
             new StageDef("asr", "Whisper"),
-            new StageDef("asr_correct", "ASR纠错"),
             new StageDef("asr_fix", "切分句子"),
+            new StageDef("asr_correct", "ASR纠错"),
             new StageDef("translate", "翻译"),
             new StageDef("split_audio", "切分音频"),
             new StageDef("tts", "VoxCPM"),
@@ -69,7 +69,7 @@ public class TaskService {
 
     /** 简化模式（仅字幕）包含的阶段名，与 PipelineOrchestrator.SUBTITLE_ONLY_STAGES 保持同步 */
     private static final Set<String> SUBTITLE_ONLY_STAGE_NAMES = Set.of(
-            "download", "separate", "asr", "asr_correct", "asr_fix", "translate", "merge_video"
+            "download", "separate", "asr", "asr_fix", "asr_correct", "translate", "merge_video"
     );
 
     /**
