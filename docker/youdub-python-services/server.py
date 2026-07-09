@@ -529,6 +529,8 @@ async def transcribe_audio(request: Request):
         seg_kwargs = {"audio": tmp_file, "beam_size": 5}
         if language:
             seg_kwargs["language"] = language
+        if request.query_params.get("word_timestamps", "").lower() in ("1", "true"):
+            seg_kwargs["word_timestamps"] = True
 
         async with _transcribe_lock:
             t_transcribe = time.time()

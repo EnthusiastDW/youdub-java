@@ -85,27 +85,13 @@ public class OllamaTranslator extends AbstractTranslator {
             return;
         }
 
-        List<Utterance> items = new ArrayList<>();
-        for (JsonNode u : utterances) {
-            String text = u.path("text").asText("").trim();
-            if (text.isEmpty()) {
-                continue;
-            }
-            items.add(new Utterance(
-                    text,
-                    u.path("start_time").asLong(0),
-                    u.path("end_time").asLong(0),
-                    u.path("speaker").asText("1")
-            ));
-        }
+        // 利用单词级时间戳按句子边界重新分段，防止 LLM 对不完整句子脑补扩展
+        List<Utterance> items = reSegmentByWords(utterances);
 
         if (items.isEmpty()) {
             Files.writeString(translationFile, "{\"translation\":[]}");
             return;
         }
-
-        // 合并从句片段，防止 LLM 对不完整句子脑补扩展
-        items = mergeFragments(items);
 
         // 用英文原文生成中文小结
         String fullText = items.stream().map(Utterance::text).reduce("", (a, b) -> a.isEmpty() ? b : a + "\n" + b);

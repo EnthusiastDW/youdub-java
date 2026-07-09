@@ -70,6 +70,7 @@ public class WhisperApiRecognizer implements SpeechRecognizer {
         StringBuilder urlBuilder = new StringBuilder(resolvedUrl);
         urlBuilder.append("?model=").append(URLEncoder.encode(config.getModel(), StandardCharsets.UTF_8));
         urlBuilder.append("&response_format=").append(URLEncoder.encode("verbose_json", StandardCharsets.UTF_8));
+        urlBuilder.append("&word_timestamps=1");
         if (language != null && !language.isBlank()) {
             urlBuilder.append("&language=").append(URLEncoder.encode(language, StandardCharsets.UTF_8));
         }

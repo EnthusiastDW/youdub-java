@@ -1,6 +1,6 @@
 package com.youdub.replica.service.adapter.translate;
 
-
+import com.fasterxml.jackson.databind.JsonNode;
 import lombok.extern.slf4j.Slf4j;
 
 import java.nio.file.Files;
@@ -130,6 +130,103 @@ public abstract class AbstractTranslator implements Translator {
             log.info("合并了 {} 个从句片段（原始 {} 句 → 合并后 {} 句）",
                     items.size() - result.size(), items.size(), result.size());
         }
+        return result;
+    }
+
+    /**
+     * 利用单词级时间戳按句子边界重新分段。
+     * <p>
+     * 从 {@code asr.json} 的 {@code utterances[].words[]} 中遍历所有单词，
+     * 遇到句尾标点（. ! ?）即产生一个新 {@link Utterance}，其时间戳由单词的首尾时间精确决定。
+     * 这样 ASR 切错的句子（如将 "operations" 分到下一段）会被正确还原。
+     * <p>
+     * 如果单词级时间戳不可用，回退为返回原始 utterances 列表（由 {@link #mergeFragments} 兜底）。
+     *
+     * @param utterancesNode ASR 结果中的 utterances 数组节点
+     * @return 按句子边界重新分段后的 utterance 列表
+     */
+    protected List<Utterance> reSegmentByWords(JsonNode utterancesNode) {
+        List<Utterance> result = new ArrayList<>();
+        if (!utterancesNode.isArray() || utterancesNode.isEmpty()) {
+            return result;
+        }
+
+        // 检查是否有单词级时间戳可用
+        boolean hasWords = false;
+        for (JsonNode u : utterancesNode) {
+            JsonNode words = u.path("words");
+            if (words.isArray() && words.size() > 0) {
+                hasWords = true;
+                break;
+            }
+        }
+
+        if (!hasWords) {
+            // 回退：直接返回原始 utterances（mergeFragments 会兜底）
+            for (JsonNode u : utterancesNode) {
+                String text = u.path("text").asText("").trim();
+                if (text.isEmpty()) continue;
+                result.add(new Utterance(text,
+                        u.path("start_time").asLong(0),
+                        u.path("end_time").asLong(0),
+                        u.path("speaker").asText("1")));
+            }
+            return result;
+        }
+
+        // 单词级重分段：遍历所有单词，在句尾标点处切分
+        StringBuilder currentText = new StringBuilder();
+        long sentenceStart = -1;
+        long sentenceEnd = -1;
+        String speaker = "1";
+
+        for (JsonNode u : utterancesNode) {
+            speaker = u.path("speaker").asText("1");
+            JsonNode words = u.path("words");
+            if (!words.isArray()) continue;
+
+            for (JsonNode w : words) {
+                String word = w.path("text").asText("");
+                if (word.isEmpty()) continue;
+
+                if (sentenceStart < 0) {
+                    sentenceStart = w.path("start_time").asLong(0);
+                }
+
+                if (currentText.length() > 0) {
+                    currentText.append(" ");
+                }
+                currentText.append(word);
+                sentenceEnd = w.path("end_time").asLong(0);
+
+                // 单词以句尾标点结尾 → 切分
+                if (isSentenceEnd(word.stripTrailing())) {
+                    String text = currentText.toString().trim();
+                    if (!text.isEmpty()) {
+                        result.add(new Utterance(text, sentenceStart, sentenceEnd, speaker));
+                    }
+                    currentText = new StringBuilder();
+                    sentenceStart = -1;
+                    sentenceEnd = -1;
+                }
+            }
+        }
+
+        // 末尾未闭合的文本（没有句尾标点）
+        String remaining = currentText.toString().trim();
+        if (!remaining.isEmpty()) {
+            result.add(new Utterance(remaining, sentenceStart, sentenceEnd, speaker));
+        }
+
+        // 统计原始非空 utterance 数
+        int originalCount = 0;
+        for (JsonNode u : utterancesNode) {
+            if (!u.path("text").asText("").trim().isEmpty()) originalCount++;
+        }
+        if (result.size() != originalCount) {
+            log.info("按句子边界重新分段：原始 {} 段 → {} 句", originalCount, result.size());
+        }
+
         return result;
     }
 
