@@ -10,7 +10,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * {@link AbstractTranslator#mergeFragments(List)} 的单元测试。
- * 重点关注合并后句子长度不超过 {@code MAX_MERGE_CHARS}（80字符）。
+ * 重点关注合并后句子长度不超过 {@code MAX_MERGE_CHARS}（160字符）。
  */
 class AbstractTranslatorTest {
 
@@ -33,7 +33,7 @@ class AbstractTranslatorTest {
     }
 
     @Test
-    void noCommaEnding_noMerge() {
+    void endsWithPeriod_noMerge() {
         var items = List.of(
                 utterance("Hello world.", 0, 1000),
                 utterance("Goodbye.", 1000, 2000)
@@ -60,6 +60,43 @@ class AbstractTranslatorTest {
         );
         var result = translator.mergeFragments(items);
         assertEquals(2, result.size());
+    }
+
+    @Test
+    void endsWithExclamation_noMerge() {
+        var items = List.of(
+                utterance("Stop!", 0, 500),
+                utterance("next part", 500, 1000)
+        );
+        var result = translator.mergeFragments(items);
+        assertEquals(2, result.size());
+    }
+
+    @Test
+    void noPunctuationEnding_lowercaseNext_merges() {
+        var items = List.of(
+                utterance("as it already checked that we are only doing legal operations", 0, 3000),
+                utterance("inside the method. This is guaranteed because we only have a reference to self at our disposal.", 3000, 6000)
+        );
+        var result = translator.mergeFragments(items);
+        assertEquals(2, result.size());
+        assertEquals("as it already checked that we are only doing legal operations inside the method.", result.get(0).text());
+        assertTrue(result.get(1).text().startsWith("This is guaranteed"));
+        assertEquals(0, result.get(0).startTime());
+        assertEquals(6000, result.get(1).endTime());
+    }
+
+    @Test
+    void noPunctuation_followedByPeriod_mergesThenStops() {
+        var items = List.of(
+                utterance("first fragment no punctuation", 0, 1000),
+                utterance("second part here", 1000, 2000),
+                utterance("Third sentence starts uppercase.", 2000, 3000)
+        );
+        var result = translator.mergeFragments(items);
+        assertEquals(2, result.size());
+        assertEquals("first fragment no punctuation second part here", result.get(0).text());
+        assertEquals("Third sentence starts uppercase.", result.get(1).text());
     }
 
     /* ────────── 正常合并（短句） ────────── */
@@ -95,7 +132,7 @@ class AbstractTranslatorTest {
 
     @Test
     void firstFragmentExceedsMax_skipMerge() {
-        String longText = "A".repeat(81);
+        String longText = "A".repeat(161);
         var items = List.of(
                 utterance(longText + ",", 0, 1000),
                 utterance("next fragment", 1000, 2000)
@@ -109,7 +146,7 @@ class AbstractTranslatorTest {
     void mergedResultExceedsMax_stopBeforeThreshold() {
         var items = List.of(
                 utterance("short text,", 0, 500),
-                utterance("this continuation is long enough to push the total way over the eighty character threshold together", 500, 2000)
+                utterance("this continuation is long enough to push the total way over the one hundred and sixty character threshold for max merge chars when combined together with the first fragment", 500, 2000)
         );
         var result = translator.mergeFragments(items);
         assertEquals(2, result.size());
@@ -120,7 +157,7 @@ class AbstractTranslatorTest {
         var items = List.of(
                 utterance("alpha,", 0, 200),
                 utterance("beta,", 200, 400),
-                utterance("gamma but then a very long continuation that exceeds the limit of eighty characters easily", 400, 2000)
+                utterance("gamma but then a very very long continuation that exceeds the limit of one hundred and sixty characters threshold easily when merged together so it would break up here", 400, 2000)
         );
         var result = translator.mergeFragments(items);
         assertEquals(2, result.size());
@@ -133,16 +170,17 @@ class AbstractTranslatorTest {
 
     @Test
     void mixed_someMergeSomeSkip() {
+        String longText = "A".repeat(161);
         var items = List.of(
                 utterance("short,", 0, 300),                                          // merged
                 utterance("still short,", 300, 600),                                   // merged
-                utterance("this sentence is already very long and exceeds the maximum merge threshold of eighty characters so it stays alone,", 600, 3000),  // >80, skip
+                utterance(longText + ",", 600, 3000),                                  // >160, skip
                 utterance("last", 3000, 3200)                                          // no comma, no merge
         );
         var result = translator.mergeFragments(items);
         assertEquals(3, result.size());
         assertEquals("short, still short,", result.get(0).text());
-        assertTrue(result.get(1).text().length() > 80);
+        assertTrue(result.get(1).text().length() > 160);
         assertEquals(result.get(1).startTime(), 600);
         assertEquals(result.get(2).text(), "last");
     }

@@ -99,7 +99,6 @@ public class WorkerService {
     public void recoverOnStartup() {
         log.info("启动时恢复任务状态...");
         List<Task> allTasks = taskRepository.findAll(0, 1000);
-        int failedCount = 0;
         int queuedCount = 0;
         for (Task task : allTasks) {
             if (task.getStatus() == TaskStatus.QUEUED || task.getStatus() == TaskStatus.RUNNING) {
@@ -108,6 +107,6 @@ public class WorkerService {
                 queuedCount++;
             }
         }
-        log.info("启动恢复完成：标记 {} 个任务为失败，重新入队 {} 个任务", failedCount, queuedCount);
+        log.info("启动恢复完成：，重新入队 {} 个任务", queuedCount);
     }
 }

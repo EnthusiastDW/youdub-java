@@ -205,6 +205,7 @@ public class PipelineOrchestrator {
                         log.warn("任务被用户停止：task={}, stage={}", taskId, stage.name);
                         clearTaskStop(taskId);
                         Thread.interrupted();
+                        Thread.currentThread().interrupt();
                         taskRepository.updateStageStatus(taskId, stage.name, StageStatus.FAILED, 0, "用户停止");
                         taskRepository.updateStatus(taskId, TaskStatus.FAILED, stageProgressBase);
                         taskRepository.updateField(taskId, "error_message", "用户停止");

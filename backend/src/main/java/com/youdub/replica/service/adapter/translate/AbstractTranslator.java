@@ -44,11 +44,15 @@ public abstract class AbstractTranslator implements Translator {
     /**
      * 字符数超过此阈值的句子不再参与合并，避免最终字幕过长。
      */
-    private static final int MAX_MERGE_CHARS = 80;
+    protected static final int MAX_MERGE_CHARS = 160;
 
     /**
-     * 合并从句片段：如果某句以逗号结尾而下一句以小写开头，
+     * 合并从句片段：如果某句不以句尾标点结尾，而下一句以小写开头，
      * 说明 ASR 将一句话断成了两段，需要合并后再翻译，避免 LLM 脑补。
+     * 比如 "operations" 被分到句尾但实际属于下一句开头的情况。
+     * <p>
+     * 当要合并的下一个片段中包含句尾标点（如 "inside the method. This is..."），
+     * 则只合并到第一个句尾标点位置，剩余部分保持为独立句子，避免合并后句子过长。
      * 但如果句子已经较长（超过 {@link #MAX_MERGE_CHARS}），则不再合并，
      * 防止累积产生超长字幕影响观看。
      */
@@ -69,20 +73,57 @@ public abstract class AbstractTranslator implements Translator {
             long endTime = items.get(i).endTime;
             String speaker = items.get(i).speaker;
             int j = i;
+            String pendingRemainder = null;
+            long pendingRemainderStart = 0;
+            long pendingRemainderEnd = 0;
+            String pendingRemainderSpeaker = null;
+
             while (j < items.size() - 1
-                    && items.get(j).text.endsWith(",")
                     && !items.get(j + 1).text.isEmpty()
-                    && Character.isLowerCase(items.get(j + 1).text.charAt(0))) {
+                    && Character.isLowerCase(items.get(j + 1).text.charAt(0))
+                    && !isSentenceEnd(text.toString().stripTrailing())) {
+
                 String nextText = items.get(j + 1).text;
-                int mergedLen = text.length() + 1 + nextText.length();
-                if (mergedLen > MAX_MERGE_CHARS) {
+                int splitPos = findSentenceBoundary(nextText);
+
+                String mergePart;
+                long mergeEnd;
+
+                if (splitPos > 0) {
+                    mergePart = nextText.substring(0, splitPos).stripTrailing();
+                    String rest = nextText.substring(splitPos).stripLeading();
+                    double ratio = (double) mergePart.length() / nextText.length();
+                    long duration = items.get(j + 1).endTime - items.get(j + 1).startTime;
+                    mergeEnd = items.get(j + 1).startTime + (long) (duration * ratio);
+
+                    int mergedLen = text.length() + 1 + mergePart.length();
+                    if (mergedLen > MAX_MERGE_CHARS) break;
+
+                    text.append(" ").append(mergePart);
+                    endTime = mergeEnd;
+                    j++;
+
+                    if (!rest.isEmpty()) {
+                        pendingRemainder = rest;
+                        pendingRemainderStart = mergeEnd;
+                        pendingRemainderEnd = items.get(j).endTime;
+                        pendingRemainderSpeaker = items.get(j).speaker;
+                    }
                     break;
+                } else {
+                    mergePart = nextText;
+                    int mergedLen = text.length() + 1 + mergePart.length();
+                    if (mergedLen > MAX_MERGE_CHARS) break;
+                    j++;
+                    text.append(" ").append(mergePart);
+                    endTime = items.get(j).endTime;
                 }
-                j++;
-                text.append(" ").append(nextText);
-                endTime = items.get(j).endTime;
             }
+
             result.add(new Utterance(text.toString(), startTime, endTime, speaker));
+            if (pendingRemainder != null) {
+                result.add(new Utterance(pendingRemainder, pendingRemainderStart, pendingRemainderEnd, pendingRemainderSpeaker));
+            }
             i = j + 1;
         }
         if (result.size() != items.size()) {
@@ -90,5 +131,24 @@ public abstract class AbstractTranslator implements Translator {
                     items.size() - result.size(), items.size(), result.size());
         }
         return result;
+    }
+
+    private static boolean isSentenceEnd(String text) {
+        return text.endsWith(".") || text.endsWith("!") || text.endsWith("?")
+                || text.endsWith("。") || text.endsWith("！") || text.endsWith("？");
+    }
+
+    static int findSentenceBoundary(String text) {
+        for (int i = 0; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == '.' || c == '!' || c == '?') {
+                if (i + 1 >= text.length() || text.charAt(i + 1) == ' ') {
+                    return i + 1;
+                }
+            } else if (c == '。' || c == '！' || c == '？') {
+                return i + 1;
+            }
+        }
+        return -1;
     }
 }

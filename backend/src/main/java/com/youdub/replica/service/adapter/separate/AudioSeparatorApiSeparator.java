@@ -63,6 +63,8 @@ public class AudioSeparatorApiSeparator extends BaseSourceSeparator {
 
         Path audioToSend = extractAudio(task, audioPath, outputDir);
         boolean isTemp = !audioToSend.equals(audioPath);
+        Path zipTemp = null;
+        boolean zipTempCleanup = false;
 
         try {
             String serviceUrl = settingsService.getProviderConfig(AUDIO_SEPARATOR_API, AppProperties.Separate.AudioSeparatorApi.class).getServiceUrl();
@@ -96,7 +98,7 @@ public class AudioSeparatorApiSeparator extends BaseSourceSeparator {
             log.info("开始流式上传音频：task={}, size={}MB", task.getId(), audioSize / (1024 * 1024));
 
             long tApi = System.currentTimeMillis();
-            Path zipTemp = outputDir.resolve("separated_" + task.getId() + "_" + UUID.randomUUID() + ".zip");
+            zipTemp = outputDir.resolve("separated_" + task.getId() + "_" + UUID.randomUUID() + ".zip");
             Response response;
             try {
                 response = HttpUtil.sendInterruptible(httpClient, request);
@@ -121,6 +123,7 @@ public class AudioSeparatorApiSeparator extends BaseSourceSeparator {
                  var source = respBody.byteStream()) {
                 source.transferTo(sink);
             }
+            zipTempCleanup = true;
             Path zipPath = zipTemp;
 
             if (Files.size(zipPath) == 0) {
@@ -140,6 +143,9 @@ public class AudioSeparatorApiSeparator extends BaseSourceSeparator {
                     task.getId(), System.currentTimeMillis() - tTotal,
                     vocalSize / (1024 * 1024), bgmSize / (1024 * 1024));
         } finally {
+            if (zipTempCleanup) {
+                try { Files.deleteIfExists(zipTemp); } catch (IOException e) { log.warn("清理临时 ZIP 失败：{}", zipTemp, e); }
+            }
             if (isTemp) {
                 Files.deleteIfExists(audioToSend);
             }

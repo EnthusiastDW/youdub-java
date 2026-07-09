@@ -639,7 +639,7 @@ public class TaskService {
                 try (var walk = Files.walk(path)) {
                     walk.sorted(java.util.Comparator.reverseOrder())
                         .forEach(p -> {
-                            try { Files.deleteIfExists(p); } catch (IOException e) { /* ignore */ }
+                            try { Files.deleteIfExists(p); } catch (IOException e) { log.warn("删除文件失败：{}", p, e); }
                         });
                 }
             } else {

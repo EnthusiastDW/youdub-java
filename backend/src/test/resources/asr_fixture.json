@@ -1,0 +1,670 @@
+{
+  "audio_info" : {
+    "duration" : 672080.0,
+    "source" : "/app/workfolder/local/Rusts For Loop Is Smarter Than You Think  Advanced Rust Part 12__4c6c7833daf64dfa/media/audio_vocals.wav"
+  },
+  "result" : {
+    "text" : "You might have written code like this maybe a hundred times or more, but did you ever think about how the Rust compiler makes this work? I mean, it seems so easy. Iterate over a collection via taking ownership of the elements, or via mutable or immutable reference. It's simple, it's concise, it's a zero-cost abstraction. We take this beautiful syntax for granted, but how is it that we can dramatically change the semantics of a loop with only a single character? Well, if I had to guess, it's probably automatic dereferencing via the deref trait, right? It seems like the Rust compiler always has some magic ace up its sleeve to make things work. But no, not this time. There is actually no magic involved. If you consult the Rust docs, you will find that a for loop written in this manner is desugared by the compiler into the following code. And note that desugaring does not classify as magic here. Well, that's quite a bit more code than you might have expected. And there's also some rather odd constructs in here. Let's start with the match statement that only has a single arm. That one sticks out like a sore thumb, doesn't it? Well, this is just how Rust desugars blocks to control scoping and ensure expressions return cleanly. Of course, we would never write something like this by hand, so let's get rid of it for now. It has no significance in our code here. It also seems like there is no need here for the next variable, so let's assign n directly through the match expression. And one more simplification. We don't need a scope around our print statement. This is now way closer to code that we would write by hand, so we can start analyzing it. The first line of desugared expression creates an iterator via the into iter method, defined on the into iterator trait. We could also write this with the more familiar method call syntax. After this, our loop is executed. We call the next method on the iterator, which returns an option. If there is a next value, it will return it, wrapped in the sum variant. If the iterator is at the end though, it returns none, and we break the loop. If we got a value in this match expression, we can then execute the body of our loop, where we print the value. Well, I guess all of this seems kind of reasonable, but we still haven't really figured out how Rust distinguishes between when it should take ownership of the individual elements of the vector and when it should be borrowing them. Well, let's take a closer look at our iterator. The type of the iterator we get when calling into iter on a reference to the names vec is that of a slice iterator. It returns references to strings when next is called. The loop desugared into this because we told our for loop to iterate over a reference to names. If we instead iterate over names directly, which consumes it, the call of into iter returns an into iter struct from the vec module. This iterator takes ownership of the vector's elements and can thus return own strings. Ah, I guess now we're getting to the bottom of this. Or are we? Maybe we should take a closer look at how vec actually implements the into iterator trait. But before we get into that, let me quickly take the time to talk about a thing that is very dear to my heart. I consider learning to be a lifelong journey, and thus it's kind of fulfilling to me to learn more about the technologies that drive our modern society. Just think about it. It's not even two years ago that AI completely disrupted our industry and how we approach our job as a software engineer. And this is exactly where the sponsor of today's video comes in. Brilliant. Brilliant helps you get smarter every day with thousands of interactive lessons in math, science, programming, data analysis, and of course, AI. There's a lot of resources out there for acquiring new skills. But what I like about Brilliant is that learning is not a one-way street where you're just fed information. Instead, their interactive methods foster my critical thinking. And lately I got started on their new course on how large language models like ChatGPT actually work. It allows me to explore this cutting-edge field all while improving on my problem-solving skills. To try everything Brilliant has to offer for free for a full 30 days, visit brilliant.org slash greenteacoding or scan the QR code on screen. Or you can click on the link in the description. You'll also get 20% off an annual premium subscription. But now, let's finally get into the meat of today's video. How does VEC implement the IntoIterator trade? The IntoIterator trade is implemented by collections which want to be iterated over. To get a feel for this trade, we need to understand three core parts. First, there is the associated type item. This is the type of the items the iterator will yield when we call next on it. Secondly, there is the associated type IntoIter. This is the type of the iterator we will be creating when we call IntoIter on the collection that implements the IntoIterator trade. To be honest, I find it kind of confusing that they named the trade IntoIterator and the type it returns IntoIter. But okay. Note the trade bound on IntoIter. It needs to implement iterator which yields an item of the same type that our associated type item is. This just ensures consistency. And finally, there is a single required method to implement called IntoIter. It consumes self, so the collection, in order to return an object of the type that we declared as IntoIter. So in short, what does IntoIterator do? Well, it consumes the implementing struct to create an iterator, which will then yield items of a specific type. Not actually that difficult. But we don't say it like that in Rust. Instead we say, it returns an object of the associated type IntoIter which itself implements iterator, which in turn must have an associated type item that matches our associated iterator type item. And I find that it's just so beautiful. But now, back to our topic. Where are we? Ah yes. How does Vec implement IntoIterator? Well, because Vec is generic over its contained type T. The implementation is also generic over this exact type T. The type of the item the iterator returns is exactly of this type T, which should come at no surprise. Because if you want to iterate over a collection that has items of type T in it, well, you're gonna have T's coming out of the iterator. Makes sense. The iterator though, which the call to IntoIter will produce, is the type IntoIter, which is also generic over T. Again, absolutely stellar naming here. Calling the implementing struct the exact same name as the associated type parameter, which itself is called almost exactly the same as the trait. And yes, this is the exact naming that's used in the official source code. I did not make any of this up. The IntoIter method then does a lot of unsafe stuff in order to efficiently create the IntoIter struct from the vector. Not the topic of this video. However, the next few lines of code are the exact reason why I was motivated to make this video. Vec has another implementation of IntoIterator, but it's not on vec directly, but on a reference to vec. What this syntax means is that whenever there is a self in any of our trait methods, this self will now not be a vec of T, but a reference to a vec of T instead. And the implementation solves the mystery of the for loop over a reference to a vector. The returned items are now references to T's. Of course, they couldn't be anything else because we don't have ownership over the vec at this point. The iterator we get from calling IntoIter on a reference to a vec is the aforementioned slice iter. And the IntoIter method simply calls self.iter, which is a method of vec that is not governed by any trait. So what this implementation tells us is that there is a big difference between calling IntoIter on an owned vector versus calling it on a reference to a vector. And you have to be very specific here, there's no deref or compiler magic going on. You get exactly what you asked for. Well, now that we saw the implementation on the immutable reference, it should probably come at no surprise that there is also an implementation on the mutable reference to vec. It's much the same and I would consider it homework to look at this yourself. This concept of implementing a trait both on the type itself and on a reference to the type works because a reference to T is actually a different type to the compiler than the T itself. And thus the compiler doesn't get confused between choosing which implementation to use. And I tell you, the insight coming up right now pretty much melted my brain the first time it appeared to me. When we write a method that takes a reference to a cell, we can still call it on an owned instance of the struct because Rust automatically borrows the instance. And this makes sense. If we own that object, we can definitely get a reference to it. However, the inverse of course is not true. If a method requires an owned cell, but we only have a reference to that type, of course we can't call it. The borrow manager prohibits it. And this is exactly where implementing a trait on a reference to a type comes in. We explicitly tell the compiler, this is the implementation I want you to use when I call the method on a reference to this type. The compiler will then happily oblige, as it already checked that we are only doing legal operations inside the method. This is guaranteed because we only have a reference to self at our disposal. So, seen this way, implementing a trait on a reference is the opposite of automatic borrowing for method calls, but way more explicit as we need to satisfy the borrowing rules. Understanding this concept was really challenging me to think about trade design in a different way. And if you want to deepen your journey on this field, there's many more examples of it in the standard library. Display and debug, equality and ordering, as well as arithmetic operators, all have implementations on references to types. These traits are designed such that the implementing type can decide how ownership works, by choosing how self is taken. And that about wraps it up for today. When I started doing my research for this video, I didn't think it would lead me down this rabbit hole that I'm currently residing in. But whenever I do these deep dives, it seems like my overall understanding of general rust also improves by quite a lot. And I hadn't had this experience with any other language that I've learned so far. Well, I assume that's a good thing. Well, for now, stay safe, like the video if you learned something, and if you want to catch some more rusty rabbits in those deep holes, then consider subscribing. I'll see you next time with Green Tea Coding.",
+    "utterances" : [ {
+      "text" : "You might have written code like this maybe a hundred times or more, but did you ever think",
+      "start_time" : 0,
+      "end_time" : 4800,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "about how the Rust compiler makes this work? I mean, it seems so easy. Iterate over a collection",
+      "start_time" : 4800,
+      "end_time" : 10720,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "via taking ownership of the elements, or via mutable or immutable reference. It's simple,",
+      "start_time" : 10720,
+      "end_time" : 17520,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "it's concise, it's a zero-cost abstraction. We take this beautiful syntax for granted,",
+      "start_time" : 17520,
+      "end_time" : 22960,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "but how is it that we can dramatically change the semantics of a loop with only a single character?",
+      "start_time" : 22960,
+      "end_time" : 27840,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "Well, if I had to guess, it's probably automatic dereferencing via the deref trait, right?",
+      "start_time" : 28720,
+      "end_time" : 33360,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "It seems like the Rust compiler always has some magic ace up its sleeve to make things work. But no,",
+      "start_time" : 33360,
+      "end_time" : 40240,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "not this time. There is actually no magic involved. If you consult the Rust docs, you will find that",
+      "start_time" : 40240,
+      "end_time" : 46080,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "a for loop written in this manner is desugared by the compiler into the following code. And",
+      "start_time" : 46080,
+      "end_time" : 52080,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "note that desugaring does not classify as magic here. Well, that's quite a bit more code than",
+      "start_time" : 52080,
+      "end_time" : 58400,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "you might have expected. And there's also some rather odd constructs in here. Let's start with",
+      "start_time" : 58400,
+      "end_time" : 63760,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "the match statement that only has a single arm. That one sticks out like a sore thumb, doesn't it?",
+      "start_time" : 63760,
+      "end_time" : 68720,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "Well, this is just how Rust desugars blocks to control scoping and ensure expressions return",
+      "start_time" : 69440,
+      "end_time" : 74880,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "cleanly. Of course, we would never write something like this by hand, so let's get rid of it for now.",
+      "start_time" : 74880,
+      "end_time" : 80560,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "It has no significance in our code here. It also seems like there is no need here for the next",
+      "start_time" : 80560,
+      "end_time" : 85760,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "variable, so let's assign n directly through the match expression. And one more simplification.",
+      "start_time" : 85760,
+      "end_time" : 92160,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "We don't need a scope around our print statement. This is now way closer to code that we would write",
+      "start_time" : 92160,
+      "end_time" : 97680,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "by hand, so we can start analyzing it. The first line of desugared expression creates an iterator via",
+      "start_time" : 97680,
+      "end_time" : 104320,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "the into iter method, defined on the into iterator trait. We could also write this with the more",
+      "start_time" : 104320,
+      "end_time" : 110400,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "familiar method call syntax. After this, our loop is executed. We call the next method on the iterator,",
+      "start_time" : 110400,
+      "end_time" : 116560,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "which returns an option. If there is a next value, it will return it, wrapped in the sum variant.",
+      "start_time" : 116560,
+      "end_time" : 122640,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "If the iterator is at the end though, it returns none, and we break the loop.",
+      "start_time" : 123440,
+      "end_time" : 127920,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "If we got a value in this match expression, we can then execute the body of our loop,",
+      "start_time" : 127920,
+      "end_time" : 133440,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "where we print the value. Well, I guess all of this seems kind of reasonable,",
+      "start_time" : 133440,
+      "end_time" : 137920,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "but we still haven't really figured out how Rust distinguishes between when it should take ownership",
+      "start_time" : 137920,
+      "end_time" : 143600,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "of the individual elements of the vector and when it should be borrowing them. Well, let's take a",
+      "start_time" : 143600,
+      "end_time" : 149440,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "closer look at our iterator. The type of the iterator we get when calling into iter on a reference to the",
+      "start_time" : 149440,
+      "end_time" : 155280,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "names vec is that of a slice iterator. It returns references to strings when next is called. The loop",
+      "start_time" : 155280,
+      "end_time" : 162640,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "desugared into this because we told our for loop to iterate over a reference to names. If we instead",
+      "start_time" : 162640,
+      "end_time" : 168720,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "iterate over names directly, which consumes it, the call of into iter returns an into iter struct from",
+      "start_time" : 168720,
+      "end_time" : 175680,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "the vec module. This iterator takes ownership of the vector's elements and can thus return own strings.",
+      "start_time" : 175680,
+      "end_time" : 181440,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "Ah, I guess now we're getting to the bottom of this. Or are we? Maybe we should take a closer look at",
+      "start_time" : 181440,
+      "end_time" : 189200,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "how vec actually implements the into iterator trait. But before we get into that, let me quickly take the",
+      "start_time" : 189200,
+      "end_time" : 195440,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "time to talk about a thing that is very dear to my heart. I consider learning to be a lifelong journey,",
+      "start_time" : 195440,
+      "end_time" : 201680,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "and thus it's kind of fulfilling to me to learn more about the technologies that drive our modern",
+      "start_time" : 202240,
+      "end_time" : 207600,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "society. Just think about it. It's not even two years ago that AI completely disrupted our industry",
+      "start_time" : 207600,
+      "end_time" : 213680,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "and how we approach our job as a software engineer. And this is exactly where the sponsor of today's",
+      "start_time" : 213680,
+      "end_time" : 218880,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "video comes in. Brilliant. Brilliant helps you get smarter every day with thousands of interactive",
+      "start_time" : 218880,
+      "end_time" : 224000,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "lessons in math, science, programming, data analysis, and of course, AI. There's a lot of resources out",
+      "start_time" : 224000,
+      "end_time" : 230240,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "there for acquiring new skills. But what I like about Brilliant is that learning is not a one-way street",
+      "start_time" : 230240,
+      "end_time" : 235680,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "where you're just fed information. Instead, their interactive methods foster my critical thinking.",
+      "start_time" : 235680,
+      "end_time" : 241120,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "And lately I got started on their new course on how large language models like ChatGPT actually work.",
+      "start_time" : 241120,
+      "end_time" : 247680,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "It allows me to explore this cutting-edge field all while improving on my problem-solving skills.",
+      "start_time" : 247680,
+      "end_time" : 252320,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "To try everything Brilliant has to offer for free for a full 30 days, visit brilliant.org",
+      "start_time" : 252320,
+      "end_time" : 257360,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "slash greenteacoding or scan the QR code on screen. Or you can click on the link in the description.",
+      "start_time" : 257360,
+      "end_time" : 262640,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "You'll also get 20% off an annual premium subscription. But now, let's finally get into the meat of today's",
+      "start_time" : 262640,
+      "end_time" : 269280,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "video. How does VEC implement the IntoIterator trade? The IntoIterator trade is implemented by",
+      "start_time" : 269280,
+      "end_time" : 276000,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "collections which want to be iterated over. To get a feel for this trade, we need to understand three",
+      "start_time" : 276000,
+      "end_time" : 281200,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "core parts. First, there is the associated type item. This is the type of the items the iterator will",
+      "start_time" : 281200,
+      "end_time" : 287760,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "yield when we call next on it. Secondly, there is the associated type IntoIter. This is the type of",
+      "start_time" : 287760,
+      "end_time" : 294480,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "the iterator we will be creating when we call IntoIter on the collection that implements the",
+      "start_time" : 294480,
+      "end_time" : 299920,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "IntoIterator trade. To be honest, I find it kind of confusing that they named the trade IntoIterator",
+      "start_time" : 299920,
+      "end_time" : 306560,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "and the type it returns IntoIter. But okay. Note the trade bound on IntoIter. It needs to implement",
+      "start_time" : 306560,
+      "end_time" : 314800,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "iterator which yields an item of the same type that our associated type item is. This just ensures",
+      "start_time" : 314800,
+      "end_time" : 321120,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "consistency. And finally, there is a single required method to implement called IntoIter. It consumes",
+      "start_time" : 321120,
+      "end_time" : 327600,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "self, so the collection, in order to return an object of the type that we declared as IntoIter.",
+      "start_time" : 327600,
+      "end_time" : 333920,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "So in short, what does IntoIterator do? Well, it consumes the implementing struct to create an",
+      "start_time" : 334560,
+      "end_time" : 339920,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "iterator, which will then yield items of a specific type. Not actually that difficult. But we don't say",
+      "start_time" : 339920,
+      "end_time" : 346880,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "it like that in Rust. Instead we say, it returns an object of the associated type IntoIter which itself",
+      "start_time" : 346880,
+      "end_time" : 354000,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "implements iterator, which in turn must have an associated type item that matches our associated",
+      "start_time" : 354000,
+      "end_time" : 360080,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "iterator type item. And I find that it's just so beautiful. But now, back to our topic. Where are",
+      "start_time" : 360080,
+      "end_time" : 366080,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "we? Ah yes. How does Vec implement IntoIterator? Well, because Vec is generic over its contained type",
+      "start_time" : 366080,
+      "end_time" : 373680,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "T. The implementation is also generic over this exact type T. The type of the item the iterator returns",
+      "start_time" : 373680,
+      "end_time" : 380400,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "is exactly of this type T, which should come at no surprise. Because if you want to iterate over a",
+      "start_time" : 380400,
+      "end_time" : 385920,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "collection that has items of type T in it, well, you're gonna have T's coming out of the iterator.",
+      "start_time" : 385920,
+      "end_time" : 392240,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "Makes sense. The iterator though, which the call to IntoIter will produce, is the type IntoIter,",
+      "start_time" : 392240,
+      "end_time" : 398320,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "which is also generic over T. Again, absolutely stellar naming here. Calling the implementing struct the",
+      "start_time" : 398320,
+      "end_time" : 405520,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "exact same name as the associated type parameter, which itself is called almost exactly the same",
+      "start_time" : 405520,
+      "end_time" : 410720,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "as the trait. And yes, this is the exact naming that's used in the official source code. I did not",
+      "start_time" : 410720,
+      "end_time" : 416160,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "make any of this up. The IntoIter method then does a lot of unsafe stuff in order to efficiently create",
+      "start_time" : 416160,
+      "end_time" : 422160,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "the IntoIter struct from the vector. Not the topic of this video. However,",
+      "start_time" : 422160,
+      "end_time" : 427840,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "the next few lines of code are the exact reason why I was motivated to make this video. Vec has",
+      "start_time" : 427840,
+      "end_time" : 433760,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "another implementation of IntoIterator, but it's not on vec directly, but on a reference to vec.",
+      "start_time" : 433760,
+      "end_time" : 440320,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "What this syntax means is that whenever there is a self in any of our trait methods, this self will",
+      "start_time" : 441040,
+      "end_time" : 447360,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "now not be a vec of T, but a reference to a vec of T instead. And the implementation solves the",
+      "start_time" : 447360,
+      "end_time" : 454480,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "mystery of the for loop over a reference to a vector. The returned items are now references to T's.",
+      "start_time" : 454480,
+      "end_time" : 460880,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "Of course, they couldn't be anything else because we don't have ownership over the vec at this point.",
+      "start_time" : 461600,
+      "end_time" : 466800,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "The iterator we get from calling IntoIter on a reference to a vec is the aforementioned slice",
+      "start_time" : 466800,
+      "end_time" : 471920,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "iter. And the IntoIter method simply calls self.iter, which is a method of vec that is not governed by any",
+      "start_time" : 471920,
+      "end_time" : 478400,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "trait. So what this implementation tells us is that there is a big difference between calling IntoIter",
+      "start_time" : 478400,
+      "end_time" : 485280,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "on an owned vector versus calling it on a reference to a vector. And you have to be very specific here,",
+      "start_time" : 485280,
+      "end_time" : 491840,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "there's no deref or compiler magic going on. You get exactly what you asked for.",
+      "start_time" : 491840,
+      "end_time" : 496720,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "Well, now that we saw the implementation on the immutable reference, it should probably come",
+      "start_time" : 497680,
+      "end_time" : 502320,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "at no surprise that there is also an implementation on the mutable reference to vec. It's much the same",
+      "start_time" : 502320,
+      "end_time" : 508240,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "and I would consider it homework to look at this yourself. This concept of implementing a trait both",
+      "start_time" : 508240,
+      "end_time" : 514880,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "on the type itself and on a reference to the type works because a reference to T is actually a different",
+      "start_time" : 514880,
+      "end_time" : 521760,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "type to the compiler than the T itself. And thus the compiler doesn't get confused between choosing",
+      "start_time" : 521760,
+      "end_time" : 527680,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "which implementation to use. And I tell you, the insight coming up right now pretty much melted my",
+      "start_time" : 527680,
+      "end_time" : 533040,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "brain the first time it appeared to me. When we write a method that takes a reference to a cell,",
+      "start_time" : 533040,
+      "end_time" : 539280,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "we can still call it on an owned instance of the struct because Rust automatically borrows the instance.",
+      "start_time" : 539280,
+      "end_time" : 545280,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "And this makes sense. If we own that object, we can definitely get a reference to it. However,",
+      "start_time" : 545920,
+      "end_time" : 551280,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "the inverse of course is not true. If a method requires an owned cell, but we only have a",
+      "start_time" : 551280,
+      "end_time" : 557360,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "reference to that type, of course we can't call it. The borrow manager prohibits it. And this is",
+      "start_time" : 557360,
+      "end_time" : 562720,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "exactly where implementing a trait on a reference to a type comes in. We explicitly tell the compiler,",
+      "start_time" : 562720,
+      "end_time" : 569440,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "this is the implementation I want you to use when I call the method on a reference to this type.",
+      "start_time" : 569440,
+      "end_time" : 574560,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "The compiler will then happily oblige, as it already checked that we are only doing legal operations",
+      "start_time" : 575360,
+      "end_time" : 580560,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "inside the method. This is guaranteed because we only have a reference to self at our disposal.",
+      "start_time" : 580560,
+      "end_time" : 586240,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "So, seen this way, implementing a trait on a reference is the opposite of automatic borrowing",
+      "start_time" : 586800,
+      "end_time" : 593360,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "for method calls, but way more explicit as we need to satisfy the borrowing rules.",
+      "start_time" : 593360,
+      "end_time" : 597760,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "Understanding this concept was really challenging me to think about trade design in a different way.",
+      "start_time" : 598480,
+      "end_time" : 603200,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "And if you want to deepen your journey on this field, there's many more examples of it in the",
+      "start_time" : 603920,
+      "end_time" : 608400,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "standard library. Display and debug, equality and ordering, as well as arithmetic operators,",
+      "start_time" : 608400,
+      "end_time" : 614000,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "all have implementations on references to types. These traits are designed such that the implementing",
+      "start_time" : 614000,
+      "end_time" : 620160,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "type can decide how ownership works, by choosing how self is taken. And that about wraps it up for today.",
+      "start_time" : 620160,
+      "end_time" : 626800,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "When I started doing my research for this video, I didn't think it would lead me down this rabbit hole",
+      "start_time" : 627520,
+      "end_time" : 632800,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "that I'm currently residing in. But whenever I do these deep dives, it seems like my overall understanding",
+      "start_time" : 632800,
+      "end_time" : 639920,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "of general rust also improves by quite a lot. And I hadn't had this experience with any other language",
+      "start_time" : 639920,
+      "end_time" : 646800,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "that I've learned so far. Well, I assume that's a good thing. Well, for now, stay safe, like the video",
+      "start_time" : 646800,
+      "end_time" : 654160,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "if you learned something, and if you want to catch some more rusty rabbits in those deep holes,",
+      "start_time" : 654160,
+      "end_time" : 658720,
+      "speaker" : "1",
+      "words" : [ ]
+    }, {
+      "text" : "then consider subscribing. I'll see you next time with Green Tea Coding.",
+      "start_time" : 658720,
+      "end_time" : 672080,
+      "speaker" : "1",
+      "words" : [ ]
+    } ]
+  }
+}

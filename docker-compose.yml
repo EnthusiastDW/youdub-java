@@ -22,7 +22,7 @@ services:
       - MODEL_DIR=/app/data/separator-models
 
       # ── Faster-Whisper ─────────────────────────────────
-      - WHISPER_MODEL=${WHISPER_MODEL:-base}
+      - WHISPER_MODEL=${WHISPER_MODEL:-large-v3-turbo}
       - WHISPER_DEVICE=${WHISPER_DEVICE:-cpu}
       - WHISPER_COMPUTE_TYPE=${WHISPER_COMPUTE_TYPE:-int8}
       - WHISPER_CPU_THREADS=${WHISPER_CPU_THREADS:-6}
