@@ -156,7 +156,7 @@ public class OllamaTranslator extends AbstractTranslator {
             Utterance item = items.get(i);
             ObjectNode entry = objectMapper.createObjectNode();
             entry.put("src", item.text());
-            entry.put("dst", translations.get(i));
+            entry.put("dst", stripTrailingPunctuation(translations.get(i), dstLang));
             entry.put("src_lang", srcLang);
             entry.put("dst_lang", dstLang);
             entry.put("start_time", item.startTime());

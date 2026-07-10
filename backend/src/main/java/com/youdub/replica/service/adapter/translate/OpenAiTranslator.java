@@ -198,7 +198,7 @@ public class OpenAiTranslator extends AbstractTranslator {
             }
             ObjectNode entry = objectMapper.createObjectNode();
             entry.put("src", item.text());
-            entry.put("dst", dst);
+            entry.put("dst", stripTrailingPunctuation(dst, dstLang));
             entry.put("src_lang", srcLang);
             entry.put("dst_lang", dstLang);
             entry.put("start_time", item.startTime());

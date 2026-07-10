@@ -22,6 +22,21 @@ public abstract class AbstractTranslator implements Translator {
      * 用 LLM 对英文原文生成结构化中文小结，写入 summary.md。
      * 放在翻译前执行，避免等待逐句翻译完成。
      */
+    /**
+     * 翻译到中文时去掉句尾句号。
+     * TTS 拼接时句尾停顿时长会被 ffmpeg 误判为需要拉长，"停顿+句号"的效果反而更自然，
+     * 而中文的句号往往是冗余的，去掉后 TTS 输出更流畅。
+     */
+    protected static String stripTrailingPunctuation(String text, String dstLang) {
+        if (text == null || text.isEmpty() || !"zh".equals(dstLang)) {
+            return text;
+        }
+        if (text.endsWith("。")) {
+            return text.substring(0, text.length() - 1);
+        }
+        return text;
+    }
+
     protected void generateSummary(String fullText, Path outputDir, String targetLang,
                                    Summarizer summarizer) throws Exception {
         Path summaryFile = outputDir.resolve("summary.md");
