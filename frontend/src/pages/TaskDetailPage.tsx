@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate } from "react-router-dom";
 import { ArrowLeft, Download, Play, RotateCcw, Square, Trash2, Loader2, AlertCircle, Pencil, Check, X, Copy } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { StageProgress } from "@/components/StageProgress";

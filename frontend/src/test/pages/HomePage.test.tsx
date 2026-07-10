@@ -106,6 +106,7 @@ describe("HomePage", () => {
       pageSize: 20,
       totalPages: 1,
       setPage: vi.fn(),
+      setPageSize: vi.fn(),
       refresh: vi.fn(),
     });
     renderWithProviders(<HomePage />);
@@ -122,6 +123,7 @@ describe("HomePage", () => {
       pageSize: 20,
       totalPages: 1,
       setPage: vi.fn(),
+      setPageSize: vi.fn(),
       refresh: vi.fn(),
     });
     renderWithProviders(<HomePage />);
