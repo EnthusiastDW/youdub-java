@@ -118,7 +118,6 @@ public class OpenAiAsrCorrector implements AsrCorrector {
         ObjectNode requestBody = objectMapper.createObjectNode();
         requestBody.put("model", resolved.model());
         requestBody.put("temperature", TEMPERATURE);
-        requestBody.put("max_tokens", 8192);
         ArrayNode messages = objectMapper.createArrayNode();
         messages.add(objectMapper.createObjectNode().put("role", "system").put("content", systemPrompt));
         messages.add(objectMapper.createObjectNode().put("role", "user").put("content", userPrompt));
@@ -256,8 +255,9 @@ public class OpenAiAsrCorrector implements AsrCorrector {
                 return json;
 
             } catch (Exception e) {
+                String raw = response != null ? response : content;
                 log.warn("ASR 纠错调用异常（第 {}/{} 次）：{}, raw_response={}",
-                        attempt, MAX_RETRIES, e.getMessage(), truncate(response != null ? response : content, 500));
+                        attempt, MAX_RETRIES, e.getMessage(), raw);
                 if (attempt == MAX_RETRIES) {
                     throw e;
                 }
