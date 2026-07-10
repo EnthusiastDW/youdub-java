@@ -243,6 +243,32 @@ public class TaskRepository {
     }
 
     /**
+     * 检查阶段记录是否存在。
+     */
+    public boolean stageExists(String taskId, String name) {
+        String sql = "SELECT COUNT(*) FROM task_stages WHERE task_id = ? AND name = ?";
+        Integer count = jdbcTemplate.queryForObject(sql, Integer.class, taskId, name);
+        return count != null && count > 0;
+    }
+
+    /**
+     * 重置单个阶段为 PENDING（按名称）。
+     */
+    public void resetStage(String taskId, String name) {
+        String sql = "UPDATE task_stages SET status = ?, progress = 0, started_at = NULL, completed_at = NULL, " +
+                "error_message = '' WHERE task_id = ? AND name = ?";
+        jdbcTemplate.update(sql, StageStatus.PENDING.toDbValue(), taskId, name);
+    }
+
+    /**
+     * 删除指定阶段记录。
+     */
+    public void deleteStage(String taskId, String name) {
+        String sql = "DELETE FROM task_stages WHERE task_id = ? AND name = ?";
+        jdbcTemplate.update(sql, taskId, name);
+    }
+
+    /**
      * 硬删除任务（含阶段，依赖外键级联）。
      */
     public void hardDelete(String id) {

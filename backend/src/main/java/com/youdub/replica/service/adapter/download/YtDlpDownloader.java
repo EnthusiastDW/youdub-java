@@ -94,7 +94,6 @@ public class YtDlpDownloader implements Downloader {
         try {
             output = CommandRunner.run(Command.builder()
                     .add(command)
-                    .timeout(config.getTimeoutMs())
                     .workDir(workFolder)
                     .build()).output();
         } catch (RuntimeException e) {

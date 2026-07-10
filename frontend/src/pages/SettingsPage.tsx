@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import { ArrowLeft, Save, Loader2, CheckCircle2 } from "lucide-react";
 import { AppHeader } from "@/components/AppHeader";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -256,6 +256,7 @@ function useActiveSection(sectionIds: string[]): string | null {
 
 export default function SettingsPage() {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const [settings, setSettings] = useState<Settings | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -318,9 +319,10 @@ export default function SettingsPage() {
         const initialConfigs: Record<string, string> = {};
         if (data.providers) {
           for (const [step, group] of Object.entries(data.providers)) {
+            const sectionKey = step.replace(/([A-Z])/g, '-$1').toLowerCase();
             for (const [provider, fields] of Object.entries(group.options)) {
               for (const [field, value] of Object.entries(fields as Record<string, string>)) {
-                initialConfigs[`${step}.${provider}.${field}`] = value;
+                initialConfigs[`${sectionKey}.${provider}.${field}`] = value;
               }
             }
           }
@@ -461,10 +463,10 @@ export default function SettingsPage() {
           </aside>
 
           <div className="flex-1 min-w-0 space-y-6">
-            <Link to="/" className={buttonVariants({ variant: "ghost", size: "sm" })}>
+            <button onClick={() => navigate(-1)} className={buttonVariants({ variant: "ghost", size: "sm" })}>
               <ArrowLeft className="h-4 w-4" />
               {t.common.back}
-            </Link>
+            </button>
 
             <div className="space-y-1">
               <h1 className="text-2xl font-bold tracking-tight">{t.settings.title}</h1>

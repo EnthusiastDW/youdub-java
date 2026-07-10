@@ -196,6 +196,154 @@ class UtteranceProcessorTest {
         assertEquals("next sentence", result.get(1).path("text").asText());
     }
 
+    @Test
+    void withWordTimestamps_longSentenceWithComma_splitsAtComma() {
+        // 构造超过 MAX_MERGE_CHARS(160) 且含逗号的句子，应在逗号处切分
+        String firstPart = "This is a very long sentence that needs to be split because it exceeds the maximum merge chars limit,";
+        String secondPart = "and this is the continuation after the comma that forms the second utterance.";
+        String full = firstPart + " " + secondPart;
+        assertTrue(full.length() > 160);
+
+        ArrayNode items = mapper.createArrayNode();
+        ObjectNode u = items.addObject();
+        u.put("text", full);
+        u.put("start_time", 0);
+        u.put("end_time", 5000);
+        u.put("speaker", "1");
+        ArrayNode words = u.putArray("words");
+        addWord(words, "This", 0, 200);
+        addWord(words, "is", 200, 300);
+        addWord(words, "a", 300, 350);
+        addWord(words, "very", 350, 500);
+        addWord(words, "long", 500, 650);
+        addWord(words, "sentence", 650, 900);
+        addWord(words, "that", 900, 1050);
+        addWord(words, "needs", 1050, 1250);
+        addWord(words, "to", 1250, 1350);
+        addWord(words, "be", 1350, 1420);
+        addWord(words, "split", 1420, 1600);
+        addWord(words, "because", 1600, 1850);
+        addWord(words, "it", 1850, 1950);
+        addWord(words, "exceeds", 1950, 2200);
+        addWord(words, "the", 2200, 2300);
+        addWord(words, "maximum", 2300, 2550);
+        addWord(words, "merge", 2550, 2750);
+        addWord(words, "chars", 2750, 2950);
+        addWord(words, "limit,", 2950, 3100);
+        addWord(words, "and", 3200, 3350);
+        addWord(words, "this", 3350, 3500);
+        addWord(words, "is", 3500, 3600);
+        addWord(words, "the", 3600, 3700);
+        addWord(words, "continuation", 3700, 4000);
+        addWord(words, "after", 4000, 4200);
+        addWord(words, "the", 4200, 4300);
+        addWord(words, "comma", 4300, 4500);
+        addWord(words, "that", 4500, 4650);
+        addWord(words, "forms", 4650, 4850);
+        addWord(words, "the", 4850, 4920);
+        addWord(words, "second", 4920, 5000);
+        addWord(words, "utterance.", 5000, 5200);
+
+        ArrayNode result = process(items);
+        assertEquals(2, result.size());
+        assertTrue(result.get(0).path("text").asText().endsWith("limit,"),
+                "第一句应以逗号结尾: " + result.get(0).path("text").asText());
+        assertTrue(result.get(1).path("text").asText().startsWith("and"),
+                "第二句应以 and 开头: " + result.get(1).path("text").asText());
+        // 验证时间戳：midTime 是第一句文本切分点的估算时间
+        long firstEnd = result.get(0).path("end_time").asLong();   // = midTime + PADDING_END
+        long secondStart = result.get(1).path("start_time").asLong(); // = midTime - PADDING_START
+        assertTrue(firstEnd > secondStart,
+                "第一句结束应晚于第二句开始（padding 造成重叠）: end=" + firstEnd + ", start=" + secondStart);
+        // midTime = (end - 300 + start + 100) / 2，应在 [2000, 3500] 范围内
+        long reconstructedMid = (firstEnd - 300 + secondStart + 100) / 2;
+        assertTrue(reconstructedMid >= 2000 && reconstructedMid <= 3500,
+                "切分点估算应在合理范围: " + reconstructedMid);
+    }
+
+    @Test
+    void withWordTimestamps_specialTokens_attachCorrectly() {
+        // whisper 将连词符 "-"、域名点 "."、百分号 "%" 作为独立 token 返回
+        ArrayNode items = mapper.createArrayNode();
+        ObjectNode u = items.addObject();
+        u.put("text", "zero -cost brilliant .org 50 %");
+        u.put("start_time", 0);
+        u.put("end_time", 3000);
+        u.put("speaker", "1");
+        ArrayNode words = u.putArray("words");
+        addWord(words, "zero", 0, 500);
+        addWord(words, "-cost", 500, 700);
+        addWord(words, "brilliant", 700, 1200);
+        addWord(words, ".org", 1200, 1500);
+        addWord(words, "50", 1500, 2000);
+        addWord(words, "%", 2000, 2500);
+        addWord(words, "normal.", 2500, 3000);
+
+        ArrayNode result = process(items);
+        assertEquals(1, result.size());
+        String text = result.get(0).path("text").asText();
+        assertEquals("zero-cost brilliant.org 50% normal.", text);
+    }
+
+    @Test
+    void withWordTimestamps_throwException_fallsBackToMerge() {
+        // 构造异常的 utterances（words 非数组）触发降级
+        ArrayNode items = mapper.createArrayNode();
+        ObjectNode u = items.addObject();
+        u.put("text", "hello world");
+        u.put("start_time", 0);
+        u.put("end_time", 1000);
+        u.put("speaker", "1");
+        // words 字段设为一个字符串（非数组），导致 reSegmentByWords 内部处理异常
+        u.put("words", "not_an_array");
+
+        ArrayNode result = process(items);
+        assertEquals(1, result.size());
+        assertEquals("hello world", result.get(0).path("text").asText());
+    }
+
+    /* ────────── 中文 ────────── */
+
+    @Test
+    void chineseText_withPeriod_endsSentence() {
+        ArrayNode items = mapper.createArrayNode();
+        addUtterance(items, "今天天气真好。", 0, 1000);
+        addUtterance(items, "我们去公园吧。", 1000, 2000);
+        ArrayNode result = process(items);
+        assertEquals(2, result.size());
+        assertEquals("今天天气真好。", result.get(0).path("text").asText());
+    }
+
+    @Test
+    void chineseText_noPunctuation_doesNotMerge() {
+        // 中文无标点且下句以中文开头 → Character.isLowerCase() 对中文返回 false，
+        // 所以不会触发合并（mergeFragments 仅对以小写字母开头的下句合并，适用于英文场景）
+        ArrayNode items = mapper.createArrayNode();
+        addUtterance(items, "我们讨论了", 0, 500);
+        addUtterance(items, "几个重要的方案", 500, 1000);
+        ArrayNode result = process(items);
+        assertEquals(2, result.size());
+    }
+
+    @Test
+    void chineseWordTimestamps_reSegmentsByChinesePunctuation() {
+        ArrayNode items = mapper.createArrayNode();
+        ObjectNode u = items.addObject();
+        u.put("text", "你好世界！我们来了");
+        u.put("start_time", 0);
+        u.put("end_time", 3000);
+        u.put("speaker", "1");
+        ArrayNode words = u.putArray("words");
+        addWord(words, "你好世界！", 0, 1000);
+        addWord(words, "我们", 1000, 1500);
+        addWord(words, "来了", 1500, 3000);
+
+        ArrayNode result = process(items);
+        assertEquals(2, result.size());
+        assertEquals("你好世界！", result.get(0).path("text").asText());
+        assertEquals("我们 来了", result.get(1).path("text").asText());
+    }
+
     /* ────────── helper ────────── */
 
     /** 调用处理器，返回处理后的 utterances 数组。 */

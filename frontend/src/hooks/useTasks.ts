@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { listTasks } from "@/api/client";
 import type { Task } from "@/types";
 
@@ -11,19 +12,22 @@ interface UseTasksResult {
   pageSize: number;
   totalPages: number;
   setPage: (page: number) => void;
+  setPageSize: (size: number) => void;
   refresh: () => void;
 }
 
 export function useTasks(
   pollIntervalMs = 2000,
-  initialPage = 0,
-  pageSize = 10
+  defaultPageSize = 10
 ): UseTasksResult {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const page = Number(searchParams.get("p") ?? "0");
+  const pageSize = Number(searchParams.get("s") ?? String(defaultPageSize));
+
   const [tasks, setTasks] = useState<Task[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [page, setPageState] = useState(initialPage);
   const mountedRef = useRef(true);
   const pageRef = useRef(page);
   pageRef.current = page;
@@ -47,9 +51,21 @@ export function useTasks(
   }, [pageSize]);
 
   const setPage = useCallback((p: number) => {
-    setPageState(p);
+    setSearchParams((prev: URLSearchParams) => {
+      prev.set("p", String(p));
+      return prev;
+    });
     setLoading(true);
-  }, []);
+  }, [setSearchParams]);
+
+  const setPageSize = useCallback((s: number) => {
+    setSearchParams((prev: URLSearchParams) => {
+      prev.set("s", String(s));
+      prev.set("p", "0");
+      return prev;
+    });
+    setLoading(true);
+  }, [setSearchParams]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -75,6 +91,7 @@ export function useTasks(
     pageSize,
     totalPages,
     setPage,
+    setPageSize,
     refresh: load,
   };
 }

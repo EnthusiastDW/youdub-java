@@ -33,6 +33,8 @@ public class UtteranceProcessor {
 
     /**
      * 合并后句子的字符数上限。超过此阈值的句子不再参与合并，避免字幕过长。
+     * 当前值 160 约对应 2 行中文字幕（每行约 13-18 个中文字符 × 2 行），
+     * 兼顾阅读体验与合理分段。
      * 当重分段路径启用时，超过此阈值且含逗号的句子会在最后一个不超限的逗号处切分。
      */
     private static final int MAX_MERGE_CHARS = 160;
@@ -67,8 +69,10 @@ public class UtteranceProcessor {
         // 路径 A：单词级重分段（最精确）
         if (hasWordTimestamps(utterances)) {
             try {
+                // reSegmentByWords 输出原始时间（无 padding），再通过 mergeUtterances 统一加 padding
                 ArrayNode reSegmented = reSegmentByWords(utterances);
-                return wrapResult(reSegmented);
+                ArrayNode merged = mergeUtterances(reSegmented);
+                return wrapResult(merged);
             } catch (Exception e) {
                 log.warn("单词级重分段异常，降级到从句合并：{}", e.getMessage());
             }
@@ -86,7 +90,10 @@ public class UtteranceProcessor {
         return applyTimePadding(asrRoot.deepCopy());
     }
 
-    /** 包装 utterances 数组为标准响应结构。 */
+    /**
+     * 将处理后的 utterances 数组包装为标准响应结构 {@code {"result":{"utterances":[...]}}}，
+     * 与原始 ASR 输出的 JSON 结构一致，确保下游阶段（asr_correct、translate）无需调整解析逻辑。
+     */
     private ObjectNode wrapResult(ArrayNode utterances) {
         ObjectNode root = objectMapper.createObjectNode();
         ObjectNode result = root.putObject("result");
@@ -94,7 +101,10 @@ public class UtteranceProcessor {
         return root;
     }
 
-    /** 遍历原节点，仅对每条 utterance 的时间戳做 padding。 */
+    /**
+     * 兜底路径：遍历原 utterances 节点，仅对每条 utterance 的时间戳做 padding，
+     * 不修改文本内容。当单词级重分段和从句合并均失败时使用。
+     */
     private ObjectNode applyTimePadding(ObjectNode root) {
         JsonNode utterances = root.path("result").path("utterances");
         if (utterances.isArray()) {
@@ -114,7 +124,12 @@ public class UtteranceProcessor {
     //  路径判断
     // ════════════════════════════════════════════════════════════
 
-    /** 检查 utterances 中是否包含单词级时间戳（{@code words[]} 数组）。 */
+    /**
+     * 检查 utterances 中是否包含单词级时间戳（{@code words[]} 数组）。
+     * 用于决定走单词级重分段路径（A）还是从句合并路径（B）。
+     *
+     * @return 任意一条 utterance 包含非空 words[] 数组时返回 {@code true}
+     */
     private boolean hasWordTimestamps(JsonNode utterances) {
         for (JsonNode u : utterances) {
             if (u.path("words").isArray() && !u.path("words").isEmpty()) {
@@ -145,10 +160,16 @@ public class UtteranceProcessor {
         String speaker = "1";
 
         // 遍历所有 utterance 的 words，逐词拼接，遇句尾标点切分
+        // 对口语转写（word 不含标点），连续 MAX_UTTS_WITHOUT_PUNCT 个 utterance 无标点则强制切分
+        int utterancesSinceLastSplit = 0;
+
         for (JsonNode u : utterances) {
             speaker = u.path("speaker").asText("1");
             JsonNode words = u.path("words");
             if (!words.isArray()) continue;
+
+            utterancesSinceLastSplit++;
+            boolean foundPunctuation = false;
 
             for (JsonNode w : words) {
                 String word = w.path("text").asText("");
@@ -173,7 +194,18 @@ public class UtteranceProcessor {
                     currentText.setLength(0);
                     sentenceStart = -1;
                     sentenceEnd = -1;
+                    foundPunctuation = true;
+                    utterancesSinceLastSplit = 0;
                 }
+            }
+
+            // 安全兜底：连续多个 utterance 都没有句尾标点（口语无标点场景），
+            // 强制以 utterance 边界切分，防止全部坍缩为一句。
+            if (!foundPunctuation && utterancesSinceLastSplit >= 3 && currentText.length() > 0) {
+                flushUtterance(currentText, sentenceStart, sentenceEnd, speaker, result);
+                currentText.setLength(0);
+                sentenceStart = -1;
+                sentenceEnd = -1;
             }
         }
 
@@ -358,12 +390,13 @@ public class UtteranceProcessor {
             }
         }
 
-        output.add(buildUtteranceObj(text, sentenceStart, sentenceEnd, speaker));
+        output.add(buildUtteranceObjRaw(text, sentenceStart, sentenceEnd, speaker));
     }
 
     /**
      * 在 {@link #MAX_MERGE_CHARS} 范围内找最后一个逗号位置。
-     * 如果所有逗号都在阈值之后，回退到第一个逗号。
+     * 注意：调用方已在 {@link #flushUtterance} 中通过 {@code text.contains(",")} 确保文本有逗号，
+     * 因此此方法始终能返回有效索引。
      */
     private int findCommaSplitIndex(String text) {
         int bestIdx = -1;
@@ -374,19 +407,30 @@ public class UtteranceProcessor {
             }
             if (idx > MAX_MERGE_CHARS) break;
         }
+        // 所有逗号都超过阈值时，回退到第一个逗号
         if (bestIdx < 0) {
             bestIdx = text.indexOf(',');
         }
         return bestIdx;
     }
 
-    /** 构建单条 utterance 的 JSON 节点（含时间 padding）。 */
+    /** 构建单条 utterance 的 JSON 节点（含时间 padding，用于从句合并路径）。 */
     private ObjectNode buildUtteranceObj(String text, long startTime, long endTime, String speaker) {
         ObjectNode u = objectMapper.createObjectNode();
         u.put("text", text);
         // 时间 padding：起始前移 100ms，结束延后 300ms，避免字幕紧贴语音边缘
         u.put("start_time", Math.max(0, startTime - PADDING_START));
         u.put("end_time", endTime + PADDING_END);
+        u.put("speaker", speaker);
+        return u;
+    }
+
+    /** 构建单条 utterance 的 JSON 节点（不含时间 padding，用于单词重分段路径）。 */
+    private ObjectNode buildUtteranceObjRaw(String text, long startTime, long endTime, String speaker) {
+        ObjectNode u = objectMapper.createObjectNode();
+        u.put("text", text);
+        u.put("start_time", startTime);
+        u.put("end_time", endTime);
         u.put("speaker", speaker);
         return u;
     }

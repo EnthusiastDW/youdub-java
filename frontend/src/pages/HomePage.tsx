@@ -16,14 +16,12 @@ const PAGE_SIZE_OPTIONS = [10, 20, 50, 100];
 export default function HomePage() {
   const { t } = useI18n();
   const navigate = useNavigate();
-  const [pageSize, setPageSizeState] = useState(10);
   const {
-    tasks, total, loading, error, page, totalPages, setPage, refresh,
-  } = useTasks(10000, 0, pageSize);
+    tasks, total, loading, error, page, pageSize, totalPages, setPage, setPageSize, refresh,
+  } = useTasks(10000);
 
   const handlePageSizeChange = (newSize: number) => {
-    setPageSizeState(newSize);
-    setPage(0);
+    setPageSize(newSize);
   };
 
   const [dialogOpen, setDialogOpen] = useState(false);

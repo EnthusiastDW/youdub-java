@@ -57,6 +57,8 @@ services:
     volumes:
       - /mnt/e/youdub-data/modelscope:/app/data/modelscope
       - /mnt/e/youdub-data/separator-models:/app/data/separator-models
+      - ./docker/youdub-python-services/server.py:/app/server.py:ro
+    command: python -m uvicorn server:app --host 0.0.0.0 --port 8001 --log-level info --reload
     restart: unless-stopped
     logging:
       driver: "json-file"

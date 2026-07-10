@@ -11,8 +11,8 @@
 ├── metadata/                       # 元数据
 │   ├── ytdlp_info.json             # 下载元数据
 │   ├── asr.json                    # ASR 识别结果
+│   ├── asr_fixed.json              # ASR 句子修正结果（asr_fix 阶段：分句 + padding）
 │   ├── asr_corrected.json          # ASR 纠错结果（可选，asr_correct 阶段生成）
-│   ├── asr_fixed.json              # ASR 时间修正结果
 │   ├── translation.{lang}.json     # 翻译结果
 │   ├── title_bilingual.json        # 标题翻译（翻译阶段生成）
 │   └── summary.md                  # 结构化小结（翻译阶段生成，可选）
@@ -102,15 +102,32 @@
 
 ---
 
-## 阶段 4：asr_fix（时间修正）
+## 阶段 4：asr_fix（句子修正 + 时间 padding）
 
-**适配器**: `PipelineOrchestrator.executeAsrFix()`（内置逻辑）
+**适配器**: `UtteranceProcessor`（Spring Bean，含降级逻辑）
 
 | 项目 | 内容 |
 |------|------|
 | **输入** | `metadata/asr.json` |
 | **输出** | `metadata/asr_fixed.json` |
-| **操作** | 复制 ASR 结果，对每句话的起止时间做 padding：**起始提前 100ms，结束延后 300ms**。目的是补偿 ASR 时间戳的边缘误差，确保语音裁剪时不会切掉首尾音素。 |
+| **操作** | 对 ASR 原始听写结果做句子级修正，包含**两条路径**（见下方详述） |
+
+### 处理路径
+
+**路径 A — 单词级重分段**（首选，需 Whisper 开启 `word_timestamps=1`）：
+- 抛弃 ASR 原始断句，按句尾标点（`.!?。！？`）逐词重新拼接单词
+- 处理 whisper 特殊 token 附着（连词符 `-cost`、域名 `.org`、百分号 `50%` 紧贴不空格）
+- 超长句子（>160 字符）在最后一个不超限的逗号处切分为两句
+- 统一连续空格为单空格
+
+**路径 B — 从句片段合并**（回退，无单词时间戳时）：
+- 对 ASR 误切分的碎片按语法边界重新拼接
+- 合并条件：当前句不以句尾标点结尾 + 下句以小写字母开头 + 合并后不超 160 字符
+
+**路径 C — 仅时间 padding**（最终兜底）：
+- 仅对原始 utterance 做时间 padding，不修改文本
+
+所有路径最后统一对句子时间做 padding：**起始提前 100ms，结束延后 300ms**，补偿 ASR 时间戳边缘误差。
 
 **时间修正**:
 ```
@@ -118,15 +135,44 @@ start_time_fixed = max(0, start_time - 100)
 end_time_fixed   = end_time + 300
 ```
 
+**输出格式** (`asr_fixed.json`):
+```json
+{
+  "result": {
+    "utterances": [
+      {
+        "text": "修正后的句子文本",
+        "start_time": 0,
+        "end_time": 1100,
+        "speaker": "1"
+      }
+    ]
+  }
+}
+```
+
 ---
 
-## 阶段 5：translate（翻译）
+## 阶段 6：asr_correct（ASR 纠错，可选）
+
+**适配器**: `AsrCorrector`（调用 LLM 修正误识别的领域术语）
+
+| 项目 | 内容 |
+|------|------|
+| **输入** | `metadata/asr_fixed.json` |
+| **输出** | `metadata/asr_corrected.json` |
+| **操作** | 用 LLM 根据全文上下文纠正特定术语误识别（如人名、技术名词等）。仅在配置中启用时执行。注意，该阶段**在 asr_fix 之后执行**，确保输入已经是正确分句后的结果。 |
+| 状态 | 🟡 可选阶段，通过 `isStageFeatureEnabled()` 控制 |
+
+---
+
+## 阶段 7：translate（翻译）
 
 **适配器**: `OpenAiTranslator` / `LocalLlmTranslator`
 
 | 项目 | 内容 |
 |------|------|
-| **输入** | `metadata/asr_fixed.json`（回退: `asr.json`） |
+| **输入** | `metadata/asr_corrected.json`（若存在，否则回退 `asr_fixed.json`） |
 | **输出** | `metadata/translation.{lang}.json` |
 | **操作** | 两阶段翻译：阶段 A 对全文做预处理（生成摘要和热词）；阶段 B 并发逐句翻译。保留原始 ASR 时间戳和说话人 ID。 |
 
@@ -160,7 +206,7 @@ end_time_fixed   = end_time + 300
 
 ---
 
-## 阶段 6：split_audio（切分音频）
+## 阶段 8：split_audio（切分音频）
 
 **适配器**: `FfmpegAudioProcessor.splitAudio()`
 
@@ -180,7 +226,7 @@ end   = end_time + 160ms              // 结束 padding
 
 ---
 
-## 阶段 7：tts（语音合成）
+## 阶段 9：tts（语音合成）
 
 **适配器**: `VoxCpmTtsProvider` / `OpenAiTtsProvider` / `EdgeTtsProvider`
 
@@ -201,7 +247,7 @@ end   = end_time + 160ms              // 结束 padding
 
 ---
 
-## 阶段 8：merge_audio（混合音频）
+## 阶段 10：merge_audio（混合音频）
 
 **适配器**: `FfmpegAudioProcessor.mergeAudio()`
 
@@ -247,7 +293,7 @@ end   = end_time + 160ms              // 结束 padding
 
 ---
 
-## 阶段 9：merge_video（合成视频）
+## 阶段 11：merge_video（合成视频）
 
 **适配器**: `FfmpegVideoProcessor.mergeVideo()`
 
@@ -285,7 +331,7 @@ end   = end_time + 160ms              // 结束 padding
 
 | 字段 | 产生阶段 | 含义 |
 |------|---------|------|
-| `start_time` / `end_time` | ASR → asr_fix → translate | 基于 ASR 的时间戳，asr_fix 做了 padding（起始-100ms，结束+300ms） |
+| `start_time` / `end_time` | ASR → asr_fix → asr_correct → translate | 基于 ASR 的时间戳，asr_fix 做了 padding（起始-100ms，结束+300ms） |
 | `actual_start_time` / `actual_end_time` | merge_audio | TTS 音频实际拼接后的时间位置，因 TTS 时长偏差可能与原始时间戳不同 |
 | SRT 时间 | merge_video | 字幕显示时间，优先使用 `actual_*`，回退 `start_time` / `end_time` |
 
@@ -296,3 +342,7 @@ end   = end_time + 160ms              // 结束 padding
 | 累积延迟 | TTS 音频时长 > 原始时间段，后续段被推后 | 时间压缩（atempo 变速适配原始时间段） |
 | 空白段膨胀 | asr_fix 的 end_time +300ms 被空白段用于填充静音 | 空白段跳过，间隙由后续非空段自动处理 |
 | 音色不一致 | VoxCPM 每句用不同的 vocal 片段作参考 | 按 speaker 分组，使用固定参考音频 |
+
+## 阶段顺序变更记录
+
+**2026-07-10**：将 `asr_correct`（ASR纠错）与 `asr_fix`（句子修正）对调。旧顺序为 `asr → asr_correct → asr_fix → translate`，新顺序为 `asr → asr_fix → asr_correct → translate`。原因：纠错应在分句完成后执行，否则 LLM 纠错修改文本后，分句阶段重新切分会破坏纠错结果。受影响文件：`PipelineOrchestrator.java`、`TaskService.java`。

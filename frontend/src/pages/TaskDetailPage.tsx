@@ -559,14 +559,15 @@ const [redoStageTarget, setRedoStageTarget] = useState<{ name: string; label: st
 
 function BackLink() {
   const { t } = useI18n();
+  const navigate = useNavigate();
   return (
-    <Link
-      to="/"
+    <button
+      onClick={() => navigate(-1)}
       className={buttonVariants({ variant: "ghost", size: "sm" })}
     >
       <ArrowLeft className="h-4 w-4" />
       {t.common.back}
-    </Link>
+    </button>
   );
 }
 

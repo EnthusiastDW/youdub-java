@@ -12,8 +12,8 @@ YouDub Replica 是一个视频自动配音管线系统。给定一个视频（Yo
 1. **下载** — yt-dlp 下载视频
 2. **人声分离** — 去除背景音乐，提取人声
 3. **语音识别 (ASR)** — 将人声转写为文字
-4. **ASR 纠错** — 用 LLM 根据全文上下文纠正领域特定术语误识别（可选）
-5. **时间修正** — 对 ASR 时间戳做 padding
+4. **句子修正 (asr_fix)** — 按句尾标点重分段/合并碎片 + 时间戳 padding
+5. **ASR 纠错** — 用 LLM 根据全文上下文纠正领域特定术语误识别（可选，在分句之后执行）
 6. **翻译** — 将原文翻译为目标语言
 7. **音频切分** — 按句子时间戳裁剪人声片段
 8. **语音合成 (TTS)** — 用目标语言生成配音（支持声音克隆）
@@ -98,7 +98,8 @@ private final Map<String, TtsProvider> ttsProviders; // key: bean name
 |------|------|---------|
 | 下载 | `Downloader` | `YtDlpDownloader`（yt-dlp 子进程）、`LocalFileDownloader`（本地上传）|
 | 人声分离 | `SourceSeparator` | `FfmpegSimpleSeparator`（FFmpeg 频率滤波）、`DemucsSeparator`（本地 Python 进程）、`AudioSeparatorApiSeparator`（Docker API）|
-| ASR | `SpeechRecognizer` | `WhisperApiRecognizer`（OpenAI 兼容 API）、`WhisperCppRecognizer`（whisper.cpp 子进程）|
+| ASR | `SpeechRecognizer` | `WhisperApiRecognizer`（OpenAI 兼容 API，需开启 `word_timestamps=1`）、`WhisperCppRecognizer`（whisper.cpp 子进程）|
+| 句子修正 | `UtteranceProcessor` | 单词级重分段（需 word_timestamps）/ 从句合并 / 时间 padding 三级降级 |
 | 翻译 | `Translator` | `OpenAiTranslator`（OpenAI Chat API）、`OllamaTranslator`（本地 Ollama）|
 | TTS | `TtsProvider` | `VoxCpmTtsProvider`（VoxCPM API）、`EdgeTtsProvider`（edge-tts 子进程）、`OpenAiTtsProvider`（OpenAI TTS API）|
 | 音频处理 | `AudioProcessor` | `FfmpegAudioProcessor`（FFmpeg 子进程）|

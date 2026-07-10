@@ -67,7 +67,7 @@ public class TaskService {
             new StageDef("merge_video", "合成视频")
     );
 
-    /** 简化模式（仅字幕）包含的阶段名，与 PipelineOrchestrator.SUBTITLE_ONLY_STAGES 保持同步 */
+    /** 简化模式（仅字幕）包含的阶段名，需与 PipelineOrchestrator.STAGES 保持同步（过滤掉非字幕阶段后得到此集合） */
     private static final Set<String> SUBTITLE_ONLY_STAGE_NAMES = Set.of(
             "download", "separate", "asr", "asr_fix", "asr_correct", "translate", "merge_video"
     );
@@ -327,13 +327,37 @@ public class TaskService {
         Path sessionDir = taskDirResolver.resolveTaskDir(task);
         deleteStageOutputsFrom(sessionDir, stageName);
 
-        taskRepository.resetStagesFrom(id, stageName);
+        rebuildStagesFrom(task, stageName);
         taskRepository.updateStatus(id, TaskStatus.QUEUED, task.getProgress());
         taskRepository.updateField(id, "error_message", "");
         log.info("重做阶段：task={}, stage={}", id, stageName);
         TaskResponse response = TaskResponse.from(taskRepository.findById(id));
         workerService.enqueue(id);
         return response;
+    }
+
+    /**
+     * 重建指定阶段后的所有阶段记录，使其顺序与 {@link #STAGE_DEFS} 一致。
+     * <p>
+     * 先删除旧记录让 {@code rowid} 间隙消失，再通过 {@link #insertStageIfNotExists}
+     * 重新插入（已存在则跳过），确保 DB 顺序始终匹配最新阶段顺序。
+     */
+    private void rebuildStagesFrom(Task task, String stageName) {
+        taskRepository.resetStage(task.getId(), stageName);
+
+        // 删除该阶段之后的所有阶段记录（新 rowid 按插入顺序，自然匹配 STAGE_DEFS 顺序）
+        boolean deleting = false;
+        for (StageDef def : STAGE_DEFS) {
+            if (!deleting && !def.name().equals(stageName)) continue;
+            if (!deleting) {
+                deleting = true;
+                continue; // 目标阶段本身不删（已 resetStage）
+            }
+            taskRepository.deleteStage(task.getId(), def.name());
+        }
+
+        // 用与创建任务完全一致的逻辑重建（读取最新配置）
+        initStages(task.getId(), task.getExecutionMode());
     }
 
     /**
@@ -473,28 +497,26 @@ public class TaskService {
      */
     private void initStages(String taskId, String executionMode) {
         boolean subtitleOnly = "subtitle-only".equalsIgnoreCase(executionMode);
-
         for (StageDef def : STAGE_DEFS) {
-            // 简化模式：跳过不属于字幕管线的阶段
-            if (subtitleOnly && !SUBTITLE_ONLY_STAGE_NAMES.contains(def.name())) {
-                continue;
-            }
-
-            // 根据配置跳过被禁用的功能
-            if (!isStageFeatureEnabled(def.name())) {
-                continue;
-            }
-
-            TaskStage stage = new TaskStage();
-            stage.setTaskId(taskId);
-            stage.setName(def.name());
-            stage.setLabel(def.label());
-            stage.setStatus(StageStatus.PENDING);
-            stage.setProgress(0);
-            stage.setLastMessage("");
-            stage.setErrorMessage("");
-            taskRepository.insertStage(stage);
+            if (subtitleOnly && !SUBTITLE_ONLY_STAGE_NAMES.contains(def.name())) continue;
+            // 新任务创建时根据配置跳过被禁用的功能
+            if (!isStageFeatureEnabled(def.name())) continue;
+            insertStageIfNotExists(taskId, def);
         }
+    }
+
+    /** 插入阶段记录，如果已存在则跳过。用于 initStages 和 rebuildStagesFrom。 */
+    private void insertStageIfNotExists(String taskId, StageDef def) {
+        if (taskRepository.stageExists(taskId, def.name())) return;
+        TaskStage stage = new TaskStage();
+        stage.setTaskId(taskId);
+        stage.setName(def.name());
+        stage.setLabel(def.label());
+        stage.setStatus(StageStatus.PENDING);
+        stage.setProgress(0);
+        stage.setLastMessage("");
+        stage.setErrorMessage("");
+        taskRepository.insertStage(stage);
     }
 
     /**
