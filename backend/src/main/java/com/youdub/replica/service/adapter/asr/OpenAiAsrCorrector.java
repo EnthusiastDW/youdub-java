@@ -223,10 +223,12 @@ public class OpenAiAsrCorrector implements AsrCorrector {
     private String callWithRetry(String apiKey, String chatUrl, String model,
                                   ObjectNode requestBody) throws Exception {
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+            String response = null;
+            String content = null;
             try {
-                String response = callChatApi(apiKey, chatUrl, model, requestBody);
+                response = callChatApi(apiKey, chatUrl, model, requestBody);
                 JsonNode root = objectMapper.readTree(response);
-                String content = root.path("choices").path(0).path("message").path("content").asText("").trim();
+                content = root.path("choices").path(0).path("message").path("content").asText("").trim();
 
                 if (content.isEmpty()) {
                     log.warn("ASR 纠错返回空内容（第 {}/{} 次）", attempt, MAX_RETRIES);
@@ -253,7 +255,8 @@ public class OpenAiAsrCorrector implements AsrCorrector {
                 return json;
 
             } catch (Exception e) {
-                log.warn("ASR 纠错调用异常（第 {}/{} 次）：{}", attempt, MAX_RETRIES, e.getMessage());
+                log.warn("ASR 纠错调用异常（第 {}/{} 次）：{}, raw_response={}",
+                        attempt, MAX_RETRIES, e.getMessage(), truncate(response != null ? response : content, 500));
                 if (attempt == MAX_RETRIES) {
                     throw e;
                 }
