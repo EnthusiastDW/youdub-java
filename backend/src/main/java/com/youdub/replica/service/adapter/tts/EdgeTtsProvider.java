@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 
 import static com.youdub.replica.service.adapter.AdapterConstants.EDGE_TTS;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -116,19 +117,29 @@ public class EdgeTtsProvider implements TtsProvider {
                         command.add("--write-media");
                         command.add(outputFile.toString());
 
-                        CommandRunner.run(Command.builder().add(command).timeout(TIMEOUT_MS).workDir(ttsDir).build(),
-                                process -> activeProcesses.add(process));
+                        try {
+                            CommandRunner.run(Command.builder()
+                                            .add(command)
+                                            .timeout(TIMEOUT_MS)
+                                            .workDir(ttsDir)
+                                            .build(),
+                                    process -> activeProcesses.add(process));
+                        } catch (RuntimeException e) {
+                            log.warn("Edge-TTS 失败，跳过该句：task={}, index={}, text='{}', error={}",
+                                    task.getId(), item.index, item.text, e.getMessage());
+                            return;
+                        }
                         int done = completed.incrementAndGet();
                         if (done % 10 == 0 || done == total) {
                             log.info("TTS 进度：{}/{}", done, total);
                         }
+                    } catch (IOException e) {
+                        throw new RuntimeException(e);
                     } finally {
                         semaphore.release();
                     }
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
-                } catch (Exception e) {
-                    throw new RuntimeException("Edge-TTS 失败：" + item.text, e);
                 }
             }, virtualExecutor);
             futures.add(future);

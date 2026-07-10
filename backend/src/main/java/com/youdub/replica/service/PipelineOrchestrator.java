@@ -315,15 +315,7 @@ public class PipelineOrchestrator {
         Path audioPath = sessionDir.resolve("media").resolve("audio_vocals.wav");
         Path outputDir = sessionDir.resolve("metadata");
 
-        // 优先使用 YouTube 自动字幕，无需 GPU ASR
-        Path subtitleFile = sessionDir.resolve("media").resolve("video_source.en.vtt");
-        if (Files.exists(subtitleFile)) {
-            log.info("找到英文字幕文件，跳过 Whisper ASR：{}", subtitleFile);
-            List<SubtitleParser.Segment> segments = SubtitleParser.parse(subtitleFile);
-            writeAsrJson(segments, audioPath, outputDir);
-            return;
-        }
-
+        // 不走 VTT 字幕（YouTube 自动字幕断句太差），统一走 Whisper ASR
         String provider = settingsRepository.get("asr.provider", appProperties.getAsr().getProvider());
         SpeechRecognizer recognizer = recognizers.get(provider);
         if (recognizer == null) {
