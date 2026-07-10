@@ -425,6 +425,33 @@ def _get_whisper_model():
     return _whisper_model_instance
 
 
+_LANG_PUNCTUATION_PROMPTS = {
+    "zh": "大家好，欢迎收听今天的节目。今天我们邀请了一位非常特别的嘉宾。让我们开始吧。",
+    "en": "Hello everyone, welcome to today's show. We have a very special guest with us today. Let's get started.",
+    "ja": "皆さん、こんにちは。今日の番組へようこそ。特別なゲストをお迎えしています。始めましょう。",
+    "ko": "안녕하세요. 오늘 프로그램에 오신 것을 환영합니다. 특별한 게스트를 모셨습니다. 시작하겠습니다.",
+}
+
+
+def _punctuation_prompt(language: Optional[str]) -> Optional[str]:
+    """Return an initial_prompt with proper punctuation for the given language.
+
+    Helps guide Whisper out of 'no-punctuation mode' by priming it with
+    correctly punctuated text. Falls back to a generic prompt for
+    unrecognised languages.
+    """
+    if not language:
+        return _LANG_PUNCTUATION_PROMPTS.get("en")
+    lang = language.strip().lower()
+    # Match common ISO codes and also partial prefixes (e.g. "zh-CN" → "zh")
+    if lang in _LANG_PUNCTUATION_PROMPTS:
+        return _LANG_PUNCTUATION_PROMPTS[lang]
+    short = lang.split("-")[0].split("_")[0]
+    if short in _LANG_PUNCTUATION_PROMPTS:
+        return _LANG_PUNCTUATION_PROMPTS[short]
+    return "Hello. Welcome! Is this working? Let's test, please."
+
+
 def _convert_to_openai_format(segments, response_format: str) -> dict:
     """Convert faster-whisper segments to OpenAI-compatible format."""
     full_text_parts = []
@@ -526,7 +553,15 @@ async def transcribe_audio(request: Request):
         t0 = time.time()
         whisper_model = _get_whisper_model()
 
-        seg_kwargs = {"audio": tmp_file, "beam_size": 5}
+        prompt = _punctuation_prompt(language)
+        seg_kwargs = {
+            "audio": tmp_file,
+            "beam_size": 5,
+            "condition_on_previous_text": False,
+            "vad_filter": True,
+        }
+        if prompt:
+            seg_kwargs["initial_prompt"] = prompt
         if language:
             seg_kwargs["language"] = language
         if request.query_params.get("word_timestamps", "").lower() in ("1", "true"):
