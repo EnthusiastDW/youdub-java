@@ -118,6 +118,7 @@ public class OpenAiAsrCorrector implements AsrCorrector {
         ObjectNode requestBody = objectMapper.createObjectNode();
         requestBody.put("model", resolved.model());
         requestBody.put("temperature", TEMPERATURE);
+        requestBody.put("max_tokens", 8192);
         ArrayNode messages = objectMapper.createArrayNode();
         messages.add(objectMapper.createObjectNode().put("role", "system").put("content", systemPrompt));
         messages.add(objectMapper.createObjectNode().put("role", "user").put("content", userPrompt));
