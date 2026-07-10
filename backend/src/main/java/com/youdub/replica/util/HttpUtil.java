@@ -101,6 +101,9 @@ public final class HttpUtil {
         IOException lastIoError = null;
 
         while (attempt < maxRetries) {
+            if (Thread.interrupted()) {
+                throw new InterruptedException("HTTP 重试被中断");
+            }
             attempt++;
             try {
                 Response response = sendInterruptible(client, request);
