@@ -47,6 +47,11 @@ public class OpenAiAsrCorrector implements AsrCorrector {
     private static final String CORRECTED_FILE = "asr_corrected.json";
     private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json; charset=utf-8");
 
+    /** 每个批次的最大字符数（~4000 tokens），防止硅基流动等 API 上下文超限 */
+    private static final int BATCH_CHAR_LIMIT = 8000;
+    /** 每批次的最大输出 token，不再用 65536 这种激进值 */
+    private static final int MAX_OUTPUT_TOKENS = 8192;
+
     private static final List<String> REFUSAL_PHRASES = List.of(
             "很抱歉",
             "没有足够的上下文",
@@ -81,17 +86,13 @@ public class OpenAiAsrCorrector implements AsrCorrector {
         }
 
         List<UtteranceItem> items = new ArrayList<>();
-        StringBuilder fullTextBuilder = new StringBuilder();
         int idx = 0;
         for (JsonNode u : utterancesNode) {
             String text = u.path("text").asText("").trim();
             if (text.isEmpty()) continue;
             items.add(new UtteranceItem(idx, text));
-            if (fullTextBuilder.length() > 0) fullTextBuilder.append("\n");
-            fullTextBuilder.append(text);
             idx++;
         }
-        String fullText = fullTextBuilder.toString();
 
         if (items.isEmpty()) {
             log.warn("ASR 结果中无有效文本，跳过纠错");
@@ -100,43 +101,59 @@ public class OpenAiAsrCorrector implements AsrCorrector {
         }
 
         var resolved = resolveConfig();
-
         String systemPrompt = buildSystemPrompt();
-        ArrayNode inputUtterances = objectMapper.createArrayNode();
-        for (UtteranceItem item : items) {
-            ObjectNode u = objectMapper.createObjectNode();
-            u.put("id", item.id);
-            u.put("text", item.text);
-            inputUtterances.add(u);
-        }
-        String utterancesJson = objectMapper.writeValueAsString(inputUtterances);
 
-        String userPrompt = "Full transcription for context:\n---\n"
-                + fullText + "\n---\n\n"
-                + "Utterances to correct (preserve the id mapping):\n"
-                + utterancesJson;
-        ObjectNode requestBody = objectMapper.createObjectNode();
-        requestBody.put("model", resolved.model());
-        requestBody.put("temperature", TEMPERATURE);
-        requestBody.put("max_tokens", 32768);
-        ArrayNode messages = objectMapper.createArrayNode();
-        messages.add(objectMapper.createObjectNode().put("role", "system").put("content", systemPrompt));
-        messages.add(objectMapper.createObjectNode().put("role", "user").put("content", userPrompt));
-        requestBody.set("messages", messages);
-
-        String correctedJson = callWithRetry(resolved.apiKey(), resolved.chatUrl(), resolved.model(), requestBody);
-        JsonNode correctedRoot = objectMapper.readTree(correctedJson);
-
-        JsonNode correctedUtterances = correctedRoot.path("utterances");
-        if (!correctedUtterances.isArray()) {
-            throw new RuntimeException("LLM 返回格式错误：缺少 utterances 数组");
-        }
+        // 将 utterances 按字符数分批处理，避免 API 上下文超限
+        List<List<UtteranceItem>> batches = splitIntoBatches(items);
         java.util.Map<Integer, String> corrections = new java.util.HashMap<>();
-        for (JsonNode cu : correctedUtterances) {
-            int id = cu.path("id").asInt(-1);
-            String text = cu.path("text").asText("");
-            if (id >= 0 && !text.isBlank()) {
-                corrections.put(id, text.trim());
+
+        for (int batchIdx = 0; batchIdx < batches.size(); batchIdx++) {
+            List<UtteranceItem> batch = batches.get(batchIdx);
+            log.info("ASR 纠错批次 {}/{}：{} 条 utterances", batchIdx + 1, batches.size(), batch.size());
+
+            // 本批次的拼接文本作为上下文
+            StringBuilder batchContextBuilder = new StringBuilder();
+            for (UtteranceItem item : batch) {
+                if (batchContextBuilder.length() > 0) batchContextBuilder.append("\n");
+                batchContextBuilder.append(item.text);
+            }
+            String batchContext = batchContextBuilder.toString();
+
+            ArrayNode batchUtterances = objectMapper.createArrayNode();
+            for (UtteranceItem item : batch) {
+                ObjectNode u = objectMapper.createObjectNode();
+                u.put("id", item.id);
+                u.put("text", item.text);
+                batchUtterances.add(u);
+            }
+            String batchUtterancesJson = objectMapper.writeValueAsString(batchUtterances);
+
+            String userPrompt = "Full transcription for context:\n---\n"
+                    + batchContext + "\n---\n\n"
+                    + "Utterances to correct (preserve the id mapping):\n"
+                    + batchUtterancesJson;
+            ObjectNode requestBody = objectMapper.createObjectNode();
+            requestBody.put("model", resolved.model());
+            requestBody.put("temperature", TEMPERATURE);
+            requestBody.put("max_tokens", MAX_OUTPUT_TOKENS);
+            ArrayNode messages = objectMapper.createArrayNode();
+            messages.add(objectMapper.createObjectNode().put("role", "system").put("content", systemPrompt));
+            messages.add(objectMapper.createObjectNode().put("role", "user").put("content", userPrompt));
+            requestBody.set("messages", messages);
+
+            String correctedJson = callWithRetry(resolved.apiKey(), resolved.chatUrl(), resolved.model(), requestBody);
+            JsonNode correctedRoot = objectMapper.readTree(correctedJson);
+
+            JsonNode correctedUtterances = correctedRoot.path("utterances");
+            if (!correctedUtterances.isArray()) {
+                throw new RuntimeException("LLM 返回格式错误：缺少 utterances 数组");
+            }
+            for (JsonNode cu : correctedUtterances) {
+                int id = cu.path("id").asInt(-1);
+                String text = cu.path("text").asText("");
+                if (id >= 0 && !text.isBlank()) {
+                    corrections.put(id, text.trim());
+                }
             }
         }
 
@@ -313,6 +330,41 @@ public class OpenAiAsrCorrector implements AsrCorrector {
     }
 
     private record UtteranceItem(int id, String text) {
+    }
+
+    /**
+     * 将 utterances 按字符数分批，每批不超过 BATCH_CHAR_LIMIT。
+     * 保证单条超长的 utterance 独立成批（不会跨批切断）。
+     */
+    private List<List<UtteranceItem>> splitIntoBatches(List<UtteranceItem> items) {
+        List<List<UtteranceItem>> batches = new ArrayList<>();
+        List<UtteranceItem> currentBatch = new ArrayList<>();
+        int currentChars = 0;
+        for (UtteranceItem item : items) {
+            int itemChars = item.text.length();
+            // 单条已超限 → 独自成批
+            if (itemChars > BATCH_CHAR_LIMIT) {
+                if (!currentBatch.isEmpty()) {
+                    batches.add(currentBatch);
+                }
+                batches.add(List.of(item));
+                currentBatch = new ArrayList<>();
+                currentChars = 0;
+                continue;
+            }
+            // 加上这条会超限 → 先结算当前批，再开始新批
+            if (currentChars + itemChars > BATCH_CHAR_LIMIT && !currentBatch.isEmpty()) {
+                batches.add(currentBatch);
+                currentBatch = new ArrayList<>();
+                currentChars = 0;
+            }
+            currentBatch.add(item);
+            currentChars += itemChars;
+        }
+        if (!currentBatch.isEmpty()) {
+            batches.add(currentBatch);
+        }
+        return batches;
     }
 
     private record ResolvedConfig(String apiKey, String chatUrl, String model) {
