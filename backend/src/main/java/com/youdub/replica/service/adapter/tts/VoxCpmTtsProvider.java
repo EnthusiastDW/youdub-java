@@ -182,6 +182,7 @@ public class VoxCpmTtsProvider implements TtsProvider {
             futures.forEach(f -> f.cancel(true));
             throw new RuntimeException("TTS 被用户中止", e);
         } catch (ExecutionException e) {
+            futures.forEach(f -> f.cancel(true));
             Throwable cause = e.getCause();
             if (cause instanceof RuntimeException re) throw re;
             if (cause instanceof Error err) throw err;

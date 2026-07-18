@@ -7,10 +7,15 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.service.SettingsService;
+import com.youdub.replica.util.AiChatRetry;
 import com.youdub.replica.util.HttpUtil;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import okhttp3.*;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Files;
@@ -28,7 +33,7 @@ import static com.youdub.replica.service.adapter.AdapterConstants.OPENAI_ASR_COR
  * 让 LLM 根据全文语境自动纠正领域特定术语的误识别。
  * <p>
  * 配置为空时回退到翻译服务的 API Key / Chat URL / 模型配置。
- * 重试策略：最多 {@link #MAX_RETRIES} 次，拒绝/空/非 JSON 响应均视为无效。
+ * 重试策略：最多 3 次（可配置），拒绝/空/非 JSON 响应均视为无效。
  */
 @Slf4j
 @Component("openai-asr-corrector")
@@ -39,8 +44,7 @@ public class OpenAiAsrCorrector implements AsrCorrector {
     private final ObjectMapper objectMapper;
     private final SettingsService settingsService;
 
-    /** 重试次数上限 */
-    private static final int MAX_RETRIES = 3;
+    private static final AiChatRetry.RetryConfig RETRY_CONFIG = AiChatRetry.RetryConfig.builder().build();
     /** LLM 温度参数，较低值使输出更确定 */
     private static final double TEMPERATURE = 0.1;
     /** 纠错结果文件名 */
@@ -51,18 +55,6 @@ public class OpenAiAsrCorrector implements AsrCorrector {
     private static final int BATCH_CHAR_LIMIT = 8000;
     /** 每批次的最大输出 token，不再用 65536 这种激进值 */
     private static final int MAX_OUTPUT_TOKENS = 8192;
-
-    private static final List<String> REFUSAL_PHRASES = List.of(
-            "很抱歉",
-            "没有足够的上下文",
-            "无法回答",
-            "无法提供",
-            "i'm sorry",
-            "i apologize",
-            "don't have enough context",
-            "cannot answer",
-            "cannot provide"
-    );
 
     @Override
     public void correct(Task task, Path asrPath, Path outputDir) throws Exception {
@@ -141,7 +133,7 @@ public class OpenAiAsrCorrector implements AsrCorrector {
             messages.add(objectMapper.createObjectNode().put("role", "user").put("content", userPrompt));
             requestBody.set("messages", messages);
 
-            String correctedJson = callWithRetry(resolved.apiKey(), resolved.chatUrl(), resolved.model(), requestBody);
+            String correctedJson = callAsrApi(resolved.apiKey(), resolved.chatUrl(), resolved.model(), requestBody);
             JsonNode correctedRoot = objectMapper.readTree(correctedJson);
 
             JsonNode correctedUtterances = correctedRoot.path("utterances");
@@ -238,68 +230,50 @@ public class OpenAiAsrCorrector implements AsrCorrector {
         return "";
     }
 
-    private String callWithRetry(String apiKey, String chatUrl, String model,
-                                  ObjectNode requestBody) throws Exception {
-        for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-            String response = null;
-            String content = null;
-            try {
-                response = callChatApi(apiKey, chatUrl, model, requestBody);
-                JsonNode root = objectMapper.readTree(response);
-                content = root.path("choices").path(0).path("message").path("content").asText("").trim();
+    private String callAsrApi(String apiKey, String chatUrl, String model,
+                               ObjectNode requestBody) throws Exception {
+        return AiChatRetry.execute(() -> {
+            Request request = new Request.Builder()
+                    .url(chatUrl)
+                    .header("Authorization", "Bearer " + apiKey)
+                    .header("Content-Type", "application/json")
+                    .post(RequestBody.create(
+                            objectMapper.writeValueAsString(requestBody), JSON_MEDIA_TYPE))
+                    .build();
 
-                if (content.isEmpty()) {
-                    log.warn("ASR 纠错返回空内容（第 {}/{} 次）", attempt, MAX_RETRIES);
-                    continue;
+            Response response = HttpUtil.sendInterruptible(httpClient, request);
+            int code = response.code();
+            String body = response.body() != null ? response.body().string() : "";
+
+            if (code != 200) {
+                if (code == 429 || code >= 500) {
+                    throw new AiChatRetry.HttpRetryableException("HTTP " + code + "：" + truncate(body, 200));
                 }
-
-                if (isRefusal(content)) {
-                    log.warn("ASR 纠错被拒绝（第 {}/{} 次）：{}", attempt, MAX_RETRIES, content);
-                    continue;
-                }
-
-                String json = extractJson(content);
-                if (json == null) {
-                    log.warn("ASR 纠错返回非 JSON 内容（第 {}/{} 次）：{}", attempt, MAX_RETRIES, truncate(content, 100));
-                    continue;
-                }
-
-                JsonNode parsed = objectMapper.readTree(json);
-                if (!parsed.has("utterances") || !parsed.path("utterances").isArray()) {
-                    log.warn("ASR 纠错返回的 JSON 缺少 utterances 数组（第 {}/{} 次）", attempt, MAX_RETRIES);
-                    continue;
-                }
-
-                return json;
-
-            } catch (Exception e) {
-                String raw = response != null ? response : content;
-                log.warn("ASR 纠错调用异常（第 {}/{} 次）：{}, raw_response={}",
-                        attempt, MAX_RETRIES, e.getMessage(), raw);
-                if (attempt == MAX_RETRIES) {
-                    throw e;
-                }
+                throw new RuntimeException("ASR 纠错 API 调用失败 [" + code + "]：" + truncate(body, 200));
             }
-        }
 
-        throw new RuntimeException("ASR 纠错失败：已重试 " + MAX_RETRIES + " 次，均未获得有效结果");
-    }
+            JsonNode root = objectMapper.readTree(body);
+            String content = root.path("choices").path(0).path("message").path("content").asText("").trim();
 
-    private String callChatApi(String apiKey, String chatUrl, String model,
-                                ObjectNode requestBody) throws Exception {
-        Request request = new Request.Builder()
-                .url(chatUrl)
-                .header("Authorization", "Bearer " + apiKey)
-                .header("Content-Type", "application/json")
-                .post(RequestBody.create(
-                        objectMapper.writeValueAsString(requestBody), JSON_MEDIA_TYPE))
-                .build();
-        return HttpUtil.executeWithRetry(httpClient, request, 3);
-    }
+            if (content.isEmpty()) {
+                throw new AiChatRetry.AiRetryableException("AI 返回空内容");
+            }
+            if (AiChatRetry.isRefusal(content)) {
+                throw new AiChatRetry.AiRetryableException("AI 拒绝回答：" + truncate(content, 100));
+            }
 
-    private static boolean isRefusal(String content) {
-        String lower = content.toLowerCase();
-        return REFUSAL_PHRASES.stream().anyMatch(lower::contains);
+            String json = extractJson(content);
+            if (json == null) {
+                throw new AiChatRetry.AiRetryableException("AI 返回非 JSON：" + truncate(content, 100));
+            }
+
+            JsonNode parsed = objectMapper.readTree(json);
+            if (!parsed.has("utterances") || !parsed.path("utterances").isArray()) {
+                throw new AiChatRetry.AiRetryableException("AI 返回 JSON 缺少 utterances 数组");
+            }
+
+            return json;
+        }, RETRY_CONFIG);
     }
 
     private static String extractJson(String content) {

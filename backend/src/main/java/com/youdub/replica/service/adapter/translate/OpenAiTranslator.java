@@ -8,26 +8,23 @@ import com.youdub.replica.config.AppProperties;
 import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.service.SettingsService;
 
-import com.youdub.replica.util.HttpUtil;
+import com.youdub.replica.util.AiChatRetry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
 import static com.youdub.replica.service.adapter.AdapterConstants.OPENAI;
 
-import java.nio.charset.StandardCharsets;
-
-import okhttp3.MediaType;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.RequestBody;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -70,9 +67,14 @@ public class OpenAiTranslator extends AbstractTranslator {
         messages.add(objectMapper.createObjectNode().put("role", "system").put("content", systemPrompt));
         messages.add(objectMapper.createObjectNode().put("role", "user").put("content", text));
         requestBody.set("messages", messages);
-        String response = callChatApi(apiKey, chatUrl, useModel, requestBody);
-        JsonNode root = objectMapper.readTree(response);
-        return root.path("choices").path(0).path("message").path("content").asText("").trim();
+        Request request = new Request.Builder()
+                .url(chatUrl)
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "application/json")
+                .post(RequestBody.create(objectMapper.writeValueAsString(requestBody), JSON_MEDIA_TYPE))
+                .build();
+        return AiChatRetry.executeChat(httpClient, request,
+                AiChatRetry.RetryConfig.builder().build(), objectMapper);
     }
 
     @Override
@@ -180,7 +182,8 @@ public class OpenAiTranslator extends AbstractTranslator {
             Thread.currentThread().interrupt();
             futures.forEach(f -> f.cancel(true));
             throw new RuntimeException("翻译被用户中止", e);
-        } catch (ExecutionException e) {
+        } catch (Exception e) {
+            futures.forEach(f -> f.cancel(true));
             Throwable cause = e.getCause();
             if (cause instanceof RuntimeException re) throw re;
             if (cause instanceof Error err) throw err;
@@ -240,9 +243,14 @@ public class OpenAiTranslator extends AbstractTranslator {
         messages.add(userMsg);
         requestBody.set("messages", messages);
 
-        String response = callChatApi(apiKey, chatUrl, model, requestBody);
-        JsonNode root = objectMapper.readTree(response);
-        String content = root.path("choices").path(0).path("message").path("content").asText("");
+        Request request = new Request.Builder()
+                .url(chatUrl)
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "application/json")
+                .post(RequestBody.create(objectMapper.writeValueAsString(requestBody), JSON_MEDIA_TYPE))
+                .build();
+        String content = AiChatRetry.executeChat(httpClient, request,
+                AiChatRetry.RetryConfig.builder().build(), objectMapper);
 
         // 尝试解析 JSON（可能包裹在 markdown 代码块中）
         String json = extractJson(content);
@@ -265,25 +273,9 @@ public class OpenAiTranslator extends AbstractTranslator {
 
     private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json; charset=utf-8");
 
-    private static final List<String> REFUSAL_PHRASES = List.of(
-            "很抱歉",
-            "没有足够的上下文",
-            "无法回答",
-            "无法提供",
-            "i'm sorry",
-            "i apologize",
-            "don't have enough context",
-            "cannot answer",
-            "cannot provide"
-    );
-
-    private static boolean isRefusal(String content) {
-        String lower = content.toLowerCase();
-        return REFUSAL_PHRASES.stream().anyMatch(lower::contains);
-    }
-
     /**
      * 调用 OpenAI Chat Completions API 翻译单句。
+     * 使用指数退避重试，重试耗尽后回退到原文。
      */
     private String callTranslate(String apiKey, String chatUrl, String model, String srcLang, String dstLang,
                                  String text, PreprocessResult preprocess) throws Exception {
@@ -311,18 +303,20 @@ public class OpenAiTranslator extends AbstractTranslator {
         messages.add(userMsg);
         requestBody.set("messages", messages);
 
-        // 重试最多 3 次，避免 LLM 偶发返回空内容或拒绝回答
-        for (int attempt = 1; attempt <= 3; attempt++) {
-            String response = callChatApi(apiKey, chatUrl, model, requestBody);
-            JsonNode root = objectMapper.readTree(response);
-            String content = root.path("choices").path(0).path("message").path("content").asText("").trim();
-            if (!content.isEmpty() && !isRefusal(content)) {
-                return content;
-            }
-            log.warn("翻译结果无效（第 {}/3 次），原文='{}'，返回='{}'", attempt, text, content);
+        Request request = new Request.Builder()
+                .url(chatUrl)
+                .header("Authorization", "Bearer " + apiKey)
+                .header("Content-Type", "application/json")
+                .post(RequestBody.create(objectMapper.writeValueAsString(requestBody), JSON_MEDIA_TYPE))
+                .build();
+
+        try {
+            return AiChatRetry.executeChat(httpClient, request,
+                    AiChatRetry.RetryConfig.builder().build(), objectMapper);
+        } catch (Exception e) {
+            log.warn("翻译重试耗尽，回退到原文：'{}'，错误：{}", text, e.getMessage());
+            return text;
         }
-        // 3 次重试均无效，回退到原文
-        return text;
     }
 
     /**
@@ -350,19 +344,14 @@ public class OpenAiTranslator extends AbstractTranslator {
         userMsg.put("content", fullText);
         messages.add(userMsg);
         requestBody.set("messages", messages);
-        String response = callChatApi(apiKey, chatUrl, model, requestBody);
-        JsonNode root = objectMapper.readTree(response);
-        return root.path("choices").path(0).path("message").path("content").asText("").trim();
-    }
-
-    private String callChatApi(String apiKey, String chatUrl, String model, ObjectNode requestBody) throws Exception {
         Request request = new Request.Builder()
                 .url(chatUrl)
                 .header("Authorization", "Bearer " + apiKey)
                 .header("Content-Type", "application/json")
                 .post(RequestBody.create(objectMapper.writeValueAsString(requestBody), JSON_MEDIA_TYPE))
                 .build();
-        return HttpUtil.executeWithRetry(httpClient, request, 3);
+        return AiChatRetry.executeChat(httpClient, request,
+                AiChatRetry.RetryConfig.builder().build(), objectMapper);
     }
 
     /**
