@@ -12,27 +12,9 @@ COPY src/ src/
 RUN --mount=type=cache,target=/root/.m2/repository \
     mvn -s settings.xml package -DskipTests -B
 
-# ── Runtime ────────────────────────────────────────────────
-FROM eclipse-temurin:21-jre
+# ── Runtime（使用预烘焙的基础镜像，避免每次重装工具） ──────
+FROM youdub-backend-base:local
 WORKDIR /app
-
-RUN apt-get update
-
-RUN apt-get install -y --no-install-recommends \
-        curl \
-        ffmpeg \
-        nodejs \
-        npm \
-        python3 \
-        python3-pip \
-        python3-venv \
-        fonts-noto-cjk \
-    && rm -rf /var/lib/apt/lists/*
-
-RUN pip3 install --no-cache-dir --break-system-packages --upgrade --ignore-installed pip setuptools wheel \
-    && pip3 install --no-cache-dir --break-system-packages --upgrade --ignore-installed "yt-dlp[default]" edge-tts
-
-RUN mkdir -p /app/data/cookies /app/data/logs /app/workfolder
 
 COPY --from=build /app/target/replica-backend-*.jar /app/youdub-backend.jar
 

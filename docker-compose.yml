@@ -4,6 +4,19 @@
 # ============================================================
 
 services:
+  # ── 基础镜像 ─────────────────────────────────────────────
+  backend-base:
+    build:
+      context: docker/backend-base
+      dockerfile: Dockerfile
+    image: youdub-backend-base:local
+
+  python-base:
+    build:
+      context: docker/youdub-python-base
+      dockerfile: Dockerfile
+    image: youdub-python-base:local
+
   # ── Python Services (VoxCPM TTS + Audio Separation + Whisper) ─
   python-services:
     build:
@@ -11,6 +24,8 @@ services:
       dockerfile: Dockerfile
     image: youdub-python-services:latest
     container_name: youdub-python-services
+    depends_on:
+      - python-base
     ports:
       - "8001:8001"
     environment:
@@ -81,6 +96,8 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: youdub-backend
+    depends_on:
+      - backend-base
     ports:
       - "8000:8000"
     environment:
