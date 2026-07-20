@@ -24,7 +24,7 @@ import asyncio
 import zipfile
 import subprocess
 from pathlib import Path
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass
 from contextlib import asynccontextmanager
 
@@ -452,6 +452,248 @@ def _punctuation_prompt(language: Optional[str]) -> Optional[str]:
     return "Hello. Welcome! Is this working? Let's test, please."
 
 
+# ============================================================
+# ASR Audio Chunking — silence-based split to reduce peak memory
+# ============================================================
+
+SILENCE_MIN_DURATION = 2.0
+SILENCE_OVERLAP = 2.0
+SILENCE_NOISE_THRESHOLD = "-30dB"
+MIN_CHUNK_DURATION = 30.0
+
+
+def _detect_silence_splits(audio_path: str) -> List[float]:
+    """
+    Use ffmpeg silencedetect to find long silences and return split points
+    (midpoints of each silence) in seconds. Returns empty list if no suitable
+    split point is found or if ffmpeg fails.
+    """
+    try:
+        cmd = [
+            "ffmpeg", "-i", audio_path,
+            "-af", f"silencedetect=noise={SILENCE_NOISE_THRESHOLD}:d={SILENCE_MIN_DURATION}",
+            "-f", "null", "-",
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True)
+        stderr = proc.stderr
+
+        silence_starts: List[float] = []
+        silence_ends: List[float] = []
+        for line in stderr.split("\n"):
+            if "silence_start:" in line:
+                try:
+                    silence_starts.append(float(line.split("silence_start:")[1].strip()))
+                except (IndexError, ValueError):
+                    pass
+            elif "silence_end:" in line:
+                try:
+                    val = line.split("silence_end:")[1].split("|")[0].strip()
+                    silence_ends.append(float(val))
+                except (IndexError, ValueError):
+                    pass
+
+        if not silence_starts or not silence_ends:
+            return []
+
+        split_points = []
+        for ss, se in zip(silence_starts, silence_ends):
+            if se - ss >= SILENCE_MIN_DURATION:
+                split_points.append((ss + se) / 2.0)
+
+        if not split_points:
+            return []
+
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "error", "-show_entries", "format=duration",
+                "-of", "default=noprint_wrappers=1:nokey=1", audio_path,
+            ],
+            capture_output=True, text=True,
+        )
+        total_dur = float(result.stdout.strip())
+    except Exception:
+        logger.warning("Failed to detect silence splits for %s, transcribing whole file", audio_path)
+        return []
+
+    return [
+        sp for sp in split_points
+        if sp > 60.0 and (total_dur - sp) > 60.0
+    ]
+
+
+def _build_chunk_boundaries(
+    split_points: List[float], total_duration: float, overlap: float = SILENCE_OVERLAP,
+) -> List[Tuple[float, float]]:
+    """
+    Build chunk (start, end) boundaries from silence midpoints.
+    Each chunk straddles the split point with *overlap* seconds on each side,
+    so adjacent chunks share a 2*overlap region centered on the silence.
+    """
+    if not split_points:
+        return [(0.0, total_duration)]
+
+    boundaries: List[Tuple[float, float]] = []
+    prev_split = 0.0
+    for sp in split_points:
+        chunk_start = max(0.0, prev_split - overlap) if prev_split > 0 else 0.0
+        chunk_end = min(total_duration, sp + overlap)
+        if chunk_end > chunk_start:
+            boundaries.append((chunk_start, chunk_end))
+        prev_split = sp
+    last_start = max(0.0, split_points[-1] - overlap)
+    boundaries.append((last_start, total_duration))
+    return boundaries
+
+
+def _split_audio_chunks(
+    audio_path: str, boundaries: List[Tuple[float, float]], output_dir: str,
+) -> List[Tuple[str, float]]:
+    """
+    Extract each chunk as a 16kHz mono WAV using ffmpeg.
+    Returns list of (chunk_path, chunk_start_offset).
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    chunk_files: List[Tuple[str, float]] = []
+    for i, (cs, ce) in enumerate(boundaries):
+        chunk_path = os.path.join(output_dir, f"chunk_{i:04d}.wav")
+        cmd = [
+            "ffmpeg", "-y", "-hide_banner", "-loglevel", "error",
+            "-i", audio_path,
+            "-ss", str(cs), "-to", str(ce),
+            "-c:a", "pcm_s16le",
+            "-ar", "16000",
+            "-ac", "1",
+            chunk_path,
+        ]
+        subprocess.run(cmd, check=True, capture_output=True)
+        chunk_files.append((chunk_path, cs))
+    return chunk_files
+
+
+def _offset_segments(
+    segments: List[dict], offset: float,
+) -> List[dict]:
+    """
+    Deep-copy a list of segment dicts and shift their timestamps by *offset*
+    seconds. Handles both top-level start/end and nested word timestamps.
+    """
+    out = []
+    for seg in segments:
+        s = dict(seg)
+        s["start"] = round(s["start"] + offset, 3)
+        s["end"] = round(s["end"] + offset, 3)
+        if s.get("words"):
+            s["words"] = [
+                {
+                    "word": w["word"],
+                    "start": round(w["start"] + offset, 3),
+                    "end": round(w["end"] + offset, 3),
+                }
+                for w in s["words"]
+            ]
+        out.append(s)
+    return out
+
+
+def _dedup_merged_segments(
+    segments: List[dict], split_points: List[float], overlap: float = SILENCE_OVERLAP,
+) -> List[dict]:
+    """
+    Remove duplicate transcriptions in overlap regions between adjacent chunks.
+    
+    For each split point, the overlap region is [sp - overlap, sp + overlap].
+    Segments whose *center* falls in the left half come from the earlier chunk;
+    those in the right half come from the later chunk. If both halves have
+    segments, keep the longer one (more confident transcription).
+    """
+    if not segments or not split_points:
+        return segments
+
+    cleaned = list(segments)
+
+    for sp in split_points:
+        left = sp - overlap
+        right = sp + overlap
+        keep: List[dict] = []
+        i = 0
+        while i < len(cleaned):
+            seg = cleaned[i]
+            seg_center = (seg["start"] + seg["end"]) / 2.0
+
+            # Seg entirely outside overlap region → always keep
+            if seg["end"] <= left or seg["start"] >= right:
+                keep.append(seg)
+                i += 1
+                continue
+
+            # Seg inside overlap region — look ahead for overlapping segs from other side
+            # Find all segs that overlap this region
+            overlap_group = [seg]
+            j = i + 1
+            while j < len(cleaned) and cleaned[j]["start"] < right:
+                overlap_group.append(cleaned[j])
+                j += 1
+
+            # Within the group, keep segs from different "sides"
+            left_segs = [s for s in overlap_group if (s["start"] + s["end"]) / 2.0 <= sp]
+            right_segs = [s for s in overlap_group if (s["start"] + s["end"]) / 2.0 > sp]
+
+            # Dedup: if left and right segs overlap in time, keep the longer one
+            for ls in left_segs:
+                for rs in right_segs:
+                    if ls["end"] > rs["start"]:
+                        # They overlap — keep the longer segment
+                        dur_ls = ls["end"] - ls["start"]
+                        dur_rs = rs["end"] - rs["start"]
+                        if dur_ls >= dur_rs:
+                            right_segs.remove(rs)
+                        else:
+                            left_segs.remove(ls)
+                        break
+
+            keep.extend(left_segs)
+            keep.extend(right_segs)
+            i = j
+
+        cleaned = keep
+
+    # Final sort by start time
+    cleaned.sort(key=lambda s: s["start"])
+    return cleaned
+
+
+def _merge_chunk_transcriptions(
+    chunk_results: List[Tuple[dict, float]],
+    split_points: List[float],
+    total_duration: float,
+) -> dict:
+    """
+    Merge multiple chunk transcription results into one OpenAI-compatible dict.
+    
+    *chunk_results*: list of (result_dict, chunk_start_offset)
+    *split_points*: the original silence midpoints used to split
+    """
+    all_segments: List[dict] = []
+    text_parts: List[str] = []
+
+    for result, offset in chunk_results:
+        segs = result.get("segments", [])
+        all_segments.extend(_offset_segments(segs, offset))
+        text_parts.append(result.get("text", ""))
+
+    all_segments.sort(key=lambda s: s["start"])
+    all_segments = _dedup_merged_segments(all_segments, split_points)
+    full_text = " ".join(s["text"].strip() for s in all_segments)
+
+    dur = max(s["end"] for s in all_segments) if all_segments else total_duration
+
+    return {
+        "text": full_text,
+        "duration": round(dur, 3),
+        "segments": all_segments,
+    }
+
+
 def _convert_to_openai_format(segments, response_format: str) -> dict:
     """Convert faster-whisper segments to OpenAI-compatible format."""
     full_text_parts = []
@@ -491,6 +733,98 @@ def _convert_to_openai_format(segments, response_format: str) -> dict:
             "duration": round(duration, 3),
             "segments": openai_segments,
         }
+
+
+def _probe_duration(audio_path: str) -> Optional[float]:
+    try:
+        result = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=noprint_wrappers=1:nokey=1", audio_path],
+            capture_output=True, text=True, check=True,
+        )
+        return float(result.stdout.strip())
+    except Exception:
+        return None
+
+
+def _build_seg_kwargs(
+    audio_path: str, language: Optional[str], word_timestamps: bool,
+) -> dict:
+    kwargs: dict = {
+        "audio": audio_path,
+        "beam_size": 5,
+        "condition_on_previous_text": False,
+        "vad_filter": True,
+    }
+    prompt = _punctuation_prompt(language)
+    if prompt:
+        kwargs["initial_prompt"] = prompt
+    if language:
+        kwargs["language"] = language
+    if word_timestamps:
+        kwargs["word_timestamps"] = True
+    return kwargs
+
+
+async def _transcribe_chunked(
+    audio_path: str,
+    whisper_model: Any,
+    word_timestamps: bool,
+    language: Optional[str],
+) -> dict:
+    """
+    Transcribe audio by splitting at silence points.
+    Each chunk is transcribed independently, then results are merged
+    with time offset and overlap dedup.
+    """
+    total_dur = _probe_duration(audio_path)
+    if total_dur is None:
+        raise RuntimeError("Cannot probe audio duration")
+
+    split_points = _detect_silence_splits(audio_path)
+    if not split_points:
+        kwargs = _build_seg_kwargs(audio_path, language, word_timestamps)
+        async with _transcribe_lock:
+            segments, info = await asyncio.to_thread(
+                whisper_model.transcribe, **kwargs
+            )
+            return _convert_to_openai_format(segments, "verbose_json")
+
+    boundaries = _build_chunk_boundaries(split_points, total_dur)
+    if len(boundaries) < 2:
+        kwargs = _build_seg_kwargs(audio_path, language, word_timestamps)
+        async with _transcribe_lock:
+            segments, info = await asyncio.to_thread(
+                whisper_model.transcribe, **kwargs
+            )
+            return _convert_to_openai_format(segments, "verbose_json")
+
+    chunk_dir = os.path.join(os.path.dirname(audio_path), "asr_chunks")
+    chunk_files = _split_audio_chunks(audio_path, boundaries, chunk_dir)
+    logger.info(
+        "Using silence-based chunking: %d chunks, splits at %s",
+        len(chunk_files),
+        [round(sp, 1) for sp in split_points],
+    )
+
+    chunk_results: List[Tuple[dict, float]] = []
+    for chunk_path, chunk_offset in chunk_files:
+        t_chunk = time.time()
+        kwargs = _build_seg_kwargs(chunk_path, language, word_timestamps)
+        async with _transcribe_lock:
+            segments, info = await asyncio.to_thread(
+                whisper_model.transcribe, **kwargs
+            )
+        chunk_result = _convert_to_openai_format(segments, "verbose_json")
+        chunk_results.append((chunk_result, chunk_offset))
+        logger.info(
+            "Chunk done: offset=%.1fs, dur=%.2fs",
+            chunk_offset, time.time() - t_chunk,
+        )
+
+    merged = _merge_chunk_transcriptions(chunk_results, split_points, total_dur)
+    shutil.rmtree(chunk_dir, ignore_errors=True)
+    return merged
 
 
 @whisper_router.post("/transcriptions")
@@ -552,38 +886,34 @@ async def transcribe_audio(request: Request):
 
         t0 = time.time()
         whisper_model = _get_whisper_model()
+        word_timestamps = request.query_params.get("word_timestamps", "").lower() in ("1", "true")
 
-        prompt = _punctuation_prompt(language)
-        seg_kwargs = {
-            "audio": tmp_file,
-            "beam_size": 5,
-            "condition_on_previous_text": False,
-            "vad_filter": True,
-        }
-        if prompt:
-            seg_kwargs["initial_prompt"] = prompt
-        if language:
-            seg_kwargs["language"] = language
-        if request.query_params.get("word_timestamps", "").lower() in ("1", "true"):
-            seg_kwargs["word_timestamps"] = True
-
-        async with _transcribe_lock:
-            t_transcribe = time.time()
-            segments, info = await asyncio.to_thread(
-                whisper_model.transcribe, **seg_kwargs
+        # 音频 >0.5h 走静音分片减少内存，否则全量转录
+        total_dur = _probe_duration(tmp_file)
+        if total_dur is not None and total_dur >= 1800.0:
+            result = await _transcribe_chunked(
+                tmp_file, whisper_model, word_timestamps, language,
             )
-            logger.info("Transcribing: file=%s, audio_duration=%.2fs", audio_name, info.duration)
+        else:
+            seg_kwargs = _build_seg_kwargs(tmp_file, language, word_timestamps)
+            async with _transcribe_lock:
+                t_transcribe = time.time()
+                segments, info = await asyncio.to_thread(
+                    whisper_model.transcribe, **seg_kwargs
+                )
+                logger.info("Transcribing: file=%s, audio_duration=%.2fs", audio_name, info.duration)
+                result = _convert_to_openai_format(segments, "verbose_json")
+                transcribe_elapsed = time.time() - t_transcribe
+                logger.info(
+                    "Request completed: file=%s, audio_dur=%.2fs, transcribe=%.2fs, total=%.2fs, device=%s(%s)",
+                    audio_name, info.duration, transcribe_elapsed, time.time() - t0,
+                    WHISPER_DEVICE, WHISPER_COMPUTE_TYPE,
+                )
 
-            result = _convert_to_openai_format(segments, response_format)
-            elapsed = time.time() - t0
-            transcribe_elapsed = time.time() - t_transcribe
+        if response_format == "json":
+            result = {"text": result["text"]}
 
-            logger.info(
-                "Request completed: file=%s, audio_dur=%.2fs, transcribe=%.2fs, total=%.2fs, device=%s(%s)",
-                audio_name, info.duration, transcribe_elapsed, elapsed,
-                WHISPER_DEVICE, WHISPER_COMPUTE_TYPE,
-            )
-            return result
+        return result
 
     except HTTPException:
         raise

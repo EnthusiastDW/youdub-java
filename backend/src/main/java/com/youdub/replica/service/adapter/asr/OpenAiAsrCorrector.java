@@ -103,14 +103,6 @@ public class OpenAiAsrCorrector implements AsrCorrector {
             List<UtteranceItem> batch = batches.get(batchIdx);
             log.info("ASR 纠错批次 {}/{}：{} 条 utterances", batchIdx + 1, batches.size(), batch.size());
 
-            // 本批次的拼接文本作为上下文
-            StringBuilder batchContextBuilder = new StringBuilder();
-            for (UtteranceItem item : batch) {
-                if (batchContextBuilder.length() > 0) batchContextBuilder.append("\n");
-                batchContextBuilder.append(item.text);
-            }
-            String batchContext = batchContextBuilder.toString();
-
             ArrayNode batchUtterances = objectMapper.createArrayNode();
             for (UtteranceItem item : batch) {
                 ObjectNode u = objectMapper.createObjectNode();
@@ -120,9 +112,8 @@ public class OpenAiAsrCorrector implements AsrCorrector {
             }
             String batchUtterancesJson = objectMapper.writeValueAsString(batchUtterances);
 
-            String userPrompt = "Full transcription for context:\n---\n"
-                    + batchContext + "\n---\n\n"
-                    + "Utterances to correct (preserve the id mapping):\n"
+            String userPrompt = "Correct the following utterances. "
+                    + "Return only JSON: {\"utterances\":[{\"id\":0,\"text\":\"...\"},...]}\n\n"
                     + batchUtterancesJson;
             ObjectNode requestBody = objectMapper.createObjectNode();
             requestBody.put("model", resolved.model());
@@ -189,11 +180,11 @@ public class OpenAiAsrCorrector implements AsrCorrector {
     private String buildSystemPrompt() {
         return "You are a speech recognition correction assistant. "
                 + "Fix domain-specific terminology misrecognized by the ASR engine.\n\n"
-                + "The FULL transcription is provided below as context. Read it carefully to "
-                + "understand the topic, technical domain, and correct terminology.\n\n"
+                + "Read the utterances carefully to understand the topic, technical domain, "
+                + "and correct terminology.\n\n"
                 + "Rules:\n"
                 + "1. Only fix words that are CLEARLY misrecognized due to ASR error.\n"
-                + "2. Use surrounding context to determine the correct term.\n"
+                + "2. Use surrounding utterances to determine the correct term.\n"
                 + "3. Do NOT paraphrase, rephrase, or 'improve' the text.\n"
                 + "4. Do NOT fix grammar, style, or punctuation.\n"
                 + "5. Do NOT add or remove words unless correcting an ASR error.\n"
