@@ -112,7 +112,10 @@ public class OpenAiAsrCorrector implements AsrCorrector {
             }
             String batchUtterancesJson = objectMapper.writeValueAsString(batchUtterances);
 
-            String userPrompt = "Correct the following utterances. "
+            String userPrompt = "Fix ASR misrecognitions in the following utterances. "
+                    + "Do NOT rephrase, summarize, reorder, or 'improve' the text. "
+                    + "Only change words that are clearly ASR errors (e.g. 'kub ernetes' → 'Kubernetes'). "
+                    + "Preserve the id mapping and utterance order. "
                     + "Return only JSON: {\"utterances\":[{\"id\":0,\"text\":\"...\"},...]}\n\n"
                     + batchUtterancesJson;
             ObjectNode requestBody = objectMapper.createObjectNode();
@@ -136,6 +139,14 @@ public class OpenAiAsrCorrector implements AsrCorrector {
                 String text = cu.path("text").asText("");
                 if (id >= 0 && !text.isBlank()) {
                     corrections.put(id, text.trim());
+                }
+            }
+
+            // 本批次结束后立即打印不一致的纠错结果
+            for (UtteranceItem item : batch) {
+                String corrected = corrections.get(item.id);
+                if (corrected != null && !corrected.equals(item.text)) {
+                    log.info("ASR 纠错：'{}' → '{}'", item.text, corrected);
                 }
             }
         }
