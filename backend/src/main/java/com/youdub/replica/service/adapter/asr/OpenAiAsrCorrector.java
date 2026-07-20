@@ -21,7 +21,10 @@ import org.springframework.stereotype.Component;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 
 import static com.youdub.replica.service.adapter.AdapterConstants.OPENAI;
 import static com.youdub.replica.service.adapter.AdapterConstants.OPENAI_ASR_CORRECTOR;
@@ -40,6 +43,7 @@ import static com.youdub.replica.service.adapter.AdapterConstants.OPENAI_ASR_COR
 @RequiredArgsConstructor
 public class OpenAiAsrCorrector implements AsrCorrector {
 
+    public static final int CONTEXT_LIMIT = 4000;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final SettingsService settingsService;
@@ -52,7 +56,7 @@ public class OpenAiAsrCorrector implements AsrCorrector {
     private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json; charset=utf-8");
 
     /** 每个批次的最大字符数（~4000 tokens），防止硅基流动等 API 上下文超限 */
-    private static final int BATCH_CHAR_LIMIT = 8000;
+    private static final int BATCH_CHAR_LIMIT = 12000;
     /** 每批次的最大输出 token，不再用 65536 这种激进值 */
     private static final int MAX_OUTPUT_TOKENS = 8192;
 
@@ -95,9 +99,14 @@ public class OpenAiAsrCorrector implements AsrCorrector {
         var resolved = resolveConfig();
         String systemPrompt = buildSystemPrompt();
 
+        String fullText = items.stream()
+                .map(item -> item.text)
+                .collect(Collectors.joining("\n"));
+        String contextPrefix = fullText.length() > CONTEXT_LIMIT ? fullText.substring(0, CONTEXT_LIMIT) + "..." : fullText;
+
         // 将 utterances 按字符数分批处理，避免 API 上下文超限
         List<List<UtteranceItem>> batches = splitIntoBatches(items);
-        java.util.Map<Integer, String> corrections = new java.util.HashMap<>();
+        Map<Integer, String> corrections = new HashMap<>();
 
         for (int batchIdx = 0; batchIdx < batches.size(); batchIdx++) {
             List<UtteranceItem> batch = batches.get(batchIdx);
@@ -112,12 +121,15 @@ public class OpenAiAsrCorrector implements AsrCorrector {
             }
             String batchUtterancesJson = objectMapper.writeValueAsString(batchUtterances);
 
-            String userPrompt = "Fix ASR misrecognitions in the following utterances. "
-                    + "Do NOT rephrase, summarize, reorder, or 'improve' the text. "
-                    + "Only change words that are clearly ASR errors (e.g. 'kub ernetes' → 'Kubernetes'). "
-                    + "Preserve the id mapping and utterance order. "
-                    + "Return only JSON: {\"utterances\":[{\"id\":0,\"text\":\"...\"},...]}\n\n"
-                    + batchUtterancesJson;
+            String userPrompt = """
+                    Full transcription for context:
+                    ---
+                    """ + contextPrefix + """
+                    
+                    ---
+                    
+                    Utterances to correct (preserve the id mapping):
+                    """ + batchUtterancesJson;
             ObjectNode requestBody = objectMapper.createObjectNode();
             requestBody.put("model", resolved.model());
             requestBody.put("temperature", TEMPERATURE);
@@ -132,14 +144,38 @@ public class OpenAiAsrCorrector implements AsrCorrector {
 
             JsonNode correctedUtterances = correctedRoot.path("utterances");
             if (!correctedUtterances.isArray()) {
-                throw new RuntimeException("LLM 返回格式错误：缺少 utterances 数组");
+                throw new RuntimeException("LLM 返回格式错误：缺少 utterances 数组，实际=" + correctedRoot);
             }
+            Map<Integer, String> originals = new HashMap<>();
+            for (UtteranceItem item : batch) originals.put(item.id, item.text);
             for (JsonNode cu : correctedUtterances) {
                 int id = cu.path("id").asInt(-1);
-                String text = cu.path("text").asText("");
-                if (id >= 0 && !text.isBlank()) {
-                    corrections.put(id, text.trim());
+                String text = cu.path("text").asText("").trim();
+                if (id < 0 || text.isBlank()) continue;
+                String orig = originals.get(id);
+                if (orig == null) {
+                    log.warn("ASR 修正 id={} 不在当前批次，忽略", id);
+                    continue;
                 }
+                if (text.length() < orig.length() * 0.8) {
+                    log.warn("ASR 修正文本过短，丢弃：'{}' → '{}' ({} vs {} chars)",
+                            orig, text, text.length(), orig.length());
+                    continue;
+                }
+                int prefixLen = 0;
+                int minLen = Math.min(orig.length(), text.length());
+                while (prefixLen < minLen && orig.charAt(prefixLen) == text.charAt(prefixLen)) prefixLen++;
+                int suffixLen = 0;
+                while (suffixLen < minLen - prefixLen
+                        && orig.charAt(orig.length() - 1 - suffixLen) == text.charAt(text.length() - 1 - suffixLen)) {
+                    suffixLen++;
+                }
+                if (prefixLen + suffixLen < orig.length() * 0.3) {
+                    log.warn("ASR 修正内容不重叠，丢弃：'{}' → '{}' (重叠 {} chars, 原文 {} chars)",
+                            orig, text, prefixLen + suffixLen, orig.length());
+                    continue;
+                }
+                corrections.put(id, text);
             }
 
             // 本批次结束后立即打印不一致的纠错结果
@@ -150,27 +186,25 @@ public class OpenAiAsrCorrector implements AsrCorrector {
                 }
             }
         }
-
+        // 根据纠错结构构建最终的数据，根据id匹配
         ObjectNode fixedRoot = asrRoot.deepCopy();
         ObjectNode resultObj = (ObjectNode) fixedRoot.path("result");
         StringBuilder correctedFullText = new StringBuilder();
         ArrayNode resultUtterances = (ArrayNode) resultObj.path("utterances");
         int itemIdx = 0;
-        for (int i = 0; i < resultUtterances.size(); i++) {
-            JsonNode u = resultUtterances.get(i);
+        for (JsonNode u : resultUtterances) {
             String origText = u.path("text").asText("").trim();
             if (origText.isEmpty()) continue;
 
-            // 保存原始文本用于事后评估效果
-            ((ObjectNode) u).put("original_text", origText);
-
             String corrected = corrections.get(itemIdx);
             if (corrected != null && !corrected.equals(origText)) {
-                log.info("ASR 纠错：'{}' → '{}'", origText, corrected);
                 ((ObjectNode) u).put("text", corrected);
+
+                // 保存原始文本用于事后评估效果
+                ((ObjectNode) u).put("original_text", origText);
             }
 
-            if (correctedFullText.length() > 0) correctedFullText.append(" ");
+            if (!correctedFullText.isEmpty()) correctedFullText.append(" ");
             correctedFullText.append(corrected != null ? corrected : origText);
             itemIdx++;
         }
@@ -189,25 +223,32 @@ public class OpenAiAsrCorrector implements AsrCorrector {
     }
 
     private String buildSystemPrompt() {
-        return "You are a speech recognition correction assistant. "
-                + "Fix domain-specific terminology misrecognized by the ASR engine.\n\n"
-                + "Read the utterances carefully to understand the topic, technical domain, "
-                + "and correct terminology.\n\n"
-                + "Rules:\n"
-                + "1. Only fix words that are CLEARLY misrecognized due to ASR error.\n"
-                + "2. Use surrounding utterances to determine the correct term.\n"
-                + "3. Do NOT paraphrase, rephrase, or 'improve' the text.\n"
-                + "4. Do NOT fix grammar, style, or punctuation.\n"
-                + "5. Do NOT add or remove words unless correcting an ASR error.\n"
-                + "6. Keep the sentence structure and length the same.\n"
-                + "7. When unsure, leave the original text unchanged.\n\n"
-                + "Examples of ASR errors to correct:\n"
-                + "- Technical terms: 'trades' → 'traits' in a Rust context\n"
-                + "- Proper nouns: 'kub ernetes' → 'Kubernetes'\n"
-                + "- Acronyms: 'eff ell' → 'EFL' or 'g ee pee tee' → 'GPT'\n\n"
-                + "Return ONLY valid JSON in the following format "
-                + "(no markdown, no extra text):\n"
-                + "{\"utterances\":[{\"id\":0,\"text\":\"corrected text\"},...]}";
+        return """
+                You are a speech recognition correction assistant. Fix only words that the ASR engine clearly misrecognized because they SOUND like the correct word.
+                
+                A part of the FULL transcription is provided below as context to help understand the topic and domain terminology.
+                
+                Rules:
+                1. Only change a word when the original text and the correction SOUND similar (e.g. 'kub ernetes' and 'Kubernetes' sound alike). If they don't sound similar, it's NOT an ASR error.
+                2. Use context only to resolve ambiguous technical terms. Do NOT use context to guess better-sounding words.
+                3. Keep original grammar, style, punctuation, and sentence structure unchanged.
+                4. Do NOT change words based on what makes more sense in context. Only change words that are phonetically similar to ASR misrecognitions.
+                5. When unsure, leave the original text unchanged.
+                
+                Valid corrections (phonetically similar):
+                - 'kub ernetes' → 'Kubernetes'
+                - 'cubelet' → 'kubelet'
+                - 'Intuitor' → 'Iterator'
+                - 'trade' → 'trait'
+                - 'base sixty four' → 'base64'
+                
+                Invalid corrections (phonetically different - do NOT do these):
+                - 'holds' → 'dives' (different sound, context-based guess)
+                - 'Rusty' → 'Rust' (not a misrecognition)
+                - 'come' → 'came' (grammar fix, not ASR)
+                
+                Return ONLY valid JSON (no markdown, no extra text):
+                {"utterances":[{"id":0,"text":"corrected text"},...]}""";
     }
 
     private ResolvedConfig resolveConfig() {
@@ -219,7 +260,7 @@ public class OpenAiAsrCorrector implements AsrCorrector {
         String chatUrl = firstNonBlank(corrector.getChatUrl(), translate.getChatUrl());
         String model = firstNonBlank(corrector.getModel(), translate.getModel());
 
-        if (apiKey == null || apiKey.isBlank()) {
+        if (apiKey.isBlank()) {
             throw new RuntimeException("未配置 API Key，无法进行 ASR 纠错");
         }
         return new ResolvedConfig(apiKey, chatUrl, model);
