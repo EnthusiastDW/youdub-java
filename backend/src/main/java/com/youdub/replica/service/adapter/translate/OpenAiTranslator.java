@@ -24,8 +24,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -147,9 +147,9 @@ public class OpenAiTranslator extends AbstractTranslator {
         AtomicInteger completed = new AtomicInteger(0);
         int total = items.size();
 
-        List<CompletableFuture<String>> futures = new ArrayList<>();
+        List<Future<String>> futures = new ArrayList<>();
         for (Utterance item : items) {
-            CompletableFuture<String> future = CompletableFuture.supplyAsync(() -> {
+            Future<String> future = virtualExecutor.submit(() -> {
                 try {
                     semaphore.acquire();
                     try {
@@ -168,21 +168,21 @@ public class OpenAiTranslator extends AbstractTranslator {
                 } catch (Exception e) {
                     throw new RuntimeException("翻译失败：" + item.text(), e);
                 }
-            }, virtualExecutor);
+            });
             futures.add(future);
         }
 
         // 等待所有翻译完成（可中断）
         List<String> translations = new ArrayList<>();
         try {
-            for (CompletableFuture<String> f : futures) {
+            for (Future<String> f : futures) {
                 translations.add(f.get());
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             futures.forEach(f -> f.cancel(true));
             throw new RuntimeException("翻译被用户中止", e);
-        } catch (Exception e) {
+        } catch (java.util.concurrent.ExecutionException e) {
             futures.forEach(f -> f.cancel(true));
             Throwable cause = e.getCause();
             if (cause instanceof RuntimeException re) throw re;

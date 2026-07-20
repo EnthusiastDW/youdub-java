@@ -25,9 +25,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Future;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -93,9 +92,9 @@ public class OpenAiTtsProvider implements TtsProvider {
         AtomicInteger completed = new AtomicInteger(0);
         int total = items.size();
 
-        List<CompletableFuture<Void>> futures = new ArrayList<>();
+        List<Future<?>> futures = new ArrayList<>();
         for (TtsItem item : items) {
-            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+            Future<?> future = virtualExecutor.submit(() -> {
                 try {
                     semaphore.acquire();
                     try {
@@ -140,19 +139,20 @@ public class OpenAiTtsProvider implements TtsProvider {
                 } catch (Exception e) {
                     throw new RuntimeException("OpenAI TTS 失败：" + item.text, e);
                 }
-            }, virtualExecutor);
+            });
             futures.add(future);
         }
 
         try {
-            for (CompletableFuture<Void> f : futures) {
+            for (Future<?> f : futures) {
                 f.get();
             }
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             futures.forEach(f -> f.cancel(true));
             throw new RuntimeException("TTS 被用户中止", e);
-        } catch (ExecutionException e) {
+        } catch (java.util.concurrent.ExecutionException e) {
+            futures.forEach(f -> f.cancel(true));
             Throwable cause = e.getCause();
             if (cause instanceof RuntimeException re) throw re;
             if (cause instanceof Error err) throw err;
