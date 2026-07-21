@@ -218,8 +218,26 @@ public final class AudioSeparator implements AutoCloseable {
         int freqBins = model.freqBins();
         int segFrames = model.segmentFrames();
         float[][] dummy = new float[segFrames][freqBins];
-        model.separate(dummy, dummy, dummy, dummy);
-        log.info("模型预热完成");
+        int maxAttempts = 3;
+        for (int i = 0; i < maxAttempts; i++) {
+            try {
+                model.separate(dummy, dummy, dummy, dummy);
+                log.info("模型预热完成（尝试 {} 次）", i + 1);
+                return;
+            } catch (OrtException e) {
+                if (i == maxAttempts - 1) {
+                    throw e;
+                }
+                long delay = (long) Math.pow(2, i) * 1000L;
+                log.warn("模型预热失败（第 {} 次），{}ms 后重试: {}", i + 1, delay, e.getMessage());
+                try {
+                    Thread.sleep(delay);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("预热中断", ie);
+                }
+            }
+        }
     }
 
     @Override

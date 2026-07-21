@@ -51,7 +51,7 @@ public class SettingsService {
         PROVIDER_CATEGORY.put(OLLAMA, "translate");
         PROVIDER_CATEGORY.put(FFMPEG_SIMPLE, "separate");
         PROVIDER_CATEGORY.put(DEMUCS, "separate");
-        PROVIDER_CATEGORY.put(AUDIO_SEPARATOR_API, "separate");
+        PROVIDER_CATEGORY.put(ONNX, "separate");
     }
 
     /**
@@ -69,7 +69,6 @@ public class SettingsService {
         DEFAULT_GETTER.put(OLLAMA, ap -> ap.getTranslate().getOllama());
         DEFAULT_GETTER.put(FFMPEG_SIMPLE, ap -> ap.getSeparate().getFfmpegSimple());
         DEFAULT_GETTER.put(DEMUCS, ap -> ap.getSeparate().getDemucs());
-        DEFAULT_GETTER.put(AUDIO_SEPARATOR_API, ap -> ap.getSeparate().getAudioSeparatorApi());
     }
 
     /**

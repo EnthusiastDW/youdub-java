@@ -33,8 +33,8 @@ public final class AdapterConstants {
     // ────────────────────────────── Separate ─────────────────────────
     /** Demucs 人声分离 */
     public static final String DEMUCS = "demucs";
-    /** audio-separator Docker 服务人声分离 */
-    public static final String AUDIO_SEPARATOR_API = "audio-separator-api";
+    /** ONNX Runtime 本地人声分离（MDX-NET 模型） */
+    public static final String ONNX = "onnx";
 
     // ────────────────────────────── Download ─────────────────────────
     /** yt-dlp 下载 */

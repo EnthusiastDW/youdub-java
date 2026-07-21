@@ -20,11 +20,11 @@
     </properties>
 
     <dependencies>
-        <!-- ONNX Runtime Java API -->
-        <!-- NVIDIA GPU: 将 artifactId 改为 onnxruntime-gpu -->
+        <!-- ONNX Runtime Java API（GPU 版内置 CPU+GPU backend，运行时自动检测 CUDA） -->
+        <!-- Maven Central artifactId 是 onnxruntime_gpu（下划线），不是 onnxruntime-gpu -->
         <dependency>
             <groupId>com.microsoft.onnxruntime</groupId>
-            <artifactId>onnxruntime</artifactId>
+            <artifactId>onnxruntime_gpu</artifactId>
             <version>1.20.0</version>
         </dependency>
 
@@ -33,6 +33,13 @@
             <groupId>com.github.wendykierp</groupId>
             <artifactId>JTransforms</artifactId>
             <version>3.1</version>
+        </dependency>
+
+        <!-- JSON 解析（Whisper 模型配置 / 词表） -->
+        <dependency>
+            <groupId>org.json</groupId>
+            <artifactId>json</artifactId>
+            <version>20250107</version>
         </dependency>
 
         <!-- 日志（API 仅，实现由宿主应用提供） -->
@@ -56,7 +63,6 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
-
 
     <build>
         <plugins>

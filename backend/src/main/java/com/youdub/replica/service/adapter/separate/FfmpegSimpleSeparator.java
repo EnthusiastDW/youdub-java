@@ -22,7 +22,7 @@ import java.util.List;
  * 不生成 BGM（背景音乐），因为纯频率分割产生的 BGM 噪声很大，
  * 混入后会严重降低配音质量。下游在无 BGM 文件时会自动跳过混音。
  *
- * 如需带 BGM 的完整分离效果，请使用 Demucs（AI 模型）或 audio-separator-api（Docker 服务）。
+ * 如需带 BGM 的完整分离效果，请使用 OnnxSeparator（ONNX Runtime 本地推理）或 Demucs（Python 模型）。
  */
 @Slf4j
 @Component(FFMPEG_SIMPLE)
@@ -69,7 +69,7 @@ public class FfmpegSimpleSeparator extends BaseSourceSeparator {
 
         // 不生成 BGM：FFmpeg 频率滤波（lowpass）产生的 BGM 噪声大、质量差，
         // 混入后会破坏配音效果。直接输出 vocals-only，下游会自动跳过混音。
-        // 如需高质量 BGM，请选择 Demucs 或 audio-separator-api。
+        // 如需高质量 BGM，请选择 OnnxSeparator（ONNX Runtime 本地推理）或 Demucs。
 
         if (isTemp) {
             Files.deleteIfExists(wavPath);

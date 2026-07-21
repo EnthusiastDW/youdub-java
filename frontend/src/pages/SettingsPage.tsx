@@ -69,9 +69,7 @@ const PROVIDER_FIELDS: Record<string, Record<string, FieldDef[]>> = {
     demucs: [
       { key: "model", type: "text" },
     ],
-    "audio-separator-api": [
-      { key: "serviceUrl", type: "text" },
-    ],
+    onnx: [],
   },
   "asr-corrector": {
     "openai-asr-corrector": [
@@ -268,7 +266,7 @@ export default function SettingsPage() {
   const [translateProvider, setTranslateProvider] = useState("openai");
   const [ttsProvider, setTtsProvider] = useState("voxcpm");
   const [asrProvider, setAsrProvider] = useState("whisper-api");
-  const [separateProvider, setSeparateProvider] = useState("audio-separator-api");
+  const [separateProvider, setSeparateProvider] = useState("onnx");
   const [asrCorrectorProvider, setAsrCorrectorProvider] = useState("openai-asr-corrector");
 
   // Edge TTS voice options
@@ -311,7 +309,7 @@ export default function SettingsPage() {
         setTranslateProvider(data.providers?.translate?.current || "openai");
         setTtsProvider(data.providers?.tts?.current || "voxcpm");
         setAsrProvider(data.providers?.asr?.current || "whisper-api");
-        setSeparateProvider(data.providers?.separate?.current || "audio-separator-api");
+        setSeparateProvider(data.providers?.separate?.current || "onnx");
         setAsrCorrectorProvider(data.providers?.asrCorrector?.current || "openai-asr-corrector");
         setProvidersData(data.providers || null);
 

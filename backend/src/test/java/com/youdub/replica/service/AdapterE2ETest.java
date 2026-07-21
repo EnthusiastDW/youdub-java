@@ -55,7 +55,7 @@ class AdapterE2ETest {
         assertNotNull(separators);
         assertTrue(separators.containsKey("ffmpeg-simple"));
         assertTrue(separators.containsKey("demucs"));
-        assertTrue(separators.containsKey("audio-separator-api"));
+        assertTrue(separators.containsKey("onnx"));
     }
 
     @Test

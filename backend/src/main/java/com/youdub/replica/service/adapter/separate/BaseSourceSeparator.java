@@ -27,7 +27,7 @@ public abstract class BaseSourceSeparator implements SourceSeparator {
      *
      * @return WAV 文件路径（可能是新提取的临时文件，也可能是原文件）
      */
-    protected Path extractAudio(Task task, Path audioPath, Path outputDir) throws Exception {
+    protected static Path extractAudio(Task task, Path audioPath, Path outputDir) throws Exception {
         String fileName = audioPath.getFileName().toString().toLowerCase();
         if (fileName.endsWith(".wav")) {
             log.info("输入已是 WAV 格式，跳过提取：task={}, path={}", task.getId(), audioPath);
@@ -37,7 +37,7 @@ public abstract class BaseSourceSeparator implements SourceSeparator {
         long inputSize = Files.size(audioPath);
         log.info("提取音频：task={}, input={}, size={}MB", task.getId(), audioPath, inputSize / (1024 * 1024));
 
-        Path tempWav = outputDir.resolve("temp_audio.wav");
+        Path tempWav = outputDir.resolve("source_audio.wav");
         if (!Files.exists(tempWav)) {
             // 用 FFprobe 获取音频时长，据此选择参数确保 WAV 不超过 1GB
             double durationSec = probeDuration(audioPath);
@@ -91,7 +91,7 @@ public abstract class BaseSourceSeparator implements SourceSeparator {
     /**
      * 用 FFprobe 获取音频时长（秒）。
      */
-    private double probeDuration(Path audioPath) throws Exception {
+    private static double probeDuration(Path audioPath) throws Exception {
         List<String> cmd = new ArrayList<>();
         cmd.add("ffprobe");
         cmd.add("-v");

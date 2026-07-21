@@ -87,7 +87,6 @@ services:
       - TZ=${TZ:-Asia/Shanghai}
       - APP_TTS_PROVIDER=${TTS_PROVIDER:-voxcpm}
       - APP_TTS_VOXCPM_SERVICE_URL=${VOXCPM_SERVICE_URL:-http://python-services:8001}
-      - APP_SEPARATE_AUDIO_SEPARATOR_API_SERVICE_URL=${AUDIO_SEPARATOR_SERVICE_URL:-http://python-services:8001}
       - APP_TRANSLATE_MODEL=${TRANSLATE_MODEL:-gpt-4o-mini}
       - APP_TRANSLATE_CONCURRENCY=${TRANSLATE_CONCURRENCY:-50}
       - APP_WORKFOLDER=/app/workfolder
@@ -97,8 +96,10 @@ services:
       - APP_DB_PATH=/app/data/youdub.sqlite
       - APP_YTDLP_PROXY_HOST=${YTDLP_PROXY_HOST:-}
       - APP_YTDLP_PROXY_PORT=${YTDLP_PROXY_PORT:-}
+      - ONNX_NUM_THREADS=6
     volumes:
       - /mnt/e/youdub-data/backend:/app/data
+      - /mnt/e/youdub-data/separator-models:/app/data/separator-models
       - /mnt/e/youdub-data/workfolder:/app/workfolder
     restart: unless-stopped
     healthcheck:
