@@ -43,6 +43,7 @@ public class AppProperties {
         private String provider;
         private WhisperApi whisperApi = new WhisperApi();
         private WhisperCpp whisperCpp = new WhisperCpp();
+        private OnnxWhisper onnxWhisper = new OnnxWhisper();
 
         @Data
         public static class WhisperApi {
@@ -55,6 +56,10 @@ public class AppProperties {
         @Data
         public static class WhisperCpp {
             private String model;
+        }
+
+        @Data
+        public static class OnnxWhisper {
         }
     }
 
@@ -126,6 +131,7 @@ public class AppProperties {
         private String provider;
         private Demucs demucs = new Demucs();
         private FfmpegSimple ffmpegSimple = new FfmpegSimple();
+        private OnnxSeparatorConfig onnx = new OnnxSeparatorConfig();
 
         @Data
         public static class Demucs {
@@ -134,6 +140,10 @@ public class AppProperties {
 
         @Data
         public static class FfmpegSimple {
+        }
+
+        @Data
+        public static class OnnxSeparatorConfig {
         }
     }
 

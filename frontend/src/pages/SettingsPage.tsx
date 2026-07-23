@@ -35,6 +35,7 @@ const PROVIDER_FIELDS: Record<string, Record<string, FieldDef[]>> = {
     "whisper-cpp": [
       { key: "model", type: "text" },
     ],
+    "whisper-onnx": [],
   },
   tts: {
     "edge-tts": [

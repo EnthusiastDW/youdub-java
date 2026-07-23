@@ -13,6 +13,8 @@ public final class AdapterConstants {
     public static final String WHISPER_API = "whisper-api";
     /** whisper.cpp 本地语音识别 */
     public static final String WHISPER_CPP = "whisper-cpp";
+    /** ONNX Runtime 本地 Whisper 语音识别（Java 进程内） */
+    public static final String WHISPER_ONNX = "whisper-onnx";
     /** OpenAI LLM ASR 纠错 */
     public static final String OPENAI_ASR_CORRECTOR = "openai-asr-corrector";
 

@@ -43,6 +43,7 @@ public class SettingsService {
     static {
         PROVIDER_CATEGORY.put(WHISPER_API, "asr");
         PROVIDER_CATEGORY.put(WHISPER_CPP, "asr");
+        PROVIDER_CATEGORY.put(WHISPER_ONNX, "asr");
         PROVIDER_CATEGORY.put(OPENAI_ASR_CORRECTOR, "asr-corrector");
         PROVIDER_CATEGORY.put(EDGE_TTS, "tts");
         PROVIDER_CATEGORY.put(VOXCPM, "tts");
@@ -61,6 +62,7 @@ public class SettingsService {
     static {
         DEFAULT_GETTER.put(WHISPER_API, ap -> ap.getAsr().getWhisperApi());
         DEFAULT_GETTER.put(WHISPER_CPP, ap -> ap.getAsr().getWhisperCpp());
+        DEFAULT_GETTER.put(WHISPER_ONNX, ap -> ap.getAsr().getOnnxWhisper());
         DEFAULT_GETTER.put(OPENAI_ASR_CORRECTOR, ap -> ap.getAsrCorrector().getOpenaiAsrCorrector());
         DEFAULT_GETTER.put(EDGE_TTS, ap -> ap.getTts().getEdgeTts());
         DEFAULT_GETTER.put(VOXCPM, ap -> ap.getTts().getVoxcpm());
@@ -69,6 +71,7 @@ public class SettingsService {
         DEFAULT_GETTER.put(OLLAMA, ap -> ap.getTranslate().getOllama());
         DEFAULT_GETTER.put(FFMPEG_SIMPLE, ap -> ap.getSeparate().getFfmpegSimple());
         DEFAULT_GETTER.put(DEMUCS, ap -> ap.getSeparate().getDemucs());
+        DEFAULT_GETTER.put(ONNX, ap -> ap.getSeparate().getOnnx());
     }
 
     /**

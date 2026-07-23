@@ -60,7 +60,7 @@
 |------|------|
 | **输入** | `media/video_source.mp4` |
 | **输出** | `media/audio_vocals.wav`、`media/audio_bgm.wav` |
-| **操作** | 支持 3 种分离方法：**FFmpeg**（频率滤波，快速轻量）、**Demucs**（本地 Python 模型，质量最高）、**audio-separator API**（Docker 容器服务）。分离结果复制到 media 目录。 |
+| **操作** | 支持 3 种分离方法：**FFmpeg**（频率滤波，快速轻量）、**Demucs**（本地 Python 模型，质量最高）、**ONNX Runtime**（Java 进程内原生，无需外部服务）。分离结果复制到 media 目录。 |
 
 ---
 

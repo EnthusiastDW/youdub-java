@@ -97,9 +97,11 @@ services:
       - APP_YTDLP_PROXY_HOST=${YTDLP_PROXY_HOST:-}
       - APP_YTDLP_PROXY_PORT=${YTDLP_PROXY_PORT:-}
       - ONNX_NUM_THREADS=6
+      - WHISPER_ONNX_MODEL=${WHISPER_ONNX_MODEL:-base}
     volumes:
       - /mnt/e/youdub-data/backend:/app/data
       - /mnt/e/youdub-data/separator-models:/app/data/separator-models
+      - /mnt/e/youdub-data/whisper-models:/app/data/whisper-models
       - /mnt/e/youdub-data/workfolder:/app/workfolder
     restart: unless-stopped
     healthcheck:

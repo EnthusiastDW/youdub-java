@@ -4,14 +4,10 @@ import com.youdub.replica.model.entity.Task;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import okhttp3.OkHttpClient;
-import okhttp3.Request;
-import okhttp3.Response;
 import org.springframework.stereotype.Component;
 import site.dengwei.onnxruntime.separator.AudioSeparator;
 
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -30,8 +26,6 @@ import static com.youdub.replica.service.adapter.AdapterConstants.ONNX;
 public class OnnxSeparator extends BaseSourceSeparator {
 
     private static final String MODEL_FILE = "UVR-MDX-NET-Inst_HQ_3.onnx";
-    private static final String MODEL_URL = "https://huggingface.co/debugzxcv/uvr/resolve/main/UVR-MDX-NET-Inst_HQ_3.onnx";
-    private final OkHttpClient httpClient;
 
     private volatile AudioSeparator separator;
     private final Object initLock = new Object();
@@ -84,14 +78,12 @@ public class OnnxSeparator extends BaseSourceSeparator {
             }
 
             Path modelPath = resolveModel();
-            ensureModelExists(modelPath);
-
             boolean useGpu = isCudaAvailable()
                     || (device != null && !device.isBlank() && !"cpu".equalsIgnoreCase(device));
 
             log.info("加载 ONNX 模型：model={}, gpu={}", modelPath, useGpu);
 
-            AudioSeparator sep = new AudioSeparator(modelPath, useGpu);
+            AudioSeparator sep = AudioSeparator.loadOrDownload(modelPath, useGpu);
             sep.warmUp();
             this.separator = sep;
         }
@@ -113,41 +105,6 @@ public class OnnxSeparator extends BaseSourceSeparator {
 
         // 默认：下载到 data/separator-models/
         return dockerModels.toAbsolutePath();
-    }
-
-    /**
-     * 若模型文件不存在，自动从 HuggingFace 下载。
-     */
-    private void ensureModelExists(Path modelPath) throws IOException {
-        if (Files.exists(modelPath)) {
-            log.info("模型文件已存在：{}", modelPath);
-            return;
-        }
-
-        Path parent = modelPath.getParent();
-        if (parent != null) {
-            Files.createDirectories(parent);
-        }
-
-        log.info("下载模型文件（{}）：{}", MODEL_FILE, MODEL_URL);
-        log.info("保存到：{}", modelPath);
-        log.warn("模型文件约 66.8 MB，请耐心等待...");
-
-        try( Response response = httpClient.newCall(new Request.Builder()
-                        .url(MODEL_URL)
-                        .build()).execute();
-        ) {
-            if (response.code() != 200 || response.body() == null) {
-                throw new IOException("下载模型失败，HTTP " + response.code()
-                        + " — 请手动下载并放到 " + modelPath
-                        + "\n  下载地址：" + MODEL_URL);
-            }
-            long totalBytes;
-            try (InputStream in = response.body().byteStream()) {
-                totalBytes = Files.copy(in, modelPath);
-            }
-            log.info("模型下载完成：{} ({} MB)", modelPath, totalBytes / (1024 * 1024));
-        }
     }
 
     /**
