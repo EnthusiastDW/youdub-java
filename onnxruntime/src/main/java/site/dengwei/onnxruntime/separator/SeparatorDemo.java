@@ -1,30 +1,31 @@
-package site.dengwei.onnxruntime;
+package site.dengwei.onnxruntime.separator;
 
-import site.dengwei.onnxruntime.separator.AudioSeparator;
+import site.dengwei.onnxruntime.audio.WavAudio;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 
-public class Demo {
+/**
+ * MDX-NET 音频分离 Demo。
+ * <p>
+ * 比较对称 Hann 窗和 periodic Hann 窗对分离效果的影响。
+ * <pre>
+ * mvn exec:java -pl onnxruntime \
+ *     -Dexec.mainClass="site.dengwei.onnxruntime.separator.SeparatorDemo" \
+ *     -Dexec.args="D:\audio\mix.wav"
+ * </pre>
+ */
+public class SeparatorDemo {
 
-    private static Path modelPath;
-
-    public static void main(String[] args) {
+    public static void main(String[] args) throws Exception {
         var header = "MDX-NET 音频分离 Demo（对称 vs 周期 Hann 窗）";
         System.out.println("╔══════════════════════════════════════════════════════╗");
         System.out.printf ("║  %-54s║%n", header);
         System.out.println("╚══════════════════════════════════════════════════════╝");
 
-        modelPath = Paths.get("backend/data/separator-models/UVR-MDX-NET-Inst_HQ_3.onnx");
-        if (!Files.exists(modelPath)) {
-            modelPath = Paths.get("models/UVR-MDX-NET-Inst_HQ_3.onnx");
-        }
-        if (!Files.exists(modelPath)) {
-            System.err.println("[错误] 找不到模型文件，请配置正确的模型路径");
-            System.err.println("       模型路径: " + modelPath.toAbsolutePath());
-            System.exit(1);
-        }
+        Path modelPath = resolveModel();
+        System.out.println("[模型] " + modelPath.toAbsolutePath());
 
         Path inputWav;
         if (args.length > 0) {
@@ -32,6 +33,7 @@ public class Demo {
             if (!Files.exists(inputWav)) {
                 System.err.println("[错误] 输入文件不存在: " + inputWav);
                 System.exit(1);
+                return;
             }
         } else {
             inputWav = generateTestWav();
@@ -40,13 +42,9 @@ public class Demo {
 
         record Config(String label, boolean periodicWindow) {}
         var configs = new Config[] {
-                new Config("A-sym", false),   // symmetric Hann（当前默认）
-                new Config("B-peri", true),   // periodic Hann（librosa 默认，完美 COLA）
+                new Config("A-sym", false),
+                new Config("B-peri", true),
         };
-
-        // 注意：之前测试的 "单窗" 方案（synthesisWindow=false）已移除，
-        // 因为 MDX-NET 修改后的频谱在 iFFT 时会产生 Gibbs 振铃噪声，
-        // 不加合成窗无法抑制，导致 "电流声" 噪音。
 
         Path outputRoot = Paths.get("demo-output");
         System.out.println("──────────────────────────────────────────────────────");
@@ -54,7 +52,7 @@ public class Demo {
             Path outDir = outputRoot.resolve(cfg.label());
             try {
                 long t0 = System.currentTimeMillis();
-                int threads = site.dengwei.onnxruntime.model.MdxNetModel.defaultNumThreads();
+                int threads = MdxNetModel.defaultNumThreads();
                     try (var separator = new AudioSeparator(modelPath, false, threads,
                             cfg.periodicWindow())) {
                     separator.separate(inputWav, outDir);
@@ -78,8 +76,16 @@ public class Demo {
         System.out.println("配置对照:");
         System.out.println("  A: symmetric Hann  ← 当前默认");
         System.out.println("  B: periodic Hann   ← librosa 默认（完美 COLA）");
-        System.out.println("说明: 之前测试的「单窗」方案（synthesisWindow=false）");
-        System.out.println("      因 MDX-NET 频谱修改导致 Gibbs 振铃噪声，已移除。");
+    }
+
+    private static Path resolveModel() {
+        Path path = Paths.get("data", "separator-models", "UVR-MDX-NET-Inst_HQ_3.onnx");
+        if (Files.exists(path)) return path.toAbsolutePath();
+        path = Paths.get("models", "UVR-MDX-NET-Inst_HQ_3.onnx");
+        if (Files.exists(path)) return path.toAbsolutePath();
+        path = Paths.get("onnxruntime", "models", "UVR-MDX-NET-Inst_HQ_3.onnx");
+        if (Files.exists(path)) return path.toAbsolutePath();
+        return Paths.get("data", "separator-models", "UVR-MDX-NET-Inst_HQ_3.onnx").toAbsolutePath();
     }
 
     private static String fmtFile(long bytes) {
@@ -88,7 +94,7 @@ public class Demo {
         return String.format("%.1fMB", bytes / (1024.0 * 1024.0));
     }
 
-    private static Path generateTestWav() {
+    private static Path generateTestWav() throws Exception {
         int sampleRate = 44100;
         int durationSec = 6;
         int len = sampleRate * durationSec;
@@ -116,13 +122,9 @@ public class Demo {
         for (float s : samples) max = Math.max(max, Math.abs(s));
         if (max > 1) for (int i = 0; i < len; i++) samples[i] /= max;
 
-        try {
-            Path tmpDir = Files.createTempDirectory("demo-");
-            Path wavPath = tmpDir.resolve("test_mix.wav");
-            new site.dengwei.onnxruntime.audio.WavAudio(samples, sampleRate, 1).write(wavPath);
-            return wavPath;
-        } catch (Exception e) {
-            throw new RuntimeException("生成测试音频失败", e);
-        }
+        Path tmpDir = Files.createTempDirectory("demo-");
+        Path wavPath = tmpDir.resolve("test_mix.wav");
+        new WavAudio(samples, sampleRate, 1).write(wavPath);
+        return wavPath;
     }
 }

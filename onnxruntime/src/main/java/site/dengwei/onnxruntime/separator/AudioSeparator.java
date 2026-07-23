@@ -5,7 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import site.dengwei.onnxruntime.audio.SpectralProcessor;
 import site.dengwei.onnxruntime.audio.WavAudio;
-import site.dengwei.onnxruntime.model.MdxNetModel;
+import site.dengwei.onnxruntime.separator.MdxNetModel;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -15,6 +15,36 @@ import java.util.Arrays;
 public final class AudioSeparator implements AutoCloseable {
 
     private static final Logger log = LoggerFactory.getLogger(AudioSeparator.class);
+
+    /**
+     * 加载或下载 MDX-NET 模型后创建 {@code AudioSeparator}。
+     * <p>
+     * 若 {@code modelPath} 不存在，自动从 HuggingFace {@code debugzxcv/uvr} 下载。
+     *
+     * @param modelPath  .onnx 模型文件路径
+     * @param gpuEnabled 是否启用 CUDA
+     */
+    public static AudioSeparator loadOrDownload(Path modelPath, boolean gpuEnabled) {
+        return loadOrDownload(modelPath, gpuEnabled, MdxNetModel.defaultNumThreads());
+    }
+
+    /**
+     * 加载或下载 MDX-NET 模型后创建 {@code AudioSeparator}。
+     * <p>
+     * 若 {@code modelPath} 不存在，自动从 HuggingFace {@code debugzxcv/uvr} 下载。
+     *
+     * @param modelPath  .onnx 模型文件路径
+     * @param gpuEnabled 是否启用 CUDA
+     * @param numThreads ONNX Runtime 推理线程数
+     */
+    public static AudioSeparator loadOrDownload(Path modelPath, boolean gpuEnabled, int numThreads) {
+        try {
+            SeparatorModels.ensureMdxNetFile(modelPath);
+        } catch (IOException e) {
+            throw new RuntimeException("自动下载 MDX-NET 模型失败：" + modelPath, e);
+        }
+        return new AudioSeparator(modelPath, gpuEnabled, numThreads);
+    }
 
     private static final int FFT_SIZE = 6144;
     private static final int HOP_SIZE = 1024;

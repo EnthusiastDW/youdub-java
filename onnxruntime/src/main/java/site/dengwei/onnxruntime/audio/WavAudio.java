@@ -38,35 +38,54 @@ public final class WavAudio {
 
     /** 从 WAV 文件读取，自动转换为 16-bit PCM。 */
     public static WavAudio read(Path path) throws IOException {
+        return readHead(path, 0);
+    }
+
+    /**
+     * 从 WAV 文件读取前 maxSeconds 秒（超过部分丢弃），防止长音频 OOM。
+     * maxSeconds ≤ 0 表示不限长度（等价于 {@link #read(Path)}）。
+     */
+    public static WavAudio readHead(Path path, int maxSeconds) throws IOException {
         try (AudioInputStream ais = AudioSystem.getAudioInputStream(path.toFile())) {
             AudioFormat src = ais.getFormat();
 
-            // 转 16-bit PCM
             AudioFormat target = new AudioFormat(
                     AudioFormat.Encoding.PCM_SIGNED,
                     src.getSampleRate(),
                     16,
                     src.getChannels(),
-                    src.getChannels() * 2,     // frameSize
+                    src.getChannels() * 2,
                     src.getSampleRate(),
-                    false                       // little-endian (WAV 标准)
+                    false
             );
             try (AudioInputStream converted = AudioSystem.getAudioInputStream(target, ais)) {
-                return readStream(converted);
+                return readStream(converted, maxSeconds);
             }
         } catch (UnsupportedAudioFileException e) {
             throw new IOException("不支持的音频格式: " + path, e);
         }
     }
 
-    private static WavAudio readStream(AudioInputStream ais) throws IOException {
+    private static WavAudio readStream(AudioInputStream ais, int maxSeconds) throws IOException {
         AudioFormat fmt = ais.getFormat();
-        byte[] raw = ais.readAllBytes();
         int sampleRate = (int) fmt.getSampleRate();
         int channels = fmt.getChannels();
 
-        float[] samples = new float[raw.length / 2];
-        ByteBuffer bb = ByteBuffer.wrap(raw).order(ByteOrder.LITTLE_ENDIAN);
+        long totalFrames = ais.getFrameLength();
+        long maxFrames = maxSeconds > 0 ? (long) maxSeconds * sampleRate : Long.MAX_VALUE;
+        long framesToRead = (totalFrames > 0) ? Math.min(totalFrames, maxFrames) : maxFrames;
+        int bytesToRead = (int) Math.min(framesToRead * fmt.getFrameSize(), Integer.MAX_VALUE / 2);
+
+        byte[] raw = new byte[bytesToRead];
+        int off = 0;
+        while (off < bytesToRead) {
+            int n = ais.read(raw, off, bytesToRead - off);
+            if (n < 0) break;
+            off += n;
+        }
+
+        float[] samples = new float[off / 2];
+        ByteBuffer bb = ByteBuffer.wrap(raw, 0, off).order(ByteOrder.LITTLE_ENDIAN);
         for (int i = 0; i < samples.length; i++) {
             samples[i] = bb.getShort() / 32768.0f;
         }

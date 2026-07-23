@@ -1,4 +1,4 @@
-package site.dengwei.onnxruntime.model;
+package site.dengwei.onnxruntime.separator;
 
 import ai.onnxruntime.*;
 import org.slf4j.Logger;
