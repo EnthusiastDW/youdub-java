@@ -88,12 +88,14 @@ public final class WhisperConfig {
         }
 
         // Derive special token IDs (they exist in model embedding, NOT in vocab.json)
-        // For .en: forcedDecoderIds = [[1, 50362]] → transcribe=50362
-        // For multilingual: forcedDecoderIds = [[1, LANG], [2, TASK]] → transcribe = task
-        // no_timestamps always follows the last forced position
+        // For .en: forcedDecoderIds = [[1, 50362]] → transcribe=50362, notimestamps=50363（+1）
+        // For multilingual: forcedDecoderIds = [[1, LANG], [2, TASK]] → transcribe=50359,
+        //   translate=50360, notimestamps=50361（+2）。多语言模型在 transcribe 与
+        //   notimestamps 之间还有 translate token，偏移量不同。
         if (forcedDecoderIds.length > 0) {
             this.transcribeTokenId = forcedDecoderIds[forcedDecoderIds.length - 1][1];
-            this.noTimestampsTokenId = transcribeTokenId + 1;
+            this.noTimestampsTokenId = forcedDecoderIds.length >= 2
+                    ? transcribeTokenId + 2 : transcribeTokenId + 1;
         } else {
             this.transcribeTokenId = decoderStartTokenId + 2;
             this.noTimestampsTokenId = decoderStartTokenId + 3;

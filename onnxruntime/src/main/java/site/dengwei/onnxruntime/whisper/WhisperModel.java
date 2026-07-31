@@ -6,14 +6,18 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import site.dengwei.onnxruntime.whisper.WhisperModels;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.FloatBuffer;
 import java.nio.LongBuffer;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.zip.GZIPOutputStream;
 
 /**
  * Whisper ONNX 语音识别模型。
@@ -63,6 +67,8 @@ public final class WhisperModel implements AutoCloseable {
     private final boolean languageAuto;
     // 语言 token 映射（generation_config.json → 回退硬编码），供 detectLanguage 使用
     private final Map<String, Integer> langTokens;
+    // 反向映射：token ID → 语言代码，用于 initial prompt 按语言查找
+    private final Map<Integer, String> reverseLangTokens;
 
     // 诊断标志：仅第一个 chunk 打印详细统计
     private volatile boolean firstDiag = true;
@@ -73,9 +79,27 @@ public final class WhisperModel implements AutoCloseable {
     private final List<String> presentOutputNames; // present.0.decoder.key, ...
     private final String useCacheBranchName;       // use_cache_branch（merged 模型特有，null=非 merged）
 
-    // Whisper 多语言标准特殊 token ID（来自 generation_config，所有导出版本统一）
-    private static final int TRANSCRIBE_TOKEN = 50359;
-    private static final int NO_TIMESTAMPS_TOKEN = 50363;
+    // 特殊 token ID 从 config 动态读取（每个模型的 forced_decoder_ids 可能不同）
+    // 不要硬编码——whisper-tiny.en 用 50362，其他模型可能用 50359
+
+    /**
+     * 各语言 optional initial prompt。
+     *
+     * initial prompt 是 Whisper 标准功能：token 作为"已生成上下文"前置到 decoder 输入。
+     * 它能让模型更好地预测标点和风格，但 prompt 文本过长或与音频内容无关时会被模型
+     * 当成"前面说过的话"来续写，导致严重幻觉。
+     *
+     * 经验：
+     * - 中文 Whisper 模型天然缺少标点，简短提示有帮助
+     * - 英文/日文等语言模型标点能力较强，不需要 prompt
+     * - prompt 必须简短（≤5 词）且不含具体内容词语
+     * - 含"dubbing voice"等具体内容词会直接泄漏到输出
+     *
+     * 未列出的语言不添加提示。
+     */
+    private static final Map<String, String> INITIAL_PROMPTS = Map.of(
+            "zh", "请添加标点符号"
+    );
 
     // 语言代码 → 语言 token ID 回退表（仅含前20个常用语言，ID 50259-50278 连续）。
     // 特殊 token 不在 vocab.json 里，无法用 tokenizer 查询。
@@ -114,7 +138,7 @@ public final class WhisperModel implements AutoCloseable {
         if (initialTokens == null) {
             throw new IllegalStateException("forkWorker 要求 initialTokens 已确定（auto-detect 模式下需先调用一次 transcribe）");
         }
-        WhisperModel worker = new WhisperModel(modelDir, language);
+        WhisperModel worker = new WhisperModel(modelDir, language, repeatPenalty, repeatWindow);
         // auto-detect 模式下，fork 的 worker 应使用已确定的 initialTokens，无需重新检测
         worker.initialTokens = this.initialTokens;
         worker.initialTokensWithTimestamps = this.initialTokensWithTimestamps;
@@ -137,6 +161,18 @@ public final class WhisperModel implements AutoCloseable {
      * @param language 目标语言代码（如 "en", "zh"），用于查找对应语言 token
      */
     public WhisperModel(Path modelDir, String language) {
+        this(modelDir, language, DEFAULT_REPEAT_PENALTY, DEFAULT_REPEAT_WINDOW);
+    }
+
+    /**
+     * @param modelDir      包含 Whisper ONNX 模型和词表的目录
+     * @param language      目标语言代码（如 "en", "zh"）
+     * @param repeatPenalty 重复惩罚系数（>1.0 抑制重复 token，默认 1.2）
+     * @param repeatWindow  重复惩罚窗口大小（最近 N 个 token，默认 20）
+     */
+    public WhisperModel(Path modelDir, String language, float repeatPenalty, int repeatWindow) {
+        this.repeatPenalty = repeatPenalty;
+        this.repeatWindow = repeatWindow;
         this.env = OrtEnvironment.getEnvironment();
         this.modelDir = modelDir;
         this.language = language;
@@ -145,6 +181,10 @@ public final class WhisperModel implements AutoCloseable {
 
         // 语言 token 映射：优先从 generation_config.json 动态读取，回退到硬编码常用语言
         this.langTokens = loadLangTokens(modelDir);
+        this.reverseLangTokens = new java.util.HashMap<>(langTokens.size());
+        for (var entry : langTokens.entrySet()) {
+            reverseLangTokens.put(entry.getValue(), entry.getKey());
+        }
 
         // 自动检测语言模式：language 为 null/blank/"auto" 时启用
         // 首次转录时 detectLanguage 会从 encoder 输出推断语言，然后才构建 initialTokens
@@ -153,7 +193,24 @@ public final class WhisperModel implements AutoCloseable {
 
         try {
             this.encoderSession = loadSession(config.encoderModelPath());
-            this.decoderSession = loadSession(config.decoderModelPath());
+            // 优先加载 decoder_model_merged.onnx（含 KV-cache，显著加速解码）
+            // ORT Java 1.20 早期版本对 merged 模型支持有问题，这里做兼容处理：
+            // 加载失败时自动回退到 fp16/fp32 标准模型
+            OrtSession decoder = null;
+            Path mergedPath = modelDir.resolve("decoder_model_merged.onnx");
+            if (Files.exists(mergedPath)) {
+                try {
+                    decoder = loadSession(mergedPath);
+                    log.info("加载 decoder_model_merged.onnx 成功，启用 KV-cache 通道");
+                } catch (OrtException e) {
+                    log.warn("decoder_model_merged.onnx 加载失败 ({}), 回退到标准解码器", e.getMessage());
+                }
+            }
+            if (decoder == null) {
+                decoder = loadSession(config.decoderModelPath());
+                log.info("使用标准解码器: {}", config.decoderModelPath().getFileName());
+            }
+            this.decoderSession = decoder;
 
             this.encoderInputName = discoverInputName(encoderSession, "input_features", "mel");
             this.encoderOutputName = discoverOutputName(encoderSession, "last_hidden_state", "encoder_output");
@@ -187,15 +244,17 @@ public final class WhisperModel implements AutoCloseable {
                     && !decoderEncoderStateName.equals(decoderInputIdsName);
 
             this.eotToken = config.eosTokenId();
-            int sot = config.decoderStartTokenId();
             if (languageAuto) {
                 // auto-detect 模式：initialTokens 在首次 detectLanguage 后构建
                 this.initialTokens = null;
                 this.initialTokensWithTimestamps = null;
             } else {
+                // 对于多语言模型，将默认语言替换为目标语言
                 int langTokenId = resolveLangToken(language, langTokens);
-                this.initialTokens = new int[]{sot, langTokenId, TRANSCRIBE_TOKEN, NO_TIMESTAMPS_TOKEN};
-                this.initialTokensWithTimestamps = new int[]{sot, langTokenId, TRANSCRIBE_TOKEN};
+                config.overrideLanguage(langTokenId);
+                int[] promptTokens = tokenizeInitialPrompt(language);
+                this.initialTokens = buildInitialTokens(config.initialDecoderTokens(), promptTokens);
+                this.initialTokensWithTimestamps = buildInitialTokens(config.initialDecoderTokensWithTimestamps(), promptTokens);
             }
             log.info("WhisperModel 初始化完成: language={} auto={} initial_tokens={} eot={} usePastCache={}",
                     language, languageAuto, initialTokens, eotToken, usePastCache);
@@ -297,10 +356,38 @@ public final class WhisperModel implements AutoCloseable {
     private void ensureLanguageDetected(float[] encoderOutput) throws OrtException {
         if (!languageAuto || initialTokens != null) return;
         int detectedLang = detectLanguage(encoderOutput);
-        int sot = config.decoderStartTokenId();
-        this.initialTokens = new int[]{sot, detectedLang, TRANSCRIBE_TOKEN, NO_TIMESTAMPS_TOKEN};
-        this.initialTokensWithTimestamps = new int[]{sot, detectedLang, TRANSCRIBE_TOKEN};
-        log.info("语言检测完成: token={}", detectedLang);
+        config.overrideLanguage(detectedLang);
+        String langCode = decodeLanguageToken(detectedLang);
+        int[] promptTokens = tokenizeInitialPrompt(langCode);
+        this.initialTokens = buildInitialTokens(config.initialDecoderTokens(), promptTokens);
+        this.initialTokensWithTimestamps = buildInitialTokens(config.initialDecoderTokensWithTimestamps(), promptTokens);
+        log.info("语言检测完成: token={} lang={}", detectedLang, langCode);
+    }
+
+    /** 构建带 initial prompt 的初始 token 序列。 */
+    private int[] buildInitialTokens(int[] baseTokens, int[] promptTokens) {
+        int[] tokens = Arrays.copyOf(baseTokens, baseTokens.length + promptTokens.length);
+        System.arraycopy(promptTokens, 0, tokens, baseTokens.length, promptTokens.length);
+        return tokens;
+    }
+
+    /** 按语言代码获取 initial prompt 的 token 序列。无提示时返回空数组。 */
+    private int[] tokenizeInitialPrompt(String langCode) {
+        if (langCode == null) return new int[0];
+        String prompt = INITIAL_PROMPTS.get(langCode);
+        if (prompt == null || prompt.isBlank()) return new int[0];
+        try {
+            return tokenizer.encode(prompt);
+        } catch (Exception e) {
+            log.warn("initialPrompt 编码失败 (lang={}): {}，跳过", langCode, e.getMessage());
+            return new int[0];
+        }
+    }
+
+    /** 将语言 token ID 反查为语言代码（用于按语言查 initial prompt）。 */
+    private String decodeLanguageToken(int tokenId) {
+        String lang = reverseLangTokens.get(tokenId);
+        return lang != null ? lang : "en";
     }
 
     // ──────────────────────────── 公开 API ────────────────────────────
@@ -431,8 +518,8 @@ public final class WhisperModel implements AutoCloseable {
                     String.format("%.3f", encSum / encoderOutput.length), encNaN);
         }
 
-        // 使用标准解码器（带 no_timestamps token）获得最优文本质量
-        int[] textTokens = runDecoder(encoderOutput);
+        // 使用时间戳解码路径（initialTokensWithTimestamps→模型输出时间戳 token→parseSegments 正确解析时间边界）
+        int[] textTokens = runDecoder(encoderOutput, initialTokensWithTimestamps);
 
         if (firstDiag) {
             firstDiag = false;
@@ -440,103 +527,219 @@ public final class WhisperModel implements AutoCloseable {
         }
 
         long audioDurationMs = (long) Math.min((double) audio.length / sampleRate * 1000, 30000);
-        return parseSegments(textTokens, audioDurationMs);
+        TranscriptionResult result = parseSegments(textTokens, audioDurationMs);
+
+        // 对齐 faster-whisper: no_speech 检测 — 音频够长但输出过短 → 静音段，空结果
+        if (audioDurationMs > 5000 && result.segments().size() <= 1) {
+            int meaningfulWords = 0;
+            for (Segment seg : result.segments()) {
+                for (Word w : seg.words()) {
+                    String t = w.text().trim();
+                    if (!t.isEmpty() && !isAllPunctuation(t)) meaningfulWords++;
+                }
+            }
+            if (meaningfulWords <= 2) {
+                log.info("no_speech 检测触发: audio={}ms, segments={}, meaningfulWords={}, 返回空",
+                        audioDurationMs, result.segments().size(), meaningfulWords);
+                return new TranscriptionResult("", List.of());
+            }
+        }
+
+        return result;
     }
+
+    // 最长单次转录时长（Whisper 模型限制）
+    private static final int MAX_CHUNK_SEC = 30;
+    // 分片间重叠（秒），用于对齐分片边界
+    private static final int CHUNK_SHIFT_SEC = 25;
 
     /**
      * 将任意时长音频转录为带单词级时间戳的分段结果。
      * <p>
      * 对 ≤30s 音频直接委托给 {@link #transcribeDetailed}。
-     * 对 >30s 音频自动切成 30s 窗口（5s 重叠），使用线程池并行转录分片，
-     * 片间按时间戳跳过重叠区域，避免重复文本。
+     * 对 >30s 音频先尝试静音点分片（对齐 Python faster-whisper），每个分片 = 连续语音段；
+     * 如果无 ≥2s 静音或静音点不足则回退到固定 30s 窗口。
+     * 所有分片无论来自静音分割还是固定窗口，都会经过
+     * {@link #ensureMaxChunkSize(List, List, int)} 保证每个分片 ≤30s。
      */
     public TranscriptionResult transcribeChunked(float[] audio, int sampleRate) throws OrtException {
-        int chunkSamples = 30 * sampleRate;
-        int shiftSamples = 25 * sampleRate;
         int totalSamples = audio.length;
+        int maxChunkSamples = MAX_CHUNK_SEC * sampleRate;
 
-        // ≤30s 走现有逻辑
-        if (totalSamples <= chunkSamples) {
+        if (totalSamples <= maxChunkSamples) {
             return transcribeDetailed(audio, sampleRate);
         }
 
-        int numChunks = Math.max(1, (int) Math.ceil((double) totalSamples / shiftSamples));
-        int nThreads = Math.min(numChunks, Runtime.getRuntime().availableProcessors() / 3);
+        // 尝试静音点分片
+        List<float[]> chunks = new ArrayList<>();
+        List<Long> chunkOffsets = new ArrayList<>();
+        List<int[]> silenceRegions = WhisperVad.detectSilenceRegions(audio, sampleRate);
+        boolean useSilenceChunks = WhisperVad.buildSilenceChunks(audio, sampleRate, silenceRegions, chunks, chunkOffsets);
 
-        // 预分配所有分片音频数据
-        List<float[]> chunks = new ArrayList<>(numChunks);
-        List<Long> chunkOffsets = new ArrayList<>(numChunks);
-        for (int i = 0; i < numChunks; i++) {
-            int start = i * shiftSamples;
-            int end = Math.min(start + chunkSamples, totalSamples);
-            if (start >= totalSamples) break;
-            chunks.add(Arrays.copyOfRange(audio, start, end));
-            chunkOffsets.add((long) start * 1000L / sampleRate);
+        if (!useSilenceChunks) {
+            // 回退到固定 30s 窗口（5s 重叠）
+            buildFixedChunks(audio, sampleRate, chunks, chunkOffsets);
         }
+
+        // 核心修复：保证每个分片 ≤ MAX_CHUNK_SEC
+        // 静音分片产生的 chunk 可能远大于 30s（因为两个 split point 之间可能跨度达数分钟），
+        // 而 transcribeDetailed() 内部会静默截断到 30s，导致尾部丢失。
+        ensureMaxChunkSize(chunks, chunkOffsets, sampleRate);
+
         int actualChunks = chunks.size();
 
         // auto-detect 模式：用第一个分片触发语言检测，确保 initialTokens 已确定
-        // 之后 forkWorker 才能正确工作（worker 共享已确定的 initialTokens）
         boolean needDetect = initialTokens == null;
-        int parallelStart;
-        TranscriptionResult[] chunkResults;
+        TranscriptionResult[] chunkResults = new TranscriptionResult[actualChunks];
         if (needDetect) {
             log.info("分片 [1/{}]: 首次转录触发语言检测", actualChunks);
-            TranscriptionResult first = transcribeDetailed(chunks.get(0), sampleRate);
+            chunkResults[0] = transcribeDetailed(chunks.get(0), sampleRate);
             reloadDecoderSession();
-            parallelStart = 1;
-            // 第一个分片结果暂存到 [0]，后续合并时一起处理
-            chunkResults = new TranscriptionResult[actualChunks];
-            chunkResults[0] = first;
         } else {
-            parallelStart = 0;
-            chunkResults = new TranscriptionResult[actualChunks];
+            chunkResults[0] = transcribeDetailed(chunks.get(0), sampleRate);
         }
 
-        // 线程池并行转录剩余分片
-        int parallelCount = actualChunks - parallelStart;
-        if (parallelCount > 0) {
-            ExecutorService pool = Executors.newFixedThreadPool(Math.min(parallelCount, nThreads));
-            for (int i = parallelStart; i < actualChunks; i++) {
-                final int idx = i;
-                final float[] chunkAudio = chunks.get(i);
-                pool.submit(() -> {
-                    long t0 = System.currentTimeMillis();
-                    log.info("分片 [{}/{}]: offset={}ms, samples={} (thread={})",
-                            idx + 1, actualChunks, chunkOffsets.get(idx), chunkAudio.length,
-                            Thread.currentThread().getName());
-                    try (WhisperModel worker = forkWorker()) {
-                        TranscriptionResult r = worker.transcribeDetailed(chunkAudio, sampleRate);
-                        long elapsed = System.currentTimeMillis() - t0;
-                        log.info("分片 [{}/{}] 完成: {}s (segments={}, words={}, text=\"{}\")",
-                                idx + 1, actualChunks, elapsed / 1000, r.segments().size(),
-                                r.segments().stream().mapToInt(s -> s.words().size()).sum(),
-                                r.fullText.length() > 50 ? r.fullText.substring(0, 50) + "..." : r.fullText);
-                        chunkResults[idx] = r;
-                    } catch (Exception e) {
-                        throw new RuntimeException("分片 " + idx + " 转录失败", e);
-                    }
-                });
+        // 剩余分片：并行转录，每个分片使用独立的 forkWorker 避免 session 争用
+        int nThreads = Math.min(actualChunks - 1, Math.max(1, Runtime.getRuntime().availableProcessors() / 2));
+        ExecutorService pool = Executors.newFixedThreadPool(nThreads);
+        java.util.List<java.util.concurrent.Future<?>> futures = new java.util.ArrayList<>();
+        for (int i = 1; i < actualChunks; i++) {
+            final int idx = i;
+            final float[] chunkAudio = chunks.get(i);
+            futures.add(pool.submit(() -> {
+                long t0 = System.currentTimeMillis();
+                log.info("分片 [{}/{}]: offset={}ms, samples={} (thread={})",
+                        idx + 1, actualChunks, chunkOffsets.get(idx), chunkAudio.length,
+                        Thread.currentThread().getName());
+                try (WhisperModel worker = forkWorker()) {
+                    TranscriptionResult r = worker.transcribeDetailed(chunkAudio, sampleRate);
+                    long elapsed = System.currentTimeMillis() - t0;
+                    log.info("分片 [{}/{}] 完成: {}s (segments={}, words={})",
+                            idx + 1, actualChunks, elapsed / 1000,
+                            r.segments().size(),
+                            r.segments().stream().mapToInt(s -> s.words().size()).sum());
+                    chunkResults[idx] = r;
+                } catch (Exception e) {
+                    throw new RuntimeException("分片 " + idx + " 转录失败", e);
+                }
+            }));
+        }
+        pool.shutdown();
+        try {
+            pool.awaitTermination(30, TimeUnit.MINUTES);
+            for (var f : futures) f.get();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new OrtException("分片转录被中断");
+        } catch (java.util.concurrent.ExecutionException e) {
+            throw new OrtException("分片转录失败: " + e.getCause().getMessage());
+        }
+
+        // 诊断：每个分片的原始转录结果
+        for (int i = 0; i < actualChunks; i++) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("分片诊断 [").append(i + 1).append("/").append(actualChunks).append("]");
+            sb.append(" offset=").append(chunkOffsets.get(i)).append("ms");
+            if (chunkResults[i] == null) {
+                sb.append(" result=null");
+            } else {
+                var r = chunkResults[i];
+                sb.append(" segments=").append(r.segments().size());
+                int wc = r.segments().stream().mapToInt(s -> s.words().size()).sum();
+                sb.append(" words=").append(wc);
+                String text = r.fullText();
+                if (text.length() > 120) text = text.substring(0, 120) + "...";
+                sb.append(" text=\"").append(text).append("\"");
+                if (!r.segments().isEmpty()) {
+                    var last = r.segments().get(r.segments().size() - 1);
+                    long lastAbsEnd = last.endMs() + chunkOffsets.get(i);
+                    sb.append(" lastSegEnd=").append(lastAbsEnd).append("ms");
+                }
             }
-            pool.shutdown();
-            try {
-                pool.awaitTermination(30, java.util.concurrent.TimeUnit.MINUTES);
-            } catch (InterruptedException e) {
-                Thread.currentThread().interrupt();
-                throw new OrtException("分片转录被中断");
-            }
+            log.warn(sb.toString());
         }
 
         // 按序合并所有分片结果
         List<Segment> allSegments = mergeSegments(actualChunks, chunkResults, chunkOffsets);
 
+        // 合并短碎片：≤3 词且无句尾标点的 segment 并入前一段
+        allSegments = mergeFragments(allSegments);
+        // 过滤垃圾段：纯标点/噪声/重复（在 mergeFragments 之后执行，避免短 fragment 被误删）
+        allSegments = filterGarbageSegments(allSegments);
+
         String fullText = allSegments.stream()
                 .map(Segment::text)
                 .collect(java.util.stream.Collectors.joining(" "));
 
-        log.info("Whisper 分片转录完成: chunks={}, threads={}, total_segments={}, duration={}s",
-                actualChunks, nThreads, allSegments.size(), totalSamples / sampleRate);
+        log.info("Whisper 分片转录完成: chunks={}, total_segments={}, duration={}s",
+                actualChunks, allSegments.size(), totalSamples / sampleRate);
         return new TranscriptionResult(fullText, allSegments);
+    }
+
+    /**
+     * 构建固定 30s 窗口（5s 重叠）分片。
+     * 与 faster-whisper 的固定窗口策略一致。
+     * 最后一个分片不足 40% 窗口大小时前移起始位置，避免短分片 pad 大量静音诱导幻觉。
+     */
+    private static void buildFixedChunks(float[] audio, int sampleRate,
+                                          List<float[]> chunksOut, List<Long> offsetsOut) {
+        int maxChunkSamples = MAX_CHUNK_SEC * sampleRate;
+        int shiftSamples = CHUNK_SHIFT_SEC * sampleRate;
+        int totalSamples = audio.length;
+        int minSamples = (int) (maxChunkSamples * 0.4);
+        int numChunks = Math.max(1, (int) Math.ceil((double) totalSamples / shiftSamples));
+        for (int i = 0; i < numChunks; i++) {
+            int start = i * shiftSamples;
+            int end = Math.min(start + maxChunkSamples, totalSamples);
+            if (start >= totalSamples) break;
+            // 最后一个分片太短 → 前移起始位置，保证至少 minSamples 有效音频
+            if (i == numChunks - 1 && (end - start) < minSamples && i > 0) {
+                start = Math.max(0, end - minSamples);
+            }
+            chunksOut.add(Arrays.copyOfRange(audio, start, end));
+            offsetsOut.add((long) start * 1000L / sampleRate);
+        }
+    }
+
+    /**
+     * 保证所有分片不超过 {@link #MAX_CHUNK_SEC}。
+     * <p>
+     * 静音分片可能产生任意长度的 chunk（两个 split point 之间可能跨度达数分钟），
+     * 而 {@link #transcribeDetailed(float[], int)} 会静默截断到 30s 导致尾部丢失。
+     * 本方法将 >30s 的 chunk 拆分为多个 30s 窗口（5s 重叠）。
+     */
+    private static void ensureMaxChunkSize(List<float[]> chunks, List<Long> offsets, int sampleRate) {
+        int maxSamples = MAX_CHUNK_SEC * sampleRate;
+        int shiftSamples = CHUNK_SHIFT_SEC * sampleRate;
+        // 最小有效音频量：低于此值的分片会被 pad 大量静音 → 诱发幻觉
+        int minSamples = (int) (maxSamples * 0.4);
+        List<float[]> newChunks = new ArrayList<>();
+        List<Long> newOffsets = new ArrayList<>();
+        for (int i = 0; i < chunks.size(); i++) {
+            float[] chunk = chunks.get(i);
+            long offsetMs = offsets.get(i);
+            if (chunk.length <= maxSamples) {
+                newChunks.add(chunk);
+                newOffsets.add(offsetMs);
+            } else {
+                int numSub = Math.max(1, (chunk.length + shiftSamples - 1) / shiftSamples);
+                for (int j = 0; j < numSub; j++) {
+                    int subStart = j * shiftSamples;
+                    int subEnd = Math.min(subStart + maxSamples, chunk.length);
+                    if (subStart >= chunk.length) break;
+                    // 最后一个子分片不足 minSamples → 向后扩展覆盖更多有效音频
+                    if (j == numSub - 1 && (subEnd - subStart) < minSamples) {
+                        subStart = Math.max(0, subEnd - minSamples);
+                    }
+                    newChunks.add(Arrays.copyOfRange(chunk, subStart, subEnd));
+                    newOffsets.add(offsetMs + (long) subStart * 1000L / sampleRate);
+                }
+            }
+        }
+        chunks.clear();
+        chunks.addAll(newChunks);
+        offsets.clear();
+        offsets.addAll(newOffsets);
     }
 
     private static List<Segment> mergeSegments(int actualChunks, TranscriptionResult[] chunkResults, List<Long> chunkOffsets) {
@@ -575,41 +778,95 @@ public final class WhisperModel implements AutoCloseable {
         return allSegments;
     }
 
-    private int[] runDecoderRaw(float[] encoderState) throws OrtException {
-        int[] init = initialTokensWithTimestamps;
-        int[] tokens = init.clone();
-        int maxLen = Math.min(config.maxTargetPositions(), 128);
-        int firstTs = config.noTimestampsTokenId() + 1;
-        int lastTs = config.vocabSize() - 1;
-        int prevTsPos = -1;
+    /**
+     * 过滤垃圾 segment：纯标点单 segment、重复文本。
+     * <p>
+     * 注意：不做尾部内容截断——ASR 输出的末尾单词（如 "Thank you"）是有效内容，
+     * 不应因缺少句尾标点或长度短而被删除。
+     */
+    private static List<Segment> filterGarbageSegments(List<Segment> segments) {
+        List<Segment> filtered = new ArrayList<>();
+        Set<String> seenTexts = new java.util.HashSet<>();
 
-        java.util.ArrayDeque<Integer> recentTokens = new java.util.ArrayDeque<>(REPEAT_WINDOW);
+        for (int i = 0; i < segments.size(); i++) {
+            Segment seg = segments.get(i);
+            String text = seg.text().trim().toLowerCase();
+            if (text.isEmpty()) continue;
 
-        for (int pos = init.length; pos < maxLen; pos++) {
-            int lastToken = decodeStepFull(tokens, encoderState, recentTokens);
-            if (lastToken == eotToken || lastToken < 0) break;
+            // 单 word 纯标点 → 噪声，删
+            if (seg.words() != null && seg.words().size() == 1
+                    && isAllPunctuation(text)) continue;
 
-            boolean isTs = lastToken >= firstTs && lastToken <= lastTs;
-            if (isTs) {
-                if (prevTsPos >= 0 && pos - prevTsPos > 16) break;
-                prevTsPos = pos;
-            }
+            // 与之前 segment 文本相同且时间接近 → 去重
+            if (seenTexts.contains(text) && isLikelyDuplicate(seg, segments, i, text)) continue;
 
-            tokens = Arrays.copyOf(tokens, pos + 1);
-            tokens[pos] = lastToken;
-            addRecentToken(recentTokens, lastToken);
+            filtered.add(seg);
+            seenTexts.add(text);
         }
+        return filtered;
+    }
 
-        int start = init.length;
-        int end = tokens.length;
-        for (int i = start; i < tokens.length; i++) {
-            if (tokens[i] == eotToken) {
-                end = i;
-                break;
+    /** 判断 segment 是否为重复：与之前某段文本相同且时间接近。 */
+    private static boolean isLikelyDuplicate(Segment seg, List<Segment> all, int idx, String text) {
+        for (int j = idx - 1; j >= 0 && j >= idx - 5; j--) {
+            Segment prev = all.get(j);
+            if (prev.text().trim().equalsIgnoreCase(text)) {
+                long gap = Math.abs(seg.startMs() - prev.endMs());
+                if (gap < 8000) return true;
             }
         }
+        return false;
+    }
 
-        return Arrays.copyOfRange(tokens, start, end);
+    /** 合并短碎片 segment：≤3 词且无句尾标点的段并入前一段（减少过度碎片化）。 */
+    private static List<Segment> mergeFragments(List<Segment> segments) {
+        if (segments.size() < 2) return segments;
+        List<Segment> merged = new ArrayList<>();
+        for (Segment seg : segments) {
+            if (merged.isEmpty()) {
+                merged.add(seg);
+                continue;
+            }
+            String text = seg.text().trim();
+            String[] words = text.split("\\s+");
+            boolean isShort = words.length <= 3 && !hasSentenceEnding(text);
+            if (isShort) {
+                Segment last = merged.remove(merged.size() - 1);
+                String combined = last.text() + " " + text;
+                List<Word> combinedWords = new ArrayList<>(last.words());
+                combinedWords.addAll(seg.words());
+                long endMs = Math.max(last.endMs(), seg.endMs());
+                merged.add(new Segment(combined, last.startMs(), endMs, combinedWords));
+            } else {
+                merged.add(seg);
+            }
+        }
+        return merged;
+    }
+
+    /** 判断字符串是否全部由标点/空白组成（含中英文标点）。 */
+    private static boolean isAllPunctuation(String s) {
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (!(c == '.' || c == ',' || c == '!' || c == '?'
+                    || c == ';' || c == ':' || c == '"' || c == '\''
+                    || c == ' ' || c == '-' || c == '\n'
+                    || c == '。' || c == '，' || c == '！' || c == '？'
+                    || c == '；' || c == '：' || c == '、'
+                    || c == '…' || c == '~')) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** 判断文本是否以句尾标点结尾（含常见语言）。 */
+    private static boolean hasSentenceEnding(String text) {
+        if (text.isEmpty()) return false;
+        char last = text.charAt(text.length() - 1);
+        return last == '.' || last == '!' || last == '?'
+                || last == '。' || last == '！' || last == '？'
+                || last == '…' || last == '~';
     }
 
     private TranscriptionResult parseSegments(int[] tokens, long audioDurationMs) {
@@ -642,6 +899,9 @@ public final class WhisperModel implements AutoCloseable {
             int[] textTokens = Arrays.copyOfRange(tokens, textStart, textEnd);
             String segText = tokenizer.decode(textTokens).trim();
             if (segText.isEmpty()) continue;
+
+            // 跳过纯标点段（静音/噪声末尾模型会产出 "." 等）
+            if (isAllPunctuation(segText)) continue;
 
             // 按文本字符比例分配单词起止时间
             String[] words = segText.split("\\s+");
@@ -686,13 +946,24 @@ public final class WhisperModel implements AutoCloseable {
         }
     }
 
-    /** 重建 decoder session，彻底释放 native 内存（每片后调用） */
+    /** 重建 decoder session，彻底释放 native 内存（每片后调用）。优先加载 merged 模型保持 KV-cache 一致性。 */
     public void reloadDecoderSession() throws OrtException {
         if (decoderSession != null) {
             try { decoderSession.close(); } catch (Exception e) { /* ignore */ }
             decoderSession = null;
         }
+        Path mergedPath = modelDir.resolve("decoder_model_merged.onnx");
+        if (Files.exists(mergedPath)) {
+            try {
+                decoderSession = loadSession(mergedPath);
+                log.info("reload: 加载 decoder_model_merged.onnx 成功");
+                return;
+            } catch (OrtException e) {
+                log.warn("reload: decoder_model_merged.onnx 加载失败 ({}), 回退到标准解码器", e.getMessage());
+            }
+        }
         decoderSession = loadSession(config.decoderModelPath());
+        log.info("reload: 使用标准解码器: {}", config.decoderModelPath().getFileName());
     }
 
     // ──────────────────────────── 编码器 ────────────────────────────
@@ -721,16 +992,161 @@ public final class WhisperModel implements AutoCloseable {
 
     // ──────────────────────────── 解码器（自回归） ────────────────────────────
 
+    private static final int BEAM_SIZE = 5;
+
+    /** 温度回退列表（0.0=贪心，值越大随机性越强）。对齐 faster-whisper 默认。 */
+    private static final float[] TEMPERATURES = {0.0f, 0.2f, 0.4f, 0.6f, 0.8f, 1.0f};
+
     private int[] runDecoder(float[] encoderState) throws OrtException {
+        return runDecoder(encoderState, initialTokens);
+    }
+
+    /**
+     * 自回归解码：贪心优先 + beam search 回退。
+     * <p>
+     * 第一轮用贪心解码（temperature=0.0），质量达标则直接返回，避免 beam search 开销。
+     * 贪心输出质量差时回退到 beam search + 全温度回退。
+     *
+     * @param encoderState encoder 输出 states
+     * @param initTokens   decoder 初始 token 序列（含或不含 no_timestamps）
+     */
+    private int[] runDecoder(float[] encoderState, int[] initTokens) throws OrtException {
+        // 第一轮：贪心解码（temperature=0.0），~448 次 decoder 调用。
+        // 注意：若 initTokens 是带时间戳版本（initialTokensWithTimestamps），
+        // 贪心解码用 initialTokens（含 no_timestamps）替代，避免模型输出时间戳 token
+        // 主导导致 scoreTranscriptionQuality 跳过所有时间戳返回 quality=0。
+        int[] greedyInit = (initTokens == initialTokensWithTimestamps && initialTokens != null)
+                ? initialTokens : initTokens;
+        int[] greedyTokens;
         if (usePastCache) {
-            return runDecoderCache(encoderState);
+            greedyTokens = runDecoderCache(encoderState, greedyInit);
+        } else {
+            greedyTokens = runDecoderFull(encoderState, greedyInit);
         }
-        return runDecoderFull(encoderState);
+
+        // 贪心质量检查：质量好直接返回，跳过昂贵的 beam search
+        String greedyText = tokenizer.decode(greedyTokens);
+        float greedyQuality = scoreTranscriptionQuality(greedyTokens);
+        float greedyCompRatio = computeCompressionRatio(greedyText);
+
+        // 诊断：贪心输出了什么
+        if (greedyQuality < 0.7f) {
+            int tsTokenCount = 0;
+            int firstTs = config.noTimestampsTokenId() + 1;
+            for (int t : greedyTokens) { if (t >= firstTs) tsTokenCount++; }
+            log.warn("贪心诊断: tokens={}, tsTokens={}, text='{}' (len={}), firstTokens={}",
+                    greedyTokens.length, tsTokenCount,
+                    greedyText.length() > 100 ? greedyText.substring(0, 100) : greedyText,
+                    greedyText.length(),
+                    greedyTokens.length > 0 ? (greedyTokens[0] + "," +
+                        (greedyTokens.length > 1 ? String.valueOf(greedyTokens[1]) : "")) : "empty");
+        }
+
+        if (greedyQuality >= 0.7f && greedyCompRatio <= 1.8f) {
+            log.info("贪心解码达标: quality={} compRatio={}",
+                    String.format("%.2f", greedyQuality), String.format("%.2f", greedyCompRatio));
+            return greedyTokens;
+        }
+
+        log.info("贪心解码不达标 (quality={} compRatio={}), 回退到 beam search",
+                String.format("%.2f", greedyQuality), String.format("%.2f", greedyCompRatio));
+
+        // 第二轮：beam search + 全温度回退
+        int[] bestTokens = null;
+        float bestScore = Float.NEGATIVE_INFINITY;
+
+        for (float temp : TEMPERATURES) {
+            int[] tokens = runDecoderBeamSearch(encoderState, BEAM_SIZE, temp, initTokens);
+
+            float quality = scoreTranscriptionQuality(tokens);
+            String text = tokenizer.decode(tokens);
+            float compRatio = computeCompressionRatio(text);
+            if (compRatio > 2.4f) {
+                quality *= 0.3f;
+            } else if (compRatio > 1.8f) {
+                quality *= 0.6f;
+            }
+
+            if (quality > bestScore) {
+                bestTokens = tokens;
+                bestScore = quality;
+                if (quality >= 0.7f && compRatio <= 1.8f) break;
+            }
+        }
+
+        return bestTokens != null ? bestTokens : greedyTokens;
+    }
+
+    /**
+     * 转录质量评分 [0,1]：1.0=完美，0.0=完全无意义。
+     * 基于非标点 token 占比 + token 多样性（惩罚重复循环）。
+     * 用于温度回退时判断是否需要重试。
+     */
+    private float scoreTranscriptionQuality(int[] tokens) {
+        if (tokens == null || tokens.length == 0) return 0f;
+        int firstTs = config.noTimestampsTokenId() + 1;
+        int meaningful = 0;
+        int total = 0;
+        java.util.Map<Integer, Integer> freq = new java.util.HashMap<>();
+        for (int t : tokens) {
+            if (t == eotToken) break;
+            if (t >= firstTs) continue; // 跳过时间戳 token（不影响非时间戳模式）
+            total++;
+            freq.merge(t, 1, Integer::sum);
+            String s = tokenizer.tokenToString(t);
+            if (s != null && !s.isBlank()) {
+                if (!isAllPunctuation(s)) meaningful++;
+            }
+        }
+        if (total == 0) return 0f;
+
+        // 基础质量：有意义 token 占比
+        float baseQuality = (float) meaningful / total;
+
+        // token 多样性惩罚：unique token 占比越高越好
+        float uniqueRatio = (float) freq.size() / total;
+        float diversityPenalty;
+        if (uniqueRatio < 0.3f) {
+            diversityPenalty = 0.1f;
+        } else if (uniqueRatio < 0.5f) {
+            diversityPenalty = 0.4f;
+        } else if (uniqueRatio < 0.7f) {
+            diversityPenalty = 0.8f;
+        } else {
+            diversityPenalty = 1.0f;
+        }
+
+        // 单 token 过度频繁惩罚
+        int maxCount = freq.values().stream().mapToInt(Integer::intValue).max().orElse(1);
+        float maxRatio = (float) maxCount / total;
+        float maxFreqPenalty = maxRatio > 0.2f ? Math.max(0.2f, 1.0f - maxRatio) : 1.0f;
+
+        return baseQuality * diversityPenalty * maxFreqPenalty;
+    }
+
+    /**
+     * 计算文本的 compression ratio = 原始字节数 / gzip 压缩后字节数。
+     * 对齐 faster-whisper 的 compression_ratio 检查。
+     * 高压缩比（>2.4）表示输出重复/无意义，应触发温度回退。
+     */
+    private static float computeCompressionRatio(String text) {
+        if (text == null || text.isEmpty()) return 0f;
+        byte[] bytes = text.getBytes(StandardCharsets.UTF_8);
+        try {
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            try (GZIPOutputStream gzip = new GZIPOutputStream(baos)) {
+                gzip.write(bytes);
+            }
+            int compressedLen = baos.size();
+            return compressedLen > 0 ? (float) bytes.length / compressedLen : 0f;
+        } catch (IOException e) {
+            return 0f;
+        }
     }
 
     // ──────────────────── KV-cache 增量推理 ────────────────────
 
-    private int[] runDecoderCache(float[] encoderState) throws OrtException {
+    private int[] runDecoderCache(float[] encoderState, int[] initTokens) throws OrtException {
         java.util.List<Integer> generated = new java.util.ArrayList<>();
         boolean diag = firstDiag;
 
@@ -741,12 +1157,12 @@ public final class WhisperModel implements AutoCloseable {
         OrtSession.Result prevResult = null;
 
         // 重复惩罚滑动窗口
-        java.util.ArrayDeque<Integer> recentTokens = new java.util.ArrayDeque<>(REPEAT_WINDOW);
+        java.util.ArrayDeque<Integer> recentTokens = new java.util.ArrayDeque<>(repeatWindow);
 
         try {
             // 第一步：完整初始序列 + 空 past（seqLen=0）+ use_cache_branch=true
-            long[] initIds = new long[initialTokens.length];
-            for (int i = 0; i < initialTokens.length; i++) initIds[i] = initialTokens[i];
+            long[] initIds = new long[initTokens.length];
+            for (int i = 0; i < initTokens.length; i++) initIds[i] = initTokens[i];
 
             Map<String, OnnxTensorLike> inputs = new LinkedHashMap<>();
             inputs.put(decoderInputIdsName, OnnxTensor.createTensor(env,
@@ -773,15 +1189,16 @@ public final class WhisperModel implements AutoCloseable {
             closeOwnedInputs(inputs);
             for (OnnxTensor t : emptyPastTensors) safeClose(t);
 
-            int token = getLogitsToken(prevResult, initialTokens.length, recentTokens, REPEAT_PENALTY);
+            int firstTs = config.noTimestampsTokenId() + 1;
+            int token = getLogitsToken(prevResult, initTokens.length, recentTokens, repeatPenalty, firstTs);
             if (diag) logDiagStep(0, token);
             if (token == eotToken || token < 0) return new int[0];
             generated.add(token);
-            addRecentToken(recentTokens, token);
+            addRecentToken(recentTokens, token, repeatWindow);
 
             // 后续步：只传新 token + past（从 prevResult 的 present 输出获取）
-            int maxLen = Math.min(config.maxTargetPositions(), 448);
-            for (int step = 1; step < maxLen; step++) {
+            int maxSteps = Math.min(config.maxTargetPositions() - initTokens.length, 448);
+            for (int step = 1; step < maxSteps; step++) {
                 long[] ids = new long[]{token};
 
                 Map<String, OnnxTensorLike> nextInputs = new LinkedHashMap<>();
@@ -806,11 +1223,12 @@ public final class WhisperModel implements AutoCloseable {
                 closeOwnedInputs(nextInputs); // 关闭新创建的 input_ids/enc tensors
                 prevResult = newResult;
 
-                token = getLogitsToken(prevResult, 1, recentTokens, REPEAT_PENALTY);
+                int cacheFirstTs = config.noTimestampsTokenId() + 1;
+                token = getLogitsToken(prevResult, 1, recentTokens, repeatPenalty, cacheFirstTs);
                 if (diag && step < 8) logDiagStep(step, token);
                 if (token == eotToken || token < 0) break;
                 generated.add(token);
-                addRecentToken(recentTokens, token);
+                addRecentToken(recentTokens, token, repeatWindow);
             }
 
             return generated.stream().mapToInt(Integer::intValue).toArray();
@@ -823,24 +1241,42 @@ public final class WhisperModel implements AutoCloseable {
      * 从 Result 的 logits 输出中选取 best token（考虑 suppress 规则 + 重复惩罚）。
      *
      * @param recentTokens 最近生成的 token ID 集合，用于重复惩罚（可为空）
-     * @param repeatPenalty 重复惩罚系数（>1.0 惩罚重复，1.0 无惩罚）
+     * @param repeatPenalty 重复惩罚值（>0 时生效，从 logit 中减去 penalty × 出现次数）
+     * @param suppressFrom 抑制起始 token ID（如时间戳阈值），低于此值的 token 不会被选
      */
     private int getLogitsToken(OrtSession.Result result, int seqLen,
-                               Collection<Integer> recentTokens, float repeatPenalty) throws OrtException {
+                               Collection<Integer> recentTokens, float repeatPenalty,
+                               int suppressFrom) throws OrtException {
         OnnxTensor logitsTensor = (OnnxTensor) result.get(decoderLogitsName).orElseThrow();
         float[] logits = logitsTensor.getFloatBuffer().array();
         int vocabSize = config.vocabSize();
         int offset = (seqLen - 1) * vocabSize;
 
+        // 构建重复 token 频率表（subtractive 惩罚需要计数）
+        java.util.Map<Integer, Integer> repeatFreq = new java.util.HashMap<>();
+        if (repeatPenalty > 0 && !recentTokens.isEmpty()) {
+            for (int t : recentTokens) {
+                repeatFreq.merge(t, 1, Integer::sum);
+            }
+        }
+
         int best = 0;
         float bestVal = Float.NEGATIVE_INFINITY;
-        boolean firstStep = seqLen == initialTokens.length;
+        // firstStep: 当前输入是否仅含初始 token（无已生成 token）。
+        // 需同时检查 initialTokens 和 initialTokensWithTimestamps，
+        // 因为 transcribeDetailed 可能使用任意一种。
+        boolean firstStep = seqLen == initialTokens.length
+                || (initialTokensWithTimestamps != null && seqLen == initialTokensWithTimestamps.length);
         for (int v = 0; v < vocabSize; v++) {
             if (firstStep && config.isBeginSuppressToken(v)) continue;
             if (config.isSuppressToken(v)) continue;
+            if (suppressFrom > 0 && v >= suppressFrom) continue;
             float score = logits[offset + v];
-            if (repeatPenalty > 1.0f && recentTokens.contains(v)) {
-                score /= repeatPenalty;
+            if (repeatPenalty > 0) {
+                Integer count = repeatFreq.get(v);
+                if (count != null) {
+                    score -= repeatPenalty * count;
+                }
             }
             if (score > bestVal) {
                 bestVal = score;
@@ -850,13 +1286,19 @@ public final class WhisperModel implements AutoCloseable {
         return best;
     }
 
-    /** 无重复惩罚版本（兼容旧调用）。 */
-    private int getLogitsToken(OrtSession.Result result, int seqLen) throws OrtException {
-        return getLogitsToken(result, seqLen, Collections.emptyList(), 1.0f);
+    /** 兼容旧调用（无 suppressFrom=0）。 */
+    private int getLogitsToken(OrtSession.Result result, int seqLen,
+                               Collection<Integer> recentTokens, float repeatPenalty) throws OrtException {
+        return getLogitsToken(result, seqLen, recentTokens, repeatPenalty, 0);
     }
 
-    private static void addRecentToken(java.util.ArrayDeque<Integer> deque, int token) {
-        if (deque.size() >= REPEAT_WINDOW) {
+    /** 无重复惩罚版本（兼容旧调用）。 */
+    private int getLogitsToken(OrtSession.Result result, int seqLen) throws OrtException {
+        return getLogitsToken(result, seqLen, Collections.emptyList(), 1.0f, 0);
+    }
+
+    private static void addRecentToken(java.util.ArrayDeque<Integer> deque, int token, int maxSize) {
+        if (deque.size() >= maxSize) {
             deque.removeFirst();
         }
         deque.addLast(token);
@@ -883,31 +1325,40 @@ public final class WhisperModel implements AutoCloseable {
     }
 
     // ──────────────────── 全量自回归（无 KV-cache 回退） ────────────────────
-    // 重复惩罚系数，>1.0 降低重复概率。1.1 对重复 token 除 1.1，抑制重复但不过度激进。
-    private static final float REPEAT_PENALTY = 1.1f;
-    // 重复惩罚窗口大小（最近 N 个 token 计入惩罚）
-    private static final int REPEAT_WINDOW = 10;
+    // 默认重复惩罚值（subtractive），>0 生效。
+    // 原为 3.0f（当时无时间戳解码 + compression ratio，需强力抑制重复循环）。
+    // 现在时间戳解码 + compression ratio 检查已覆盖退化输出检测，降至 1.5f
+    // 减少对自然重复词（如 "the the"）的过度抑制。
+    // 对齐 faster-whisper 的 divisive 1.1（等效 subtractive ~1.0~1.5）。
+    private static final float DEFAULT_REPEAT_PENALTY = 1.5f;
+    // 默认重复惩罚窗口大小（最近 N 个 token 计入惩罚）
+    private static final int DEFAULT_REPEAT_WINDOW = 20;
 
-    private int[] runDecoderFull(float[] encoderState) throws OrtException {
-        int[] tokens = initialTokens.clone();
-        int maxLen = Math.min(config.maxTargetPositions(), 128);
+    // 实例级别的重复惩罚配置（可通过构造器覆盖默认值）
+    private final float repeatPenalty;
+    private final int repeatWindow;
+
+    private int[] runDecoderFull(float[] encoderState, int[] initTokens) throws OrtException {
+        int[] tokens = initTokens.clone();
+        int maxLen = config.maxTargetPositions();
         boolean diag = firstDiag;
+        int firstTs = config.noTimestampsTokenId() + 1;
 
         // 滑动窗口记录最近 token，用于重复惩罚
-        java.util.ArrayDeque<Integer> recentTokens = new java.util.ArrayDeque<>(REPEAT_WINDOW);
+        java.util.ArrayDeque<Integer> recentTokens = new java.util.ArrayDeque<>(repeatWindow);
 
-        for (int pos = initialTokens.length; pos < maxLen; pos++) {
-            int lastToken = decodeStepFull(tokens, encoderState, recentTokens);
-            if (diag && pos < initialTokens.length + 8) {
-                logDiagStep(pos - initialTokens.length, lastToken);
+        for (int pos = initTokens.length; pos < maxLen; pos++) {
+            int lastToken = decodeStepFull(tokens, encoderState, recentTokens, firstTs);
+            if (diag && pos < initTokens.length + 8) {
+                logDiagStep(pos - initTokens.length, lastToken);
             }
             if (lastToken == eotToken || lastToken < 0) break;
             tokens = Arrays.copyOf(tokens, pos + 1);
             tokens[pos] = lastToken;
-            addRecentToken(recentTokens, lastToken);
+            addRecentToken(recentTokens, lastToken, repeatWindow);
         }
 
-        int start = initialTokens.length;
+        int start = initTokens.length;
         int end = tokens.length;
         for (int i = start; i < tokens.length; i++) {
             if (tokens[i] == eotToken) {
@@ -919,7 +1370,8 @@ public final class WhisperModel implements AutoCloseable {
     }
 
     private int decodeStepFull(int[] inputTokens, float[] encoderState,
-                               java.util.ArrayDeque<Integer> recentTokens) throws OrtException {
+                               java.util.ArrayDeque<Integer> recentTokens,
+                               int suppressFrom) throws OrtException {
         int seqLen = inputTokens.length;
         long[] inputIds = new long[seqLen];
         for (int i = 0; i < seqLen; i++) inputIds[i] = inputTokens[i];
@@ -933,10 +1385,263 @@ public final class WhisperModel implements AutoCloseable {
             inputs.put(decoderInputIdsName, idsTensor);
             inputs.put(decoderEncoderStateName, encTensor);
             try (OrtSession.Result result = decoderSession.run(inputs)) {
-                return getLogitsToken(result, seqLen, recentTokens, REPEAT_PENALTY);
+                return getLogitsToken(result, seqLen, recentTokens, repeatPenalty, suppressFrom);
             }
         }
     }
+
+    /**
+     * 运行 decoder 一步，返回最后一步完整的 logits 向量（不含 offset 裁剪）。
+     * 供 {@link #runDecoderBeamSearch} 使用。
+     * <p>
+     * 支持 merged 模型：当 {@link #usePastCache} 启用时，自动传入
+     * {@code use_cache_branch=false} + 空的 past tensors，指示模型走全量计算路径。
+     */
+    private float[] computeLogits(int[] inputTokens, float[] encoderState) throws OrtException {
+        int seqLen = inputTokens.length;
+        long[] inputIds = new long[seqLen];
+        for (int i = 0; i < seqLen; i++) inputIds[i] = inputTokens[i];
+
+        int srcLen = encoderState.length / config.dModel();
+        long[] encShape = {1, srcLen, config.dModel()};
+
+        try (OnnxTensor idsTensor = OnnxTensor.createTensor(env, LongBuffer.wrap(inputIds), new long[]{1, seqLen});
+             OnnxTensor encTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(encoderState), encShape)) {
+            Map<String, OnnxTensorLike> inputs = new LinkedHashMap<>();
+            inputs.put(decoderInputIdsName, idsTensor);
+            inputs.put(decoderEncoderStateName, encTensor);
+            // merged 模型需要 use_cache_branch=false + 空 past tensors（全量计算模式）
+            java.util.List<OnnxTensor> ownedTensors = new java.util.ArrayList<>();
+            if (useCacheBranchName != null) {
+                inputs.put(useCacheBranchName, OnnxTensor.createTensor(env, new boolean[]{false}));
+                int numHeads = config.decoderAttentionHeads();
+                int headDim = config.dModel() / numHeads;
+                long[] emptyShape = {1, numHeads, 0, headDim};
+                for (String pastName : pastInputNames) {
+                    OnnxTensor emptyPast = OnnxTensor.createTensor(env, FloatBuffer.allocate(0), emptyShape);
+                    inputs.put(pastName, emptyPast);
+                    ownedTensors.add(emptyPast);
+                }
+            }
+            try (OrtSession.Result result = decoderSession.run(inputs)) {
+                OnnxTensor logitsTensor = (OnnxTensor) result.get(decoderLogitsName).orElseThrow();
+                float[] fullLogits = logitsTensor.getFloatBuffer().array();
+                int vocabSize = config.vocabSize();
+                int offset = (seqLen - 1) * vocabSize;
+                return Arrays.copyOfRange(fullLogits, offset, offset + vocabSize);
+            } finally {
+                for (OnnxTensor t : ownedTensors) safeClose(t);
+            }
+        }
+    }
+
+    /**
+     * 对 logits 原位应用 subtractive 重复惩罚。
+     * 统计 {@code recentTokens} 中每个 token 的出现次数，从对应 logit 中减去 penalty × count。
+     * 仅在 penalty > 0 且 recentTokens 非空时起作用。
+     */
+    private static void applyRepetitionPenalty(float[] logits,
+                                                java.util.ArrayDeque<Integer> recentTokens,
+                                                float penalty) {
+        if (penalty <= 0 || recentTokens == null || recentTokens.isEmpty()) return;
+        java.util.Map<Integer, Integer> freq = new java.util.HashMap<>();
+        for (int token : recentTokens) {
+            freq.merge(token, 1, Integer::sum);
+        }
+        for (var entry : freq.entrySet()) {
+            int token = entry.getKey();
+            if (token >= 0 && token < logits.length) {
+                logits[token] -= penalty * entry.getValue();
+            }
+        }
+    }
+
+    /**
+     * 返回 logits 中概率最高的 topK 个 token ID（已应用 suppress 规则 + 温度缩放）。
+     * <p>
+     * 注意：重复惩罚应在调用此方法前通过 {@link #applyRepetitionPenalty} 对 logits 原位施加，
+     * 本方法不再重复处理。
+     *
+     * @param temperature 温度参数（0.0=贪心, >0 按 logits/t 排序）
+     */
+    private int[] topKTokens(float[] logits, int k, boolean firstStep,
+                             float temperature) {
+        int vocabSize = config.vocabSize();
+        java.util.List<ScoredToken> scored = new java.util.ArrayList<>();
+        for (int v = 0; v < vocabSize; v++) {
+            if (firstStep && config.isBeginSuppressToken(v)) continue;
+            if (config.isSuppressToken(v)) continue;
+            float score = logits[v];
+            if (temperature > 1e-6f) score /= temperature;
+            scored.add(new ScoredToken(v, score));
+        }
+        scored.sort((a, b) -> Float.compare(b.score, a.score));
+        int n = Math.min(k, scored.size());
+        int[] top = new int[n];
+        for (int i = 0; i < n; i++) top[i] = scored.get(i).tokenId;
+        return top;
+    }
+
+    private record ScoredToken(int tokenId, float score) {}
+
+    /**
+     * log-softmax：返回指定 token 的 log 概率（已应用温度缩放）。
+     * 使用 log-sum-exp 技巧保证数值稳定性。
+     */
+    private static float logSoftmax(float[] logits, int token, float temperature) {
+        float[] scaled;
+        if (temperature > 1e-6f && Math.abs(temperature - 1.0f) > 1e-6f) {
+            scaled = new float[logits.length];
+            for (int i = 0; i < logits.length; i++) scaled[i] = logits[i] / temperature;
+        } else {
+            scaled = logits;
+        }
+        float max = Float.NEGATIVE_INFINITY;
+        for (float v : scaled) if (v > max) max = v;
+        double sum = 0;
+        for (float v : scaled) sum += Math.exp(v - max);
+        return (float) (scaled[token] - max - Math.log(sum));
+    }
+
+    // ──────────────────── Beam Search 解码 ────────────────────
+
+    /** beam 候选，携带源 beam 索引用于回溯 */
+    private record BeamCandidate(int beamIdx, int tokenId, float score) {}
+
+    /** 从 tokens 中截取 initLen 之后的最近 N 个 token 用于重复惩罚。 */
+    private static java.util.ArrayDeque<Integer> buildRecentTokens(int[] tokens, int initLen, int window) {
+        java.util.ArrayDeque<Integer> recent = new java.util.ArrayDeque<>(window);
+        int start = Math.max(initLen, tokens.length - window);
+        for (int i = start; i < tokens.length; i++) {
+            if (recent.size() >= window) recent.removeFirst();
+            recent.addLast(tokens[i]);
+        }
+        return recent;
+    }
+
+    private int[] runDecoderBeamSearch(float[] encoderState, int beamSize, float temperature, int[] initTokens) throws OrtException {
+        int maxLen = config.maxTargetPositions();
+        int initLen = initTokens.length;
+        boolean diag = firstDiag;
+
+        // beam 状态：tokens、累积分数、是否已结束
+        java.util.List<int[]> beamTokens = new java.util.ArrayList<>();
+        java.util.List<Float> beamScores = new java.util.ArrayList<>();
+        java.util.List<Boolean> beamFinished = new java.util.ArrayList<>();
+        beamTokens.add(initTokens.clone());
+        beamScores.add(0f);
+        beamFinished.add(false);
+
+        for (int pos = initLen; pos < maxLen; pos++) {
+            java.util.List<BeamCandidate> candidates = new java.util.ArrayList<>();
+
+            for (int b = 0; b < beamTokens.size(); b++) {
+                if (beamFinished.get(b)) continue;
+
+                float[] logits = computeLogits(beamTokens.get(b), encoderState);
+                boolean firstStep = (pos == initLen);
+                java.util.ArrayDeque<Integer> beamRecent = buildRecentTokens(beamTokens.get(b), initLen, repeatWindow);
+
+                // 原位施加 subtractive 重复惩罚（同时影响候选选择和 beam score）
+                if (repeatPenalty > 0 && !beamRecent.isEmpty()) {
+                    applyRepetitionPenalty(logits, beamRecent, repeatPenalty);
+                }
+
+                int[] top = topKTokens(logits, beamSize, firstStep, temperature);
+
+                for (int token : top) {
+                    float logProb = logSoftmax(logits, token, temperature);
+                    candidates.add(new BeamCandidate(b, token, beamScores.get(b) + logProb));
+                }
+            }
+
+            if (candidates.isEmpty()) break;
+
+            // 全局排序 + 剪枝到 beamSize
+            candidates.sort((a, b) -> Float.compare(b.score, a.score));
+
+            java.util.List<int[]> nextTokens = new java.util.ArrayList<>();
+            java.util.List<Float> nextScores = new java.util.ArrayList<>();
+            java.util.List<Boolean> nextFinished = new java.util.ArrayList<>();
+
+            int keep = Math.min(beamSize, candidates.size());
+            for (int ci = 0; ci < keep; ci++) {
+                BeamCandidate c = candidates.get(ci);
+                int[] src = beamTokens.get(c.beamIdx);
+                int[] extended = Arrays.copyOf(src, src.length + 1);
+                extended[src.length] = c.tokenId;
+                nextTokens.add(extended);
+                nextScores.add(c.score);
+                nextFinished.add(c.tokenId == eotToken);
+            }
+
+            beamTokens = nextTokens;
+            beamScores = nextScores;
+            beamFinished = nextFinished;
+
+            // 诊断日志（首 chunk 前几步）
+            if (diag && pos < initLen + 8) {
+                for (int b = 0; b < Math.min(3, beamTokens.size()); b++) {
+                    int last = beamTokens.get(b)[beamTokens.get(b).length - 1];
+                    log.info("诊断 beam[{}] step {}: token={} score={}",
+                            b, pos - initLen, last, String.format("%.2f", beamScores.get(b)));
+                }
+            }
+
+            if (beamFinished.stream().allMatch(f -> f)) break;
+        }
+
+        if (diag) {
+            firstDiag = false;
+            for (int b = 0; b < beamTokens.size(); b++) {
+                int[] t = beamTokens.get(b);
+                int eotAt = -1;
+                for (int i = initLen; i < t.length; i++) if (t[i] == eotToken) { eotAt = i; break; }
+                String text = tokenizer.decode(eotAt >= 0
+                        ? java.util.Arrays.copyOfRange(t, initLen, eotAt)
+                        : java.util.Arrays.copyOfRange(t, initLen, t.length));
+                log.info("诊断 beam[{}] final: score={} text=\"{}\"", b,
+                        String.format("%.2f", beamScores.get(b)),
+                        text.length() > 60 ? text.substring(0, 60) + "..." : text);
+            }
+        }
+
+        // 选最优 beam：优先选已结束的，否则选分数最高的
+        // 使用长度归一化防止偏向短序列（对齐 faster-whisper）
+        double lengthPenalty = 0.5;
+        int bestIdx = 0;
+        float bestScore = Float.NEGATIVE_INFINITY;
+        for (int i = 0; i < beamTokens.size(); i++) {
+            if (!beamFinished.get(i)) continue;
+            int genLen = beamTokens.get(i).length - initLen;
+            float normScore = beamScores.get(i) / (float) Math.pow(Math.max(genLen, 1), lengthPenalty);
+            if (normScore > bestScore) {
+                bestScore = normScore;
+                bestIdx = i;
+            }
+        }
+        if (bestScore == Float.NEGATIVE_INFINITY) {
+            for (int i = 0; i < beamTokens.size(); i++) {
+                int genLen = beamTokens.get(i).length - initLen;
+                float normScore = beamScores.get(i) / (float) Math.pow(Math.max(genLen, 1), lengthPenalty);
+                if (normScore > bestScore) {
+                    bestScore = normScore;
+                    bestIdx = i;
+                }
+            }
+        }
+
+        int[] tokens = beamTokens.get(bestIdx);
+        int start = initLen;
+        int end = tokens.length;
+        for (int i = start; i < tokens.length; i++) {
+            if (tokens[i] == eotToken) { end = i; break; }
+        }
+        return java.util.Arrays.copyOfRange(tokens, start, end);
+    }
+
+    // ──────────────────── VAD 滤波 / 静音分片 ────────────────────
+    // 方法已提取至 WhisperVad.java
 
     private static void safeClose(AutoCloseable c) {
         if (c != null) {
