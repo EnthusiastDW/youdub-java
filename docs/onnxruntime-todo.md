@@ -1,5 +1,12 @@
 # onnxruntime 模块
 
+> **2026-08 模块拆分**：原 `site.dengwei:onnxruntime` 单模块已拆分为三个独立 jar：
+> - `onnxruntime-common` — 共享代码（`audio.WavAudio`、`util.Models`）
+> - `onnxruntime-whisper` — 语音识别（`whisper.*`）
+> - `onnxruntime-separator` — 音频分离（`separator.*` + `audio.SpectralProcessor`）
+>
+> 该拆分使语音识别与音频分离可独立作为依赖引入。本文档为拆分前的历史清单。
+
 ## ✅ 已完成
 
 ### 音频分离（MDX-NET）

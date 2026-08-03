@@ -62,9 +62,15 @@
             <artifactId>okhttp</artifactId>
             <version>4.12.0</version>
         </dependency>
+        <!-- ONNX Runtime 独立推理模块：语音识别 + 音频分离 -->
         <dependency>
             <groupId>site.dengwei</groupId>
-            <artifactId>onnxruntime</artifactId>
+            <artifactId>onnxruntime-whisper</artifactId>
+            <version>1.0.0</version>
+        </dependency>
+        <dependency>
+            <groupId>site.dengwei</groupId>
+            <artifactId>onnxruntime-separator</artifactId>
             <version>1.0.0</version>
         </dependency>
 

@@ -81,15 +81,22 @@ backend (com.youdub.replica)
               ├── site.dengwei.onnxruntime.audio.WavAudio
               └── com.fasterxml.jackson.databind.ObjectMapper
 
-onnxruntime (site.dengwei.onnxruntime)
-  ├── whisper/
-  │     ├── WhisperModel.java          (核心推理引擎)
-  │     ├── WhisperConfig.java         (模型配置)
-  │     ├── WhisperTokenizer.java      (BPE 分词器)
-  │     ├── WhisperModels.java         (模型下载管理)
-  │     └── MelSpectrogram.java        (log-mel 频谱)
-  └── audio/
-        └── WavAudio.java              (WAV 读写)
+onnxruntime-whisper (site.dengwei.onnxruntime.whisper)
+  ├── WhisperModel.java          (核心推理引擎)
+  ├── WhisperConfig.java         (模型配置)
+  ├── WhisperTokenizer.java      (BPE 分词器)
+  ├── WhisperModels.java         (模型下载管理)
+  └── MelSpectrogram.java        (log-mel 频谱)
+
+onnxruntime-separator (site.dengwei.onnxruntime.separator / .audio)
+  ├── separator/AudioSeparator.java   (MDX-NET 音频分离)
+  ├── separator/MdxNetModel.java      (模型加载与推理)
+  ├── separator/SeparatorModels.java  (模型下载管理)
+  └── audio/SpectralProcessor.java    (STFT/iFFT)
+
+onnxruntime-common (site.dengwei.onnxruntime.audio / .util)
+  ├── audio/WavAudio.java             (WAV 读写，两模块共享)
+  └── util/Models.java                (HTTP 下载/模型路径，两模块共享)
 ```
 
 ### 外部依赖
@@ -218,7 +225,7 @@ public void transcribe(Task task, Path audioPath, Path outputDir, String languag
 
 ### 4.1 WhisperModel — 核心推理引擎
 
-**文件**：`onnxruntime/.../whisper/WhisperModel.java`（1646 行）
+**文件**：`onnxruntime-whisper/.../whisper/WhisperModel.java`（1646 行）
 
 该类加载 Whisper encoder + decoder ONNX 模型，封装从音频到文本的完整推理流程。
 

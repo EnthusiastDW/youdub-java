@@ -18,6 +18,8 @@
 
     <modules>
         <module>backend</module>
-        <module>onnxruntime</module>
+        <module>onnxruntime-common</module>
+        <module>onnxruntime-whisper</module>
+        <module>onnxruntime-separator</module>
     </modules>
 </project>
