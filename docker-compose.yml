@@ -78,8 +78,8 @@ services:
   # ── Java 后端 ──────────────────────────────────────────
   backend:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: backend/Dockerfile
     container_name: youdub-backend
     ports:
       - "8000:8000"

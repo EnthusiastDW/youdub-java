@@ -1,0 +1,23 @@
+# Git / IDE
+.git
+.idea
+.claude
+.sisyphus
+.workbuddy
+
+# 构建产物
+**/target
+**/node_modules
+**/dist
+
+# 数据与运行时目录
+data
+
+# 不需要打进构建 context 的目录
+frontend
+docker
+docs
+scripts
+*.md
+.env
+.env.*
