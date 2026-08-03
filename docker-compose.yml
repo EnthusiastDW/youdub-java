@@ -97,7 +97,8 @@ services:
       - APP_YTDLP_PROXY_HOST=${YTDLP_PROXY_HOST:-}
       - APP_YTDLP_PROXY_PORT=${YTDLP_PROXY_PORT:-}
       - ONNX_NUM_THREADS=6
-      - WHISPER_ONNX_MODEL=${WHISPER_ONNX_MODEL:-base}
+      - WHISPER_ONNX_MODEL=${WHISPER_ONNX_MODEL:-medium}
+      - WHISPER_MAX_WORKERS=${WHISPER_MAX_WORKERS:-2}
     volumes:
       - /mnt/e/youdub-data/backend:/app/data
       - /mnt/e/youdub-data/separator-models:/app/data/separator-models

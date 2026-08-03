@@ -193,24 +193,11 @@ public final class WhisperModel implements AutoCloseable {
 
         try {
             this.encoderSession = loadSession(config.encoderModelPath());
-            // 优先加载 decoder_model_merged.onnx（含 KV-cache，显著加速解码）
-            // ORT Java 1.20 早期版本对 merged 模型支持有问题，这里做兼容处理：
-            // 加载失败时自动回退到 fp16/fp32 标准模型
-            OrtSession decoder = null;
-            Path mergedPath = modelDir.resolve("decoder_model_merged.onnx");
-            if (Files.exists(mergedPath)) {
-                try {
-                    decoder = loadSession(mergedPath);
-                    log.info("加载 decoder_model_merged.onnx 成功，启用 KV-cache 通道");
-                } catch (OrtException e) {
-                    log.warn("decoder_model_merged.onnx 加载失败 ({}), 回退到标准解码器", e.getMessage());
-                }
-            }
-            if (decoder == null) {
-                decoder = loadSession(config.decoderModelPath());
-                log.info("使用标准解码器: {}", config.decoderModelPath().getFileName());
-            }
-            this.decoderSession = decoder;
+            // 只加载标准解码器（fp16/fp32）。
+            // 不加载 decoder_model_merged.onnx：其含 optimum::if 条件图，在 ORT Java 1.20
+            // 下加载/推理可能挂起（此前实测过），KV-cache 加速以稳定性为代价，已弃用。
+            this.decoderSession = loadSession(config.decoderModelPath());
+            log.info("使用标准解码器: {}", config.decoderModelPath().getFileName());
 
             this.encoderInputName = discoverInputName(encoderSession, "input_features", "mel");
             this.encoderOutputName = discoverOutputName(encoderSession, "last_hidden_state", "encoder_output");
@@ -588,19 +575,15 @@ public final class WhisperModel implements AutoCloseable {
 
         int actualChunks = chunks.size();
 
-        // auto-detect 模式：用第一个分片触发语言检测，确保 initialTokens 已确定
-        boolean needDetect = initialTokens == null;
+        // 串行处理第一个分片（auto-detect 模式下触发语言检测并确定 initialTokens）。
+        // 注意：不再调用 reloadDecoderSession——本方法现在共享同一组 encoder/decoder
+        // session 处理所有分片，reload 会关闭正在被其他线程使用的 session。
         TranscriptionResult[] chunkResults = new TranscriptionResult[actualChunks];
-        if (needDetect) {
-            log.info("分片 [1/{}]: 首次转录触发语言检测", actualChunks);
-            chunkResults[0] = transcribeDetailed(chunks.get(0), sampleRate);
-            reloadDecoderSession();
-        } else {
-            chunkResults[0] = transcribeDetailed(chunks.get(0), sampleRate);
-        }
+        chunkResults[0] = transcribeDetailed(chunks.get(0), sampleRate);
 
-        // 剩余分片：并行转录，每个分片使用独立的 forkWorker 避免 session 争用
-        int nThreads = Math.min(actualChunks - 1, Math.max(1, Runtime.getRuntime().availableProcessors() / 2));
+        // 剩余分片：并行转录。共享本实例的 encoder/decoder session（ORT session 线程安全，
+        // 支持并发 Run），避免 fork worker 复制完整模型导致原生内存 N 倍膨胀。
+        int nThreads = whisperWorkers(actualChunks - 1);
         ExecutorService pool = Executors.newFixedThreadPool(nThreads);
         java.util.List<java.util.concurrent.Future<?>> futures = new java.util.ArrayList<>();
         for (int i = 1; i < actualChunks; i++) {
@@ -611,8 +594,8 @@ public final class WhisperModel implements AutoCloseable {
                 log.info("分片 [{}/{}]: offset={}ms, samples={} (thread={})",
                         idx + 1, actualChunks, chunkOffsets.get(idx), chunkAudio.length,
                         Thread.currentThread().getName());
-                try (WhisperModel worker = forkWorker()) {
-                    TranscriptionResult r = worker.transcribeDetailed(chunkAudio, sampleRate);
+                try {
+                    TranscriptionResult r = transcribeDetailed(chunkAudio, sampleRate);
                     long elapsed = System.currentTimeMillis() - t0;
                     log.info("分片 [{}/{}] 完成: {}s (segments={}, words={})",
                             idx + 1, actualChunks, elapsed / 1000,
@@ -699,6 +682,25 @@ public final class WhisperModel implements AutoCloseable {
             chunksOut.add(Arrays.copyOfRange(audio, start, end));
             offsetsOut.add((long) start * 1000L / sampleRate);
         }
+    }
+
+    /**
+     * 并行分片 worker 数。
+     * <p>
+     * 通过环境变量 {@code WHISPER_MAX_WORKERS} 配置（默认 2）。
+     * 默认值刻意较小：分片共享同一组 ONNX session，worker 数多只会加剧原生内存占用
+     * 而不会带来线性加速（ONNX 推理内部已多线程）。
+     */
+    private static int whisperWorkers(int max) {
+        int workers = 8;
+        String env = System.getenv("WHISPER_MAX_WORKERS");
+        if (env != null && !env.isBlank()) {
+            try {
+                workers = Integer.parseInt(env.trim());
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return Math.max(1, Math.min(max, workers));
     }
 
     /**
@@ -997,6 +999,64 @@ public final class WhisperModel implements AutoCloseable {
     /** 温度回退列表（0.0=贪心，值越大随机性越强）。对齐 faster-whisper 默认。 */
     private static final float[] TEMPERATURES = {0.0f, 0.2f, 0.4f, 0.6f, 0.8f, 1.0f};
 
+    /** 贪心解码 decoder 调用预算（maxTargetPositions=448 + 余量）。 */
+    private static final long MAX_GREEDY_CALLS = 500;
+    /** 温度回退阶段 beam search 总 decoder 调用预算。
+     *  防止单分片在重复循环无法被检测到时卡死数分钟。约等于 2 次满长 beam。 */
+    private static final long MAX_BEAM_CALLS = 4000;
+
+    /** 解码预算耗尽时抛出，由 {@link #runDecoder} 捕获并返回当前最优结果。 */
+    private static final class DecodeBudgetExceeded extends RuntimeException {}
+
+    /**
+     * 检测自回归输出是否进入重复循环（Whisper 在低信噪比/静音边界/模糊音频下的常见故障：
+     * 反复生成同一短语且不输出 EOT，把生成拖到 maxTargetPositions）。
+     * <p>
+     * 两级检测：
+     * 1. 立即重复——生成尾部最近 pat 个 token 与再往前 pat 个完全相同（pat=2/3/4/5/8）；
+     * 2. 短语级循环——尾部 4 元组作为循环块签名，在整个生成序列中出现 ≥3 次
+     *    （覆盖较长短语/句子的循环，如 "here for the next variable. So let's..."）。
+     * <p>
+     * @return 循环起点的绝对下标（应从此处截断生成序列），无循环返回 -1。
+     */
+    private static int detectLoopStart(int[] tokens, int initLen) {
+        int genLen = tokens.length - initLen;
+        if (genLen < 8) return -1;
+        int end = tokens.length;
+        // 1) 立即重复
+        for (int pat : new int[]{2, 3, 4, 5, 8}) {
+            if (genLen < pat * 2) continue;
+            boolean same = true;
+            for (int i = 0; i < pat; i++) {
+                if (tokens[end - 1 - i] != tokens[end - 1 - pat - i]) {
+                    same = false;
+                    break;
+                }
+            }
+            if (same) return end - pat * 2;
+        }
+        // 2) 短语级循环：尾部 4 元组出现 ≥3 次 → 从首次出现处截断
+        int p = 4;
+        if (genLen >= p * 3) {
+            int[] sig = new int[p];
+            for (int i = 0; i < p; i++) sig[i] = tokens[end - p + i];
+            int firstOcc = -1;
+            int count = 0;
+            for (int i = initLen; i + p <= end; i++) {
+                boolean eq = true;
+                for (int j = 0; j < p; j++) {
+                    if (tokens[i + j] != sig[j]) { eq = false; break; }
+                }
+                if (eq) {
+                    count++;
+                    if (firstOcc < 0) firstOcc = i;
+                    if (count >= 3) return firstOcc;
+                }
+            }
+        }
+        return -1;
+    }
+
     private int[] runDecoder(float[] encoderState) throws OrtException {
         return runDecoder(encoderState, initialTokens);
     }
@@ -1018,10 +1078,12 @@ public final class WhisperModel implements AutoCloseable {
         int[] greedyInit = (initTokens == initialTokensWithTimestamps && initialTokens != null)
                 ? initialTokens : initTokens;
         int[] greedyTokens;
+        // 预算为局部数组，逐分片独立（transcribeChunked 并行线程共享本实例）。
+        long[] greedyBudget = {MAX_GREEDY_CALLS};
         if (usePastCache) {
-            greedyTokens = runDecoderCache(encoderState, greedyInit);
+            greedyTokens = runDecoderCache(encoderState, greedyInit, greedyBudget);
         } else {
-            greedyTokens = runDecoderFull(encoderState, greedyInit);
+            greedyTokens = runDecoderFull(encoderState, greedyInit, greedyBudget);
         }
 
         // 贪心质量检查：质量好直接返回，跳过昂贵的 beam search
@@ -1042,7 +1104,7 @@ public final class WhisperModel implements AutoCloseable {
                         (greedyTokens.length > 1 ? String.valueOf(greedyTokens[1]) : "")) : "empty");
         }
 
-        if (greedyQuality >= 0.7f && greedyCompRatio <= 1.8f) {
+        if (greedyQuality >= 0.7f && greedyCompRatio <= 2.4f) {
             log.info("贪心解码达标: quality={} compRatio={}",
                     String.format("%.2f", greedyQuality), String.format("%.2f", greedyCompRatio));
             return greedyTokens;
@@ -1051,12 +1113,20 @@ public final class WhisperModel implements AutoCloseable {
         log.info("贪心解码不达标 (quality={} compRatio={}), 回退到 beam search",
                 String.format("%.2f", greedyQuality), String.format("%.2f", greedyCompRatio));
 
-        // 第二轮：beam search + 全温度回退
+        // 第二轮：beam search + 全温度回退。带总 decoder 调用预算，
+        // 预算耗尽立即停止（返回当前最优），杜绝单分片卡死数分钟。
         int[] bestTokens = null;
         float bestScore = Float.NEGATIVE_INFINITY;
+        long[] beamBudget = {MAX_BEAM_CALLS};
 
         for (float temp : TEMPERATURES) {
-            int[] tokens = runDecoderBeamSearch(encoderState, BEAM_SIZE, temp, initTokens);
+            int[] tokens;
+            try {
+                tokens = runDecoderBeamSearch(encoderState, BEAM_SIZE, temp, initTokens, beamBudget);
+            } catch (DecodeBudgetExceeded e) {
+                log.warn("beam search 预算耗尽 (temp={}), 停止温度回退", temp);
+                break;
+            }
 
             float quality = scoreTranscriptionQuality(tokens);
             String text = tokenizer.decode(tokens);
@@ -1146,7 +1216,7 @@ public final class WhisperModel implements AutoCloseable {
 
     // ──────────────────── KV-cache 增量推理 ────────────────────
 
-    private int[] runDecoderCache(float[] encoderState, int[] initTokens) throws OrtException {
+    private int[] runDecoderCache(float[] encoderState, int[] initTokens, long[] budget) throws OrtException {
         java.util.List<Integer> generated = new java.util.ArrayList<>();
         boolean diag = firstDiag;
 
@@ -1185,6 +1255,7 @@ public final class WhisperModel implements AutoCloseable {
                 }
             }
 
+            if (--budget[0] < 0) throw new DecodeBudgetExceeded();
             prevResult = decoderSession.run(inputs);
             closeOwnedInputs(inputs);
             for (OnnxTensor t : emptyPastTensors) safeClose(t);
@@ -1217,6 +1288,7 @@ public final class WhisperModel implements AutoCloseable {
                             (OnnxTensor) prevResult.get(presentName).orElseThrow());
                 }
 
+                if (--budget[0] < 0) throw new DecodeBudgetExceeded();
                 OrtSession.Result newResult = decoderSession.run(nextInputs);
 
                 closeResult(prevResult);      // 关闭旧 Result（含旧 present values）
@@ -1338,7 +1410,7 @@ public final class WhisperModel implements AutoCloseable {
     private final float repeatPenalty;
     private final int repeatWindow;
 
-    private int[] runDecoderFull(float[] encoderState, int[] initTokens) throws OrtException {
+    private int[] runDecoderFull(float[] encoderState, int[] initTokens, long[] budget) throws OrtException {
         int[] tokens = initTokens.clone();
         int maxLen = config.maxTargetPositions();
         boolean diag = firstDiag;
@@ -1348,7 +1420,7 @@ public final class WhisperModel implements AutoCloseable {
         java.util.ArrayDeque<Integer> recentTokens = new java.util.ArrayDeque<>(repeatWindow);
 
         for (int pos = initTokens.length; pos < maxLen; pos++) {
-            int lastToken = decodeStepFull(tokens, encoderState, recentTokens, firstTs);
+            int lastToken = decodeStepFull(tokens, encoderState, recentTokens, firstTs, budget);
             if (diag && pos < initTokens.length + 8) {
                 logDiagStep(pos - initTokens.length, lastToken);
             }
@@ -1356,6 +1428,17 @@ public final class WhisperModel implements AutoCloseable {
             tokens = Arrays.copyOf(tokens, pos + 1);
             tokens[pos] = lastToken;
             addRecentToken(recentTokens, lastToken, repeatWindow);
+            // 重复循环检测：Whisper 在模糊音频上会反复生成同一短语且不输出 EOT，
+            // 把生成拖满 maxTargetPositions → 检测到循环时截断到循环起点，
+            // 保住前面已生成的有效内容（避免 443-token 退化触发昂贵的 beam search）。
+            int loopStart = detectLoopStart(tokens, initTokens.length);
+            if (loopStart >= 0) {
+                if (diag) {
+                    log.info("贪心检测到重复循环 @ step {}, 截断到 token {}", pos - initTokens.length, loopStart);
+                }
+                tokens = Arrays.copyOf(tokens, loopStart);
+                break;
+            }
         }
 
         int start = initTokens.length;
@@ -1371,7 +1454,8 @@ public final class WhisperModel implements AutoCloseable {
 
     private int decodeStepFull(int[] inputTokens, float[] encoderState,
                                java.util.ArrayDeque<Integer> recentTokens,
-                               int suppressFrom) throws OrtException {
+                               int suppressFrom, long[] budget) throws OrtException {
+        if (--budget[0] < 0) throw new DecodeBudgetExceeded();
         int seqLen = inputTokens.length;
         long[] inputIds = new long[seqLen];
         for (int i = 0; i < seqLen; i++) inputIds[i] = inputTokens[i];
@@ -1397,7 +1481,8 @@ public final class WhisperModel implements AutoCloseable {
      * 支持 merged 模型：当 {@link #usePastCache} 启用时，自动传入
      * {@code use_cache_branch=false} + 空的 past tensors，指示模型走全量计算路径。
      */
-    private float[] computeLogits(int[] inputTokens, float[] encoderState) throws OrtException {
+    private float[] computeLogits(int[] inputTokens, float[] encoderState, long[] budget) throws OrtException {
+        if (--budget[0] < 0) throw new DecodeBudgetExceeded();
         int seqLen = inputTokens.length;
         long[] inputIds = new long[seqLen];
         for (int i = 0; i < seqLen; i++) inputIds[i] = inputTokens[i];
@@ -1519,7 +1604,8 @@ public final class WhisperModel implements AutoCloseable {
         return recent;
     }
 
-    private int[] runDecoderBeamSearch(float[] encoderState, int beamSize, float temperature, int[] initTokens) throws OrtException {
+    private int[] runDecoderBeamSearch(float[] encoderState, int beamSize, float temperature,
+                                       int[] initTokens, long[] budget) throws OrtException {
         int maxLen = config.maxTargetPositions();
         int initLen = initTokens.length;
         boolean diag = firstDiag;
@@ -1538,7 +1624,7 @@ public final class WhisperModel implements AutoCloseable {
             for (int b = 0; b < beamTokens.size(); b++) {
                 if (beamFinished.get(b)) continue;
 
-                float[] logits = computeLogits(beamTokens.get(b), encoderState);
+                float[] logits = computeLogits(beamTokens.get(b), encoderState, budget);
                 boolean firstStep = (pos == initLen);
                 java.util.ArrayDeque<Integer> beamRecent = buildRecentTokens(beamTokens.get(b), initLen, repeatWindow);
 
@@ -1578,6 +1664,23 @@ public final class WhisperModel implements AutoCloseable {
             beamTokens = nextTokens;
             beamScores = nextScores;
             beamFinished = nextFinished;
+
+            // 重复循环检测：顶部 beam 进入循环（不输出 EOT）时提前终止，
+            // 避免 beam 拖满 maxTargetPositions 造成单分片数分钟卡死。
+            int bestB = 0;
+            float bestBScore = Float.NEGATIVE_INFINITY;
+            for (int b = 0; b < beamTokens.size(); b++) {
+                if (!beamFinished.get(b) && beamScores.get(b) > bestBScore) {
+                    bestBScore = beamScores.get(b);
+                    bestB = b;
+                }
+            }
+            if (detectLoopStart(beamTokens.get(bestB), initLen) >= 0) {
+                if (diag) {
+                    log.info("beam 检测到重复循环, 提前终止 @ step {}", pos - initLen);
+                }
+                break;
+            }
 
             // 诊断日志（首 chunk 前几步）
             if (diag && pos < initLen + 8) {

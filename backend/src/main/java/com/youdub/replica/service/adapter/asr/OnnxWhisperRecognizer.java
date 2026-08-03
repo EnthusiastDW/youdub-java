@@ -28,11 +28,12 @@ import static com.youdub.replica.service.adapter.AdapterConstants.WHISPER_ONNX;
  * <p>
  * 使用 {@link WhisperModel} 直接加载 encoder/decoder ONNX 模型，
  * 通过 {@link WhisperModel#transcribeChunked(float[], int)} 支持任意时长音频。
- * 片间自动调用 {@code reloadDecoderSession()} 释放 decoder native 内存。
+ * 分片并行共享同一组 encoder/decoder session（ORT session 线程安全），
+ * 内存占用为单份模型。
  * <p>
  * 模型变体通过环境变量 {@code WHISPER_ONNX_MODEL} 指定，
- * 默认 {@code whisper-base}（多语言），可选 {@code whisper-small} /
- * {@code whisper-medium} / {@code whisper-large-v3} 等。
+ * 默认 {@code whisper-medium}（多语言，准确率与速度的平衡点），可选
+ * {@code whisper-small} / {@code whisper-base} / {@code whisper-large-v3} 等。
  * 语言为空时自动检测。
  * 首次启动自动从 HuggingFace {@code onnx-community/{modelVariant}} 下载模型文件。
  */
@@ -40,6 +41,15 @@ import static com.youdub.replica.service.adapter.AdapterConstants.WHISPER_ONNX;
 @Component(WHISPER_ONNX)
 @RequiredArgsConstructor
 public class OnnxWhisperRecognizer implements SpeechRecognizer {
+
+    /** 单条 utterance 最大时长，超出则强制断句（字幕可读性） */
+    private static final long MAX_UTT_DUR_MS = 7000;
+    /** 单条 utterance 最大字符数，超出则强制断句 */
+    private static final int MAX_UTT_CHARS = 100;
+    /** 句内停顿超过该阈值视为自然断句点 */
+    private static final long GAP_SPLIT_MS = 500;
+    /** 强制断句时，句内间隔达到该阈值才视为"自然断点" */
+    private static final long MIN_INTERNAL_GAP_MS = 150;
 
     private final ObjectMapper objectMapper;
 
@@ -110,7 +120,7 @@ public class OnnxWhisperRecognizer implements SpeechRecognizer {
 
             String modelVariant = System.getenv("WHISPER_ONNX_MODEL");
             if (modelVariant == null || modelVariant.isBlank()) {
-                modelVariant = "whisper-base";
+                modelVariant = "whisper-medium";
             }
             if (!modelVariant.startsWith("whisper-")) {
                 modelVariant = "whisper-" + modelVariant;
@@ -170,7 +180,9 @@ public class OnnxWhisperRecognizer implements SpeechRecognizer {
         ObjectNode resultObj = objectMapper.createObjectNode();
         resultObj.put("text", result.fullText());
 
-        // 将所有单词展平，按 500ms 间隔 + 句尾标点分组为 utterances
+        // 将所有单词展平，按"句末标点 > 长停顿 > 超限强制断句"分组为 utterances。
+        // 上限 MAX_UTT_DUR_MS / MAX_UTT_CHARS 保证单条字幕可读；强制断句时优先在
+        // 句内最大停顿/从句边界处切，避免断在词组中间。
         List<Word> allWords = new ArrayList<>();
         for (Segment seg : result.segments()) {
             allWords.addAll(seg.words());
@@ -182,17 +194,31 @@ public class OnnxWhisperRecognizer implements SpeechRecognizer {
             for (Word w : allWords) {
                 if (batch.isEmpty()) {
                     batch.add(w);
-                } else {
-                    Word last = batch.get(batch.size() - 1);
-                    long gap = w.startMs() - last.endMs();
-                    boolean sentenceEnd = isSentenceEnd(last.text());
-                    if (gap <= 500 && !sentenceEnd) {
-                        batch.add(w);
-                    } else {
-                        utterances.add(buildUtterance(batch));
-                        batch.clear();
-                        batch.add(w);
+                    continue;
+                }
+                Word last = batch.get(batch.size() - 1);
+                long gap = w.startMs() - last.endMs();
+                boolean sentenceEnd = isSentenceEnd(last.text());
+                long wouldDur = w.endMs() - batch.get(0).startMs();
+                int wouldChars = charsOf(batch) + w.text().length();
+                boolean overLimit = wouldDur > MAX_UTT_DUR_MS || wouldChars > MAX_UTT_CHARS;
+
+                if (sentenceEnd || gap > GAP_SPLIT_MS || overLimit) {
+                    // 超限但既无标点也无长停顿 → 在批内找自然断点，保留后半句继续累积
+                    if (overLimit && !sentenceEnd && gap <= GAP_SPLIT_MS) {
+                        int splitIdx = findBestSplitIndex(batch);
+                        if (splitIdx > 0) {
+                            utterances.add(buildUtterance(new ArrayList<>(batch.subList(0, splitIdx))));
+                            batch = new ArrayList<>(batch.subList(splitIdx, batch.size()));
+                            batch.add(w);
+                            continue;
+                        }
                     }
+                    utterances.add(buildUtterance(batch));
+                    batch.clear();
+                    batch.add(w);
+                } else {
+                    batch.add(w);
                 }
             }
             if (!batch.isEmpty()) {
@@ -211,6 +237,43 @@ public class OnnxWhisperRecognizer implements SpeechRecognizer {
         return last == '.' || last == '!' || last == '?'
                 || last == '。' || last == '！' || last == '？'
                 || last == '\n';
+    }
+
+    private static boolean isClauseEnd(String token) {
+        if (token == null || token.isEmpty()) return false;
+        char last = token.charAt(token.length() - 1);
+        return last == ',' || last == ';' || last == '、' || last == '：' || last == '；';
+    }
+
+    private static int charsOf(List<Word> words) {
+        int sum = 0;
+        for (Word w : words) sum += w.text().length();
+        return sum;
+    }
+
+    /**
+     * 在 batch 内找自然断点：优先从句边界（逗号/分号），其次最大停顿。
+     * 返回切分索引 i（前缀 [0,i)，后缀 [i,..)），没有合适的断点返回 -1。
+     */
+    private static int findBestSplitIndex(List<Word> batch) {
+        int bestClause = -1;
+        long bestClauseGap = -1;
+        int bestGap = -1;
+        long bestGapVal = -1;
+        for (int i = 1; i < batch.size(); i++) {
+            long gap = batch.get(i).startMs() - batch.get(i - 1).endMs();
+            if (gap < MIN_INTERNAL_GAP_MS) continue;
+            if (gap > bestGapVal) {
+                bestGapVal = gap;
+                bestGap = i;
+            }
+            if (isClauseEnd(batch.get(i - 1).text()) && gap > bestClauseGap) {
+                bestClauseGap = gap;
+                bestClause = i;
+            }
+        }
+        if (bestClause >= 0) return bestClause;
+        return bestGap;
     }
 
     private ObjectNode buildUtterance(List<Word> words) {

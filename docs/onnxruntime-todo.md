@@ -51,10 +51,17 @@
 - [x] 短分片自动扩展（< 40% 窗口时向后补齐）
 - [x] No speech 检测（输出词数 + 音频时长）
 - [x] 贪心优先解码策略：贪心达标直接返回，跳过 beam search × 6 温度 ~67000 次 decoder 调用
+- [x] 贪心/beam 重复循环检测与截断（`detectLoopStart` 两级检测：2-8 token 即时重复 + last-4 元组 ≥3 次），终止 443-token 退化并保留循环前真实内容
+- [x] beam 回退成本预算：`MAX_GREEDY_CALLS=500` / `MAX_BEAM_CALLS=4000`（线程安全 `long[]`）。2min 真实语音从 5min+（超时杀）降至 28.1s，全部分片贪心通过、0 次 beam 回退
 - [x] **修复多语言模型 no_timestamps token 偏移 bug**：whisper-base 等多语言模型
       token 布局为 transcribe(50359)/translate(50360)/notimestamps(50361)，
       原代码用 `transcribe+1` 得到 translate token（50360），导致 initialTokens
       告诉模型"翻译"而非"转写"→ 贪心输出 "."。修复：多语言模型用 `transcribe+2`
+- [x] **修复分片并行导致原生内存 OOM**：原实现每个分片 forkWorker 复制完整 ONNX
+      session（whisper-base 约 200-300MB/个，`availableProcessors()/2` 并发 ≈ 数 GB
+      原生内存）。ONNX Runtime session 本身线程安全（并发 Run 合法），改为所有
+      分片共享同一组 encoder/decoder session → 内存降为单份模型
+- [x] 分片并行度通过 `WHISPER_MAX_WORKERS` 配置（默认 2，doker-compose 已加入）
 
 ---
 
@@ -110,7 +117,7 @@ Python `server.py`（faster-whisper）与当前 Java ONNX 实现的差异：
 - [x] 复用已有的 repetition_penalty + suppress_tokens
 - [x] `runDecoder()` 根据 BEAM_SIZE > 1 自动选择 beam search
 - [x] BEAM_SIZE 默认为 5
-- [ ] （待优化）length normalization — 目前 pure log-prob，未做长度归一化
+- [x] length normalization — score / len^penalty（√len）
 - [ ] （待优化）KV-cache beam search — 当前用 full decoder，未用 decoder_with_past
 
 #### 2️⃣ VAD 滤波 ✅
@@ -140,6 +147,8 @@ Python `server.py`（faster-whisper）与当前 Java ONNX 实现的差异：
 | 4. 末尾多出不完整句子 "I'll see you" | chunk 边界截断 | `filterGarbageSegments` 移除末尾无句尾标点 segment |
 | **5. ~31s 后全篇幻觉 "dubbing voice" 重复** | **English initial prompt 泄漏**——Whisper Decoder attention 把 prompt tokens 当"已生成文本"来续写，长 prompt 直接支配模型输出 | **删掉英/日/韩/法/葡的长 prompt，仅保留中文 `"请添加标点符号"`** |
 | 6. 静音间隙幻觉/上下文污染 | 固定 30s 窗口含说话间隙，模型用 prompt 填空；chunk 间无隔离 | **静音点分片** → 每片 = 连续语音（无静音），同时每片由独立 `forkWorker` 处理 → 天然"重置 decoder context" |
+| 7. ~~加载后程序无反应~~（**误判已纠正**）| 曾怀疑 `decoder_model_merged.onnx` 含 `optimum::if` 条件图导致 ORT Java 1.20 挂起；直接加载实测 merged 仅 1.7s，加载本身无问题。真正的"无反应"发生在加载之后的下游解码（见 #8）| 维持用标准解码器 fp16/fp32，KV-cache 仍弃用（`usePastCache=false`），但根因与 merged 无关 |
+| **8. 长音频转录"卡死无反应"** | 真实语音分片贪心**退化为 443 token 重复循环**（quality=0.09, compRatio=5.71）→ 触发 beam search × 6 温度回退，CPU 上每分片 5~10 分钟+；35 分钟视频（~70 分片）若多片贪心失败则总耗时数小时，体验等同死机 | **✅ 已修复**：① `detectLoopStart` 两级循环检测（2/3/4/5/8-token 即时重复 + last-4 元组出现 ≥3 次），在贪心与 beam 中提前终止并**截断保留循环前真实内容**；② 预算上限 `MAX_GREEDY_CALLS=500` / `MAX_BEAM_CALLS=4000`（线程安全 `long[]` 传入，非实例字段）；③ 贪心接受阈值放宽到 `compRatio ≤ 2.4`。实测：2min 真实语音 **28.1s**，5 分片全部贪心通过（quality 0.72-0.94，compRatio 1.44-1.71），**0 次 beam 回退**（原 5min+ 超时杀掉） |
 
 ### 分片策略对齐
 
