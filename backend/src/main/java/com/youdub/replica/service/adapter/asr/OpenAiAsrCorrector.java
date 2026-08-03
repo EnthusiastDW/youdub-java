@@ -22,9 +22,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
+import java.util.Set;
 
 import static com.youdub.replica.service.adapter.AdapterConstants.OPENAI;
 import static com.youdub.replica.service.adapter.AdapterConstants.OPENAI_ASR_CORRECTOR;
@@ -43,7 +44,8 @@ import static com.youdub.replica.service.adapter.AdapterConstants.OPENAI_ASR_COR
 @RequiredArgsConstructor
 public class OpenAiAsrCorrector implements AsrCorrector {
 
-    public static final int CONTEXT_LIMIT = 4000;
+    /** 纠错上下文窗口的字符预算（取当前批次前后句），~4 字符/token ≈ 1000 tokens */
+    public static final int CONTEXT_WINDOW_CHARS = 4000;
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final SettingsService settingsService;
@@ -55,10 +57,12 @@ public class OpenAiAsrCorrector implements AsrCorrector {
     private static final String CORRECTED_FILE = "asr_corrected.json";
     private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json; charset=utf-8");
 
-    /** 每个批次的最大字符数（~4000 tokens），防止硅基流动等 API 上下文超限 */
+    /** 每个批次的最大字符数（英文 ~4 字符/token ≈ 3000 tokens），防止 API 上下文超限 */
     private static final int BATCH_CHAR_LIMIT = 12000;
-    /** 每批次的最大输出 token，不再用 65536 这种激进值 */
-    private static final int MAX_OUTPUT_TOKENS = 8192;
+    /** 每批次最大输出 token；纠错改为 diff-only 后输出很小，4096 足够 */
+    private static final int MAX_OUTPUT_TOKENS = 4096;
+    /** 修正文本与原文的单词重叠率下限，低于该值视为改写而非纠错，丢弃 */
+    private static final double OVERLAP_MIN_RATIO = 0.5;
 
     @Override
     public void correct(Task task, Path asrPath, Path outputDir) throws Exception {
@@ -97,12 +101,8 @@ public class OpenAiAsrCorrector implements AsrCorrector {
         }
 
         var resolved = resolveConfig();
-        String systemPrompt = buildSystemPrompt();
-
-        String fullText = items.stream()
-                .map(item -> item.text)
-                .collect(Collectors.joining("\n"));
-        String contextPrefix = fullText.length() > CONTEXT_LIMIT ? fullText.substring(0, CONTEXT_LIMIT) + "..." : fullText;
+        String topic = readTopic(outputDir);
+        String systemPrompt = buildSystemPrompt(topic);
 
         // 将 utterances 按字符数分批处理，避免 API 上下文超限
         List<List<UtteranceItem>> batches = splitIntoBatches(items);
@@ -121,14 +121,15 @@ public class OpenAiAsrCorrector implements AsrCorrector {
             }
             String batchUtterancesJson = objectMapper.writeValueAsString(batchUtterances);
 
+            // 上下文 = 当前批次前后的句子窗口，帮助锚定领域术语（比全文截断更省 token、更贴题）
+            String contextWindow = buildContextWindow(items, batch, CONTEXT_WINDOW_CHARS);
             String userPrompt = """
-                    Full transcription for context:
+                    Sentences near the ones to correct (context for resolving domain terms):
                     ---
-                    """ + contextPrefix + """
-                    
+                    """ + contextWindow + """
                     ---
-                    
-                    Utterances to correct (preserve the id mapping):
+
+                    Correct the utterances below. Return ONLY the ones you changed, each with its FULL corrected sentence text:
                     """ + batchUtterancesJson;
             ObjectNode requestBody = objectMapper.createObjectNode();
             requestBody.put("model", resolved.model());
@@ -142,9 +143,13 @@ public class OpenAiAsrCorrector implements AsrCorrector {
             String correctedJson = callAsrApi(resolved.apiKey(), resolved.chatUrl(), resolved.model(), requestBody);
             JsonNode correctedRoot = objectMapper.readTree(correctedJson);
 
-            JsonNode correctedUtterances = correctedRoot.path("utterances");
+            // 优先解析 diff-only 格式 {"corrections":[...]}，兼容旧 {"utterances":[...]}
+            JsonNode correctedUtterances = correctedRoot.path("corrections");
             if (!correctedUtterances.isArray()) {
-                throw new RuntimeException("LLM 返回格式错误：缺少 utterances 数组，实际=" + correctedRoot);
+                correctedUtterances = correctedRoot.path("utterances");
+            }
+            if (!correctedUtterances.isArray()) {
+                throw new RuntimeException("LLM 返回格式错误：缺少 corrections/utterances 数组，实际=" + correctedRoot);
             }
             Map<Integer, String> originals = new HashMap<>();
             for (UtteranceItem item : batch) originals.put(item.id, item.text);
@@ -162,17 +167,10 @@ public class OpenAiAsrCorrector implements AsrCorrector {
                             orig, text, text.length(), orig.length());
                     continue;
                 }
-                int prefixLen = 0;
-                int minLen = Math.min(orig.length(), text.length());
-                while (prefixLen < minLen && orig.charAt(prefixLen) == text.charAt(prefixLen)) prefixLen++;
-                int suffixLen = 0;
-                while (suffixLen < minLen - prefixLen
-                        && orig.charAt(orig.length() - 1 - suffixLen) == text.charAt(text.length() - 1 - suffixLen)) {
-                    suffixLen++;
-                }
-                if (prefixLen + suffixLen < orig.length() * 0.3) {
-                    log.warn("ASR 修正内容不重叠，丢弃：'{}' → '{}' (重叠 {} chars, 原文 {} chars)",
-                            orig, text, prefixLen + suffixLen, orig.length());
+                double overlap = wordOverlapRatio(orig, text);
+                if (overlap < OVERLAP_MIN_RATIO) {
+                    log.warn("ASR 修正内容不重叠，丢弃：'{}' → '{}' (重叠 {}%)",
+                            orig, text, Math.round(overlap * 100));
                     continue;
                 }
                 corrections.put(id, text);
@@ -222,33 +220,40 @@ public class OpenAiAsrCorrector implements AsrCorrector {
                 task.getId(), items.size(), correctedCount, correctedFile);
     }
 
-    private String buildSystemPrompt() {
+    private String buildSystemPrompt(String topic) {
+        String topicLine = (topic != null && !topic.isBlank())
+                ? "\nVideo topic: " + topic
+                : "\nThe video topic is not provided; infer domain terms from the context sentences.";
         return """
-                You are a speech recognition correction assistant. Fix only words that the ASR engine clearly misrecognized because they SOUND like the correct word.
-                
-                A part of the FULL transcription is provided below as context to help understand the topic and domain terminology.
-                
+                You are a speech recognition correction assistant for a video dubbing pipeline. The video's transcription was produced by an ASR engine that occasionally mishears words into phonetically-similar but wrong ones. Fix ONLY those misrecognitions.
+                """ + topicLine + """
+
                 Rules:
-                1. Only change a word when the original text and the correction SOUND similar (e.g. 'kub ernetes' and 'Kubernetes' sound alike). If they don't sound similar, it's NOT an ASR error.
-                2. Use context only to resolve ambiguous technical terms. Do NOT use context to guess better-sounding words.
-                3. Keep original grammar, style, punctuation, and sentence structure unchanged.
-                4. Do NOT change words based on what makes more sense in context. Only change words that are phonetically similar to ASR misrecognitions.
-                5. When unsure, leave the original text unchanged.
-                
-                Valid corrections (phonetically similar):
+                1. Change a word ONLY if the original and the correction SOUND similar (e.g. 'kub ernetes' and 'Kubernetes' sound alike). If they don't sound similar, it is NOT an ASR error.
+                2. For domain or technical terms, resolve phonetically-similar variants to the correct spelling, guided by the video topic and the context sentences (e.g. 'intuitorator' → 'IntoIterator' in a Rust tutorial, 'cubelet' → 'kubelet' in a Kubernetes talk). Use your knowledge of the domain.
+                3. Keep original grammar, style, punctuation, and sentence structure unchanged. Never rephrase or polish.
+                4. Do NOT swap a word just because it makes more sense in context; the change must be phonetically justified.
+                5. When unsure, leave the utterance unchanged and omit it from the output.
+                6. Do NOT correct words that are already spelled correctly (no capitalization-only or grammar fixes).
+                7. CRITICAL: each "text" in your output must be the ENTIRE corrected utterance — the full sentence, identical to the original except for the corrected word(s). NEVER return just the corrected word(s).
+                8. The correction is a MINIMAL EDIT: change ONLY the misheard word(s). Do NOT add, remove, reorder, or replace any other words. The corrected utterance must start and end with the same words as the original (unless one of those words is itself the error). NEVER write a new or explanatory sentence.
+
+                Word-level corrections that sound similar (phonetically valid):
                 - 'kub ernetes' → 'Kubernetes'
                 - 'cubelet' → 'kubelet'
-                - 'Intuitor' → 'Iterator'
                 - 'trade' → 'trait'
                 - 'base sixty four' → 'base64'
-                
-                Invalid corrections (phonetically different - do NOT do these):
+
+                Word-level corrections that are phonetically different (do NOT do these):
                 - 'holds' → 'dives' (different sound, context-based guess)
                 - 'Rusty' → 'Rust' (not a misrecognition)
                 - 'come' → 'came' (grammar fix, not ASR)
-                
-                Return ONLY valid JSON (no markdown, no extra text):
-                {"utterances":[{"id":0,"text":"corrected text"},...]}""";
+
+                NOT a correction (do NOT replace the whole sentence). Original: "And finally, there is a single required method to implement called Intuitor." → CORRECT: "And finally, there is a single required method to implement called IntoIterator." → WRONG: "This just ensures consistency."
+
+                Return ONLY valid JSON (no markdown, no extra text). Include ONLY the utterances you changed. Each entry's "text" is the COMPLETE corrected sentence, e.g. if the original utterance id 5 was "The first line creates an iterator via the intoIterator trade." return:
+                {"corrections":[{"id":5,"text":"The first line creates an iterator via the IntoIterator trait."}]}
+                If nothing needs correcting, return {"corrections":[]}""";
     }
 
     private ResolvedConfig resolveConfig() {
@@ -311,8 +316,8 @@ public class OpenAiAsrCorrector implements AsrCorrector {
             }
 
             JsonNode parsed = objectMapper.readTree(json);
-            if (!parsed.has("utterances") || !parsed.path("utterances").isArray()) {
-                throw new AiChatRetry.AiRetryableException("AI 返回 JSON 缺少 utterances 数组");
+            if (!parsed.has("corrections") && !parsed.has("utterances")) {
+                throw new AiChatRetry.AiRetryableException("AI 返回 JSON 缺少 corrections/utterances 数组");
             }
 
             return json;
@@ -344,6 +349,31 @@ public class OpenAiAsrCorrector implements AsrCorrector {
 
     private static String truncate(String text, int maxLen) {
         return text.length() <= maxLen ? text : text.substring(0, maxLen) + "...";
+    }
+
+    /**
+     * 修正文本与原文的单词重叠率（小写、忽略标点）。大小写变化（VEC→Vec）和
+     * 末尾术语替换（Intuiterator→IntoIterator）不影响命中，整句改写则命中率骤降。
+     */
+    private static double wordOverlapRatio(String original, String corrected) {
+        Set<String> correctedTokens = tokenize(corrected);
+        String[] originalTokens = original.toLowerCase().split("[^a-z0-9]+");
+        int total = 0;
+        int matched = 0;
+        for (String t : originalTokens) {
+            if (t.isEmpty()) continue;
+            total++;
+            if (correctedTokens.contains(t)) matched++;
+        }
+        return total == 0 ? 1.0 : (double) matched / total;
+    }
+
+    private static Set<String> tokenize(String text) {
+        Set<String> tokens = new HashSet<>();
+        for (String t : text.toLowerCase().split("[^a-z0-9]+")) {
+            if (!t.isEmpty()) tokens.add(t);
+        }
+        return tokens;
     }
 
     private record UtteranceItem(int id, String text) {
@@ -382,6 +412,48 @@ public class OpenAiAsrCorrector implements AsrCorrector {
             batches.add(currentBatch);
         }
         return batches;
+    }
+
+    /**
+     * 读取任务标题（local_info.json），用于给 LLM 锚定领域术语。
+     * 文件缺失或解析失败时返回 null，prompt 会退化为"从上下文推断"。
+     */
+    private String readTopic(Path outputDir) {
+        Path localInfo = outputDir.resolve("local_info.json");
+        try {
+            if (Files.exists(localInfo)) {
+                JsonNode root = objectMapper.readTree(Files.readString(localInfo));
+                String title = root.path("title").asText("").trim();
+                return title.isEmpty() ? null : title;
+            }
+        } catch (Exception e) {
+            log.warn("读取 local_info.json 标题失败: {}", e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * 截取当前批次前后句子的上下文窗口（双向累积，上限 maxChars）。
+     * 只取紧邻的句子，比全文截断更省 token、更贴题。
+     */
+    private static String buildContextWindow(List<UtteranceItem> items, List<UtteranceItem> batch, int maxChars) {
+        int minId = batch.get(0).id();
+        int maxId = batch.get(batch.size() - 1).id();
+        StringBuilder sb = new StringBuilder();
+        int chars = 0;
+        for (int i = minId - 1; i >= 0 && chars < maxChars; i--) {
+            String t = items.get(i).text();
+            if (chars + t.length() > maxChars) break;
+            sb.insert(0, t + "\n");
+            chars += t.length();
+        }
+        for (int i = maxId + 1; i < items.size() && chars < maxChars; i++) {
+            String t = items.get(i).text();
+            if (chars + t.length() > maxChars) break;
+            sb.append(t).append("\n");
+            chars += t.length();
+        }
+        return sb.toString().trim();
     }
 
     private record ResolvedConfig(String apiKey, String chatUrl, String model) {
