@@ -58,7 +58,7 @@ services:
       - /mnt/e/youdub-data/modelscope:/app/data/modelscope
       - /mnt/e/youdub-data/separator-models:/app/data/separator-models
       - ./docker/youdub-python-services/server.py:/app/server.py:ro
-    command: python -m uvicorn server:app --host 0.0.0.0 --port 8001 --log-level info --reload
+    mem_limit: 8g
     restart: unless-stopped
     logging:
       driver: "json-file"
@@ -104,6 +104,7 @@ services:
       - /mnt/e/youdub-data/separator-models:/app/data/separator-models
       - /mnt/e/youdub-data/whisper-models:/app/data/whisper-models
       - /mnt/e/youdub-data/workfolder:/app/workfolder
+    mem_limit: 5g
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/health"]

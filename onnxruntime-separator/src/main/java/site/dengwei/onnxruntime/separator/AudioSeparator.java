@@ -55,8 +55,12 @@ public final class AudioSeparator implements AutoCloseable {
     private static final int FFT_SIZE = 6144;
     private static final int HOP_SIZE = 1024;
 
-    /** 单块时长（秒），超过此长度则分块处理 */
-    private static final int CHUNK_DURATION_SEC = 600;
+    /**
+     * 单块时长（秒），超过此长度则分块处理。
+     * 分块时长直接决定单块峰值内存（STFT/推理平面/istft 均随块长线性缩放）：
+     * 600s 块长峰值约 2.4GB，容器内存受限时会被 OOM-kill；300s 峰值约 1.2GB。
+     */
+    private static final int CHUNK_DURATION_SEC = 300;
     /** 块间交叉淡入淡出时长（秒） */
     private static final int CROSSFADE_SEC = 15;
 
