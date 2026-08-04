@@ -16,6 +16,7 @@ import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 
 public final class AudioSeparator implements AutoCloseable {
 
@@ -119,8 +120,12 @@ public final class AudioSeparator implements AutoCloseable {
         long chunkSamples = (long) sampleRate * CHUNK_DURATION_SEC;
         long crossfadeSamples = (long) sampleRate * CROSSFADE_SEC;
 
-        try (OutputStream outVocals = Files.newOutputStream(vocalsOut);
-             OutputStream outBgm = Files.newOutputStream(bgmOut)) {
+        // 先写临时文件，处理成功后原子改名为最终文件名；
+        // 避免失败残留的半截文件被 OnnxSeparator 的"已存在即跳过"误判为分离成功
+        Path tmpVocals = outputDir.resolve("audio_vocals.wav.tmp");
+        Path tmpBgm = outputDir.resolve("audio_bgm.wav.tmp");
+        try (OutputStream outVocals = Files.newOutputStream(tmpVocals);
+             OutputStream outBgm = Files.newOutputStream(tmpBgm)) {
             writeWavHeader(outVocals, sampleRate, totalFrames);
             writeWavHeader(outBgm, sampleRate, totalFrames);
 
@@ -181,7 +186,14 @@ public final class AudioSeparator implements AutoCloseable {
                 writeFrames(outVocals, prevVocals, prevSkip, prevLen - prevSkip);
                 writeFrames(outBgm, prevBgm, prevSkip, prevLen - prevSkip);
             }
+        } catch (IOException | OrtException | RuntimeException e) {
+            // 清理半截临时文件，保证重试不会被"已存在"短路
+            Files.deleteIfExists(tmpVocals);
+            Files.deleteIfExists(tmpBgm);
+            throw e;
         }
+        Files.move(tmpVocals, vocalsOut, StandardCopyOption.REPLACE_EXISTING);
+        Files.move(tmpBgm, bgmOut, StandardCopyOption.REPLACE_EXISTING);
 
         long elapsed = System.currentTimeMillis() - t0;
         log.info("音频分离完成: total={}ms, vocals={}, bgm={}", elapsed, vocalsOut, bgmOut);
