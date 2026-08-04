@@ -1,8 +1,6 @@
 package com.youdub.replica.service.adapter.separate;
 
 import com.youdub.replica.model.entity.Task;
-import jakarta.annotation.PreDestroy;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
 import site.dengwei.onnxruntime.separator.AudioSeparator;
@@ -18,17 +16,14 @@ import static com.youdub.replica.service.adapter.AdapterConstants.ONNX;
  * ONNX Runtime 本地人声分离适配器。
  * <p>
  * 在 Java 进程内加载 MDX-NET ONNX 模型完成人声分离（vocals + bgm），
- * 无需外部 Python 服务。模型实例在首次调用时加载并缓存，后续复用。
+ * 无需外部 Python 服务。每个任务独立创建并关闭 {@link AudioSeparator}，
+ * 避免多个任务共享同一个 OrtSession 并发推理导致串行化/线程超订。
  */
 @Slf4j
 @Component(ONNX)
-@RequiredArgsConstructor
 public class OnnxSeparator extends BaseSourceSeparator {
 
     private static final String MODEL_FILE = "UVR-MDX-NET-Inst_HQ_3.onnx";
-
-    private volatile AudioSeparator separator;
-    private final Object initLock = new Object();
 
     @Override
     public void separate(Task task, Path audioPath, Path outputDir, String device) throws Exception {
@@ -52,40 +47,30 @@ public class OnnxSeparator extends BaseSourceSeparator {
         Path wavPath = extractAudio(task, audioPath, outputDir);
         boolean isTemp = !wavPath.equals(audioPath);
 
-        initModel(device);
+        Path modelPath = resolveModel();
+        boolean useGpu = isCudaAvailable()
+                || (device != null && !device.isBlank() && !"cpu".equalsIgnoreCase(device));
+        log.info("加载 ONNX 模型：model={}, gpu={}", modelPath, useGpu);
 
-        long t0 = System.currentTimeMillis();
-        separator.separate(wavPath, outputDir);
-        long elapsed = System.currentTimeMillis() - t0;
+        AudioSeparator separator = AudioSeparator.loadOrDownload(modelPath, useGpu);
+        try {
+            separator.warmUp();
 
-        long vocalSize = Files.size(vocalsOut);
-        long bgmSize = Files.size(bgmOut);
-        log.info("ONNX 分离完成：task={}, total={}ms, vocals={}MB, bgm={}MB",
-                task.getId(), elapsed,
-                vocalSize / (1024 * 1024), bgmSize / (1024 * 1024));
+            long t0 = System.currentTimeMillis();
+            separator.separate(wavPath, outputDir);
+            long elapsed = System.currentTimeMillis() - t0;
+
+            long vocalSize = Files.size(vocalsOut);
+            long bgmSize = Files.size(bgmOut);
+            log.info("ONNX 分离完成：task={}, total={}ms, vocals={}MB, bgm={}MB",
+                    task.getId(), elapsed,
+                    vocalSize / (1024 * 1024), bgmSize / (1024 * 1024));
+        } finally {
+            separator.close();
+        }
 
         if (isTemp) {
             Files.deleteIfExists(wavPath);
-        }
-    }
-
-    private void initModel(String device) throws Exception {
-        if (separator != null) return;
-
-        synchronized (initLock) {
-            if (separator != null) {
-                return;
-            }
-
-            Path modelPath = resolveModel();
-            boolean useGpu = isCudaAvailable()
-                    || (device != null && !device.isBlank() && !"cpu".equalsIgnoreCase(device));
-
-            log.info("加载 ONNX 模型：model={}, gpu={}", modelPath, useGpu);
-
-            AudioSeparator sep = AudioSeparator.loadOrDownload(modelPath, useGpu);
-            sep.warmUp();
-            this.separator = sep;
         }
     }
 
@@ -124,13 +109,6 @@ public class OnnxSeparator extends BaseSourceSeparator {
         } catch (IOException | InterruptedException e) {
             log.debug("nvidia-smi 不可用，回退到 CPU：{}", e.getMessage());
             return false;
-        }
-    }
-
-    @PreDestroy
-    void closeModel() {
-        if (separator != null) {
-            separator.close();
         }
     }
 }

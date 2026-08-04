@@ -201,7 +201,7 @@ public class PipelineOrchestrator {
                     double overallProgress = ((activeStages.indexOf(stage) + 1) * 100.0) / activeStages.size();
                     taskRepository.updateStatus(taskId, TaskStatus.RUNNING, overallProgress);
                     log.info("阶段完成：task={}, stage={}", taskId, stage.name);
-                } catch (Exception e) {
+                } catch (Throwable e) {
                     // 用户停止整个任务 → 标记为 FAILED，退出管线
                     if (isTaskStopped(taskId)) {
                         log.warn("任务被用户停止：task={}, stage={}", taskId, stage.name);
@@ -238,7 +238,7 @@ public class PipelineOrchestrator {
             taskRepository.updateField(taskId, "completed_at", nowIso());
             log.info("管线执行完成：task={}", taskId);
 
-        } catch (Exception e) {
+        } catch (Throwable e) {
             log.error("管线执行异常：task={}", taskId, e);
             taskRepository.updateStatus(taskId, TaskStatus.FAILED, 0.0);
             taskRepository.updateField(taskId, "error_message", e.getMessage());

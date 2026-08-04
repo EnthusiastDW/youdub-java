@@ -101,7 +101,7 @@ app:
   pipeline:
     concurrency:
       download: 2
-      separate: 2
+      separate: 1
       asr: 2
       asr_correct: 2
       asr_fix: 4

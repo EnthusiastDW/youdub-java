@@ -4,13 +4,18 @@ import ai.onnxruntime.OrtException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import site.dengwei.onnxruntime.audio.SpectralProcessor;
-import site.dengwei.onnxruntime.audio.WavAudio;
-import site.dengwei.onnxruntime.separator.MdxNetModel;
 
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioInputStream;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.UnsupportedAudioFileException;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Arrays;
 
 public final class AudioSeparator implements AutoCloseable {
 
@@ -76,6 +81,16 @@ public final class AudioSeparator implements AutoCloseable {
                 modelPath, FFT_SIZE, HOP_SIZE, periodicWindow);
     }
 
+    /**
+     * 分离人声与背景音乐。
+     * <p>
+     * 流式分块处理：逐块读取输入 WAV（自动转 16-bit PCM）→ STFT/ONNX/iFFT → 延迟一块做
+     * crossfade 累加后直接写盘。全程只保留一个分块窗口与上一块结果在内存，避免长音频整段
+     * 加载（旧实现会把整段样本 + 全长度输出数组同时驻留内存，导致 OOM）。
+     *
+     * @param inputWav  输入 WAV（任意常见 PCM 格式，自动转换为 16-bit）
+     * @param outputDir 输出目录，生成 {@code audio_vocals.wav} 与 {@code audio_bgm.wav}
+     */
     public void separate(Path inputWav, Path outputDir) throws IOException, OrtException {
         long t0 = System.currentTimeMillis();
 
@@ -88,71 +103,85 @@ public final class AudioSeparator implements AutoCloseable {
             return;
         }
 
-        WavAudio input = WavAudio.read(inputWav);
-        int sampleRate = input.sampleRate();
-        int channels = input.channels();
-        int frameLen = input.frameLength();
-
-        int chunkSamples = sampleRate * CHUNK_DURATION_SEC;
-        int crossfadeSamples = sampleRate * CROSSFADE_SEC;
-
-        float[] fullVocals;
-        float[] fullBgm;
-
-        if (frameLen <= chunkSamples) {
-            // 单次处理
-            var result = processSegment(input.samples(), channels, frameLen);
-            fullVocals = result.vocals();
-            fullBgm = result.bgm();
-        } else {
-            // 分块 + crossfade
-            fullVocals = new float[frameLen];
-            fullBgm = new float[frameLen];
-            int chunks = (int) Math.ceil((double) frameLen / chunkSamples);
-
-            log.info("长音频分块处理: totalFrames={}, sampleRate={}, chunks={}, crossfade={}s",
-                    frameLen, sampleRate, chunks, CROSSFADE_SEC);
-
-            for (int i = 0; i < chunks; i++) {
-                int start = i * chunkSamples;
-                int end = Math.min(start + chunkSamples + crossfadeSamples, frameLen);
-                int len = end - start;
-                long chunkT0 = System.currentTimeMillis();
-
-                float[] chunkSamplesArr = Arrays.copyOfRange(input.samples(), start * channels, end * channels);
-                var result = processSegment(chunkSamplesArr, channels, len);
-
-                // 写入目标位置（处理交叉区域）
-                int writeLen = len;
-                int dstOffset = start;
-                int srcOffset = 0;
-
-                if (i > 0) {
-                    // 与前一块交叉区域：前一块的尾部 crossfadeSamples 与当前块头部重叠
-                    int overlapStart = start - crossfadeSamples;
-                    if (overlapStart >= 0) {
-                        int overlapLen = Math.min(crossfadeSamples, len);
-                        crossfadeAppend(fullVocals, result.vocals(), overlapStart, srcOffset, overlapLen, true);
-                        crossfadeAppend(fullBgm, result.bgm(), overlapStart, srcOffset, overlapLen, true);
-                        dstOffset = start + overlapLen;
-                        srcOffset = overlapLen;
-                        writeLen = len - overlapLen;
-                    }
-                }
-
-                if (writeLen > 0 && dstOffset + writeLen <= frameLen) {
-                    System.arraycopy(result.vocals(), srcOffset, fullVocals, dstOffset, writeLen);
-                    System.arraycopy(result.bgm(), srcOffset, fullBgm, dstOffset, writeLen);
-                }
-
-                long chunkElapsed = System.currentTimeMillis() - chunkT0;
-                log.info("分块 {} 处理完成: frames=[{}..{}), duration={}ms",
-                        i + 1, start, end, chunkElapsed);
-            }
+        int sampleRate;
+        int channels;
+        long totalFrames;
+        try (AudioInputStream probe = openConverted(inputWav)) {
+            AudioFormat fmt = probe.getFormat();
+            sampleRate = (int) fmt.getSampleRate();
+            channels = fmt.getChannels();
+            totalFrames = probe.getFrameLength();
+        }
+        if (totalFrames <= 0) {
+            throw new IOException("无法确定音频长度: " + inputWav);
         }
 
-        new WavAudio(fullVocals, sampleRate, 1).toStereo().write(vocalsOut);
-        new WavAudio(fullBgm, sampleRate, 1).toStereo().write(bgmOut);
+        long chunkSamples = (long) sampleRate * CHUNK_DURATION_SEC;
+        long crossfadeSamples = (long) sampleRate * CROSSFADE_SEC;
+
+        try (OutputStream outVocals = Files.newOutputStream(vocalsOut);
+             OutputStream outBgm = Files.newOutputStream(bgmOut)) {
+            writeWavHeader(outVocals, sampleRate, totalFrames);
+            writeWavHeader(outBgm, sampleRate, totalFrames);
+
+            if (totalFrames <= chunkSamples) {
+                // 单次处理
+                float[] frameBuf = new float[(int) totalFrames * channels];
+                try (AudioInputStream ais = openConverted(inputWav)) {
+                    readFrames(ais, frameBuf, (int) totalFrames, channels);
+                }
+                var result = processSegment(frameBuf, channels, (int) totalFrames);
+                writeFrames(outVocals, result.vocals(), 0, (int) totalFrames);
+                writeFrames(outBgm, result.bgm(), 0, (int) totalFrames);
+            } else {
+                // 分块 + crossfade：延迟一块写盘，重叠区累加
+                int chunks = (int) Math.ceil((double) totalFrames / chunkSamples);
+                log.info("长音频分块处理: totalFrames={}, sampleRate={}, chunks={}, crossfade={}s",
+                        totalFrames, sampleRate, chunks, CROSSFADE_SEC);
+
+                float[] frameBuf = new float[(int) (chunkSamples + crossfadeSamples) * channels];
+                float[] prevVocals = null;
+                float[] prevBgm = null;
+                int prevSkip = 0; // 上一块输出数组中无需写盘的前缀长度（等于其自身重叠长度）
+                int prevLen = 0;
+                boolean first = true;
+
+                try (AudioInputStream ais = openConverted(inputWav)) {
+                    for (int i = 0; i < chunks; i++) {
+                        long start = i * chunkSamples;
+                        int len = (int) Math.min(chunkSamples + crossfadeSamples, totalFrames - start);
+                        long chunkT0 = System.currentTimeMillis();
+
+                        readFrames(ais, frameBuf, len, channels);
+                        var result = processSegment(frameBuf, channels, len);
+
+                        if (!first) {
+                            // 当前块头部淡入累加进上一块尾部（与整段处理时的 crossfadeAppend 语义一致）
+                            int overlapLen = (int) Math.min(crossfadeSamples, len);
+                            int dst = (int) (chunkSamples - crossfadeSamples);
+                            crossfadeAppend(prevVocals, result.vocals(), dst, 0, overlapLen, true);
+                            crossfadeAppend(prevBgm, result.bgm(), dst, 0, overlapLen, true);
+                            // 上一块除自身重叠前缀外的区域已确定，写盘
+                            writeFrames(outVocals, prevVocals, prevSkip, prevLen - prevSkip);
+                            writeFrames(outBgm, prevBgm, prevSkip, prevLen - prevSkip);
+                        }
+
+                        prevVocals = result.vocals();
+                        prevBgm = result.bgm();
+                        prevSkip = first ? 0 : (int) Math.min(crossfadeSamples, len);
+                        prevLen = len;
+                        first = false;
+
+                        long chunkElapsed = System.currentTimeMillis() - chunkT0;
+                        log.info("分块 {} 处理完成: frames=[{}..{}), duration={}ms",
+                                i + 1, start, start + len, chunkElapsed);
+                    }
+                }
+                // 最后一块
+                writeFrames(outVocals, prevVocals, prevSkip, prevLen - prevSkip);
+                writeFrames(outBgm, prevBgm, prevSkip, prevLen - prevSkip);
+            }
+        }
 
         long elapsed = System.currentTimeMillis() - t0;
         log.info("音频分离完成: total={}ms, vocals={}, bgm={}", elapsed, vocalsOut, bgmOut);
@@ -241,6 +270,89 @@ public final class AudioSeparator implements AutoCloseable {
             double ratio = (double) i / len;
             double fade = fadeIn ? ratio : (1.0 - ratio);
             dest[destOffset + i] += src[srcOffset + i] * (float) fade;
+        }
+    }
+
+    /** 打开输入 WAV 并转换为 16-bit PCM AudioInputStream。 */
+    private static AudioInputStream openConverted(Path wav) throws IOException {
+        try {
+            AudioInputStream ais = AudioSystem.getAudioInputStream(wav.toFile());
+            AudioFormat src = ais.getFormat();
+            AudioFormat target = new AudioFormat(
+                    AudioFormat.Encoding.PCM_SIGNED,
+                    src.getSampleRate(),
+                    16,
+                    src.getChannels(),
+                    src.getChannels() * 2,
+                    src.getSampleRate(),
+                    false);
+            return AudioSystem.getAudioInputStream(target, ais);
+        } catch (UnsupportedAudioFileException e) {
+            throw new IOException("不支持的音频格式: " + wav, e);
+        }
+    }
+
+    /** 从流中读取 frames 帧（interleaved 声道）到 out。 */
+    private static void readFrames(AudioInputStream ais, float[] out, int frames, int channels)
+            throws IOException {
+        int bytes = frames * channels * 2;
+        byte[] raw = new byte[bytes];
+        int off = 0;
+        while (off < bytes) {
+            int n = ais.read(raw, off, bytes - off);
+            if (n < 0) break;
+            off += n;
+        }
+        int samples = off / 2;
+        ByteBuffer bb = ByteBuffer.wrap(raw, 0, off).order(ByteOrder.LITTLE_ENDIAN);
+        for (int i = 0; i < samples; i++) {
+            out[i] = bb.getShort() / 32768.0f;
+        }
+    }
+
+    /** 写入 16-bit 立体声 WAV 文件头（44 字节）。 */
+    private static void writeWavHeader(OutputStream out, int sampleRate, long totalFrames)
+            throws IOException {
+        long dataLen = totalFrames * 4L; // 16-bit 立体声
+        if (dataLen > Integer.MAX_VALUE - 36L) {
+            throw new IOException("音频过长，超出 WAV 格式上限: " + totalFrames + " 帧");
+        }
+        ByteBuffer bb = ByteBuffer.allocate(44).order(ByteOrder.LITTLE_ENDIAN);
+        bb.put("RIFF".getBytes(StandardCharsets.US_ASCII));
+        bb.putInt((int) (36 + dataLen));
+        bb.put("WAVE".getBytes(StandardCharsets.US_ASCII));
+        bb.put("fmt ".getBytes(StandardCharsets.US_ASCII));
+        bb.putInt(16);
+        bb.putShort((short) 1);      // PCM
+        bb.putShort((short) 2);      // 立体声
+        bb.putInt(sampleRate);
+        bb.putInt(sampleRate * 4);   // 字节率
+        bb.putShort((short) 4);      // 块对齐
+        bb.putShort((short) 16);     // 位深
+        bb.put("data".getBytes(StandardCharsets.US_ASCII));
+        bb.putInt((int) dataLen);
+        out.write(bb.array());
+    }
+
+    /** 将单声道样本写为 16-bit 立体声 PCM（双声道拷贝），分批写避免大块临时数组。 */
+    private static void writeFrames(OutputStream out, float[] mono, int offset, int count)
+            throws IOException {
+        byte[] buf = new byte[1 << 20]; // 1MB
+        ByteBuffer bb = ByteBuffer.wrap(buf).order(ByteOrder.LITTLE_ENDIAN);
+        int idx = offset;
+        int remaining = count;
+        while (remaining > 0) {
+            int batch = Math.min(remaining, buf.length / 4);
+            bb.clear();
+            for (int i = 0; i < batch; i++) {
+                float s = mono[idx + i];
+                short v = (short) Math.round(Math.clamp(s, -1.0, 1.0) * 32767.0);
+                bb.putShort(v);
+                bb.putShort(v);
+            }
+            out.write(buf, 0, batch * 4);
+            idx += batch;
+            remaining -= batch;
         }
     }
 

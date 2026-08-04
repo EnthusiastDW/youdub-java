@@ -43,4 +43,4 @@ COPY --from=build /app/backend/target/replica-backend-*.jar /app/youdub-backend.
 
 EXPOSE 8000
 
-ENTRYPOINT ["java", "-XX:+UseZGC", "-XX:+ZGenerational", "-Xms256m", "-Xmx2g", "-XX:+ShowCodeDetailsInExceptionMessages", "-jar", "/app/youdub-backend.jar"]
+ENTRYPOINT ["java", "-XX:+UseZGC", "-XX:+ZGenerational", "-Xms1g", "-Xmx10g", "-XX:+ShowCodeDetailsInExceptionMessages", "-jar", "/app/youdub-backend.jar"]

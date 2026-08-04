@@ -52,7 +52,7 @@ public class WorkerService {
             try {
                 log.info("开始执行任务：{}", taskId);
                 pipelineOrchestrator.execute(taskId);
-            } catch (Exception e) {
+            } catch (Throwable e) {
                 log.error("任务执行异常：taskId={}", taskId, e);
                 try {
                     taskRepository.updateStatus(taskId, TaskStatus.FAILED, 0.0);
