@@ -43,4 +43,4 @@ COPY --from=build /app/backend/target/replica-backend-*.jar /app/youdub-backend.
 
 EXPOSE 8000
 
-ENTRYPOINT ["java", "-XX:+UseZGC", "-XX:+ZGenerational", "-Xms1g", "-Xmx4g", "-XX:+ShowCodeDetailsInExceptionMessages", "-jar", "/app/youdub-backend.jar"]
+ENTRYPOINT ["java", "-XX:+UseG1GC", "-Xms1g", "-Xmx4g", "-XX:MaxMetaspaceSize=512m", "-XX:+HeapDumpOnOutOfMemoryError", "-XX:HeapDumpPath=/app/data/logs/java-oom.hprof", "-XX:+ShowCodeDetailsInExceptionMessages", "-jar", "/app/youdub-backend.jar"]

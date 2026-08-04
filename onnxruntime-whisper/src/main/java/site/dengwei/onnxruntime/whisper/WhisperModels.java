@@ -25,6 +25,7 @@ public final class WhisperModels {
     private static final java.util.Map<String, String> REPO_FALLBACKS = java.util.Map.of(
             "whisper-small",    "whisper-small-ONNX",
             "whisper-medium",   "whisper-medium-ONNX",
+            "whisper-medium.en", "whisper-medium.en_timestamped",
             "whisper-large",    "whisper-large-ONNX",
             "whisper-large-v2", "whisper-large-v2-ONNX",
             "whisper-large-v3", "whisper-large-v3-ONNX"

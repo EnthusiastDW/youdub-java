@@ -182,8 +182,8 @@ public final class AudioSeparator implements AutoCloseable {
                         first = false;
 
                         long chunkElapsed = System.currentTimeMillis() - chunkT0;
-                        log.info("分块 {} 处理完成: frames=[{}..{}), duration={}ms",
-                                i + 1, start, start + len, chunkElapsed);
+                        log.info("分块 {}/{} 处理完成: frames=[{}..{}), duration={}ms",
+                                i + 1, chunks, start, start + len, chunkElapsed);
                     }
                 }
                 // 最后一块

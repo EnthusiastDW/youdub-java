@@ -19,6 +19,9 @@ public final class MdxNetModel implements AutoCloseable {
     private final int segmentFrames;
     private final int numTracks;
 
+    /** 滑窗重叠率，与 audio-separator 默认值一致：0.5 重叠会使推理次数多 1.5×，是 CPU 慢的主因 */
+    private static final double SLIDING_WINDOW_OVERLAP = 0.25;
+
     /**
      * @param modelPath  模型文件路径 (.onnx)
      * @param gpuEnabled 是否启用 CUDA
@@ -108,7 +111,7 @@ public final class MdxNetModel implements AutoCloseable {
         int useFreqBins = Math.min(inputFreqBins, modelFreqBins);
 
         int segFrames = segmentFrames;
-        int hopFrames = segFrames / 2;
+        int hopFrames = (int) (segFrames * (1 - SLIDING_WINDOW_OVERLAP));
 
         // 只累加第一个有效轨道（inst），人声通过减法得到
         float[][] instReal = new float[totalFrames][modelFreqBins];
@@ -134,16 +137,17 @@ public final class MdxNetModel implements AutoCloseable {
             try (OnnxTensor inputTensor = OnnxTensor.createTensor(env,
                     FloatBuffer.wrap(inputData), new long[]{1, 4, modelFreqBins, segFrames})) {
 
-                OrtSession.Result result = session.run(
-                        Map.of(session.getInputInfo().keySet().iterator().next(), inputTensor));
-                float[][] output = extractOutput(result);
+                try (OrtSession.Result result = session.run(
+                        Map.of(session.getInputInfo().keySet().iterator().next(), inputTensor))) {
+                    float[][] output = extractOutput(result);
 
-                for (int t = 0; t < actualFrames; t++) {
-                    int dstT = start + t;
-                    for (int f = 0; f < modelFreqBins; f++) {
-                        instReal[dstT][f] += output[0][f * segFrames + t];
-                        instImag[dstT][f] += output[1][f * segFrames + t];
-                        accCount[dstT][f]++;
+                    for (int t = 0; t < actualFrames; t++) {
+                        int dstT = start + t;
+                        for (int f = 0; f < modelFreqBins; f++) {
+                            instReal[dstT][f] += output[0][f * segFrames + t];
+                            instImag[dstT][f] += output[1][f * segFrames + t];
+                            accCount[dstT][f]++;
+                        }
                     }
                 }
             }
