@@ -88,7 +88,7 @@ public class PipelineOrchestrator {
     private static final Map<String, Integer> DEFAULT_STAGE_CONCURRENCY = Map.ofEntries(
             Map.entry("download", 2),
             Map.entry("separate", 1),
-            Map.entry("asr", 2),
+            Map.entry("asr", 1),
             Map.entry("asr_correct", 2),
             Map.entry("asr_fix", 4),
             Map.entry("translate", 3),

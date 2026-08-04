@@ -4,7 +4,6 @@ import ai.onnxruntime.*;
 import org.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import site.dengwei.onnxruntime.whisper.WhisperModels;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -14,9 +13,6 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.zip.GZIPOutputStream;
 
 /**
@@ -45,7 +41,7 @@ public final class WhisperModel implements AutoCloseable {
     private final WhisperConfig config;
     private final WhisperTokenizer tokenizer;
 
-    // 模型目录和语言设置（forkWorker 需要，也是从 loadOrDownload 到构造器的透传）
+    // 模型目录和语言设置（从 loadOrDownload 到构造器的透传）
     private final Path modelDir;
     private final String language;
 
@@ -126,26 +122,7 @@ public final class WhisperModel implements AutoCloseable {
      * @param modelDir 模型文件目录
      * @param language 语言代码（如 "en"、"zh"）
      */
-    /**
-     * 创建一个轻量工作实例，与本实例共享 WhisperConfig、WhisperTokenizer，
-     * 但拥有独立的 ONNX encoder/decoder 会话，可用于多线程并行解码。
-     * <p>
-     * 工作实例关闭时仅释放自身的会话，不影响原始实例。
-     * 调用方负责 {@link #close()} 每个 fork 的 worker。
-     * worker 不支持自动语言检测（使用已确定的 initialTokens）。
-     */
-    public WhisperModel forkWorker() {
-        if (initialTokens == null) {
-            throw new IllegalStateException("forkWorker 要求 initialTokens 已确定（auto-detect 模式下需先调用一次 transcribe）");
-        }
-        WhisperModel worker = new WhisperModel(modelDir, language, repeatPenalty, repeatWindow);
-        // auto-detect 模式下，fork 的 worker 应使用已确定的 initialTokens，无需重新检测
-        worker.initialTokens = this.initialTokens;
-        worker.initialTokensWithTimestamps = this.initialTokensWithTimestamps;
-        // 关闭 worker 构造器中 auto-detect 可能遗留的资源（无实际操作，仅防御）
-        worker.firstDiag = false;
-        return worker;
-    }
+    
 
     public static WhisperModel loadOrDownload(Path modelDir, String language) {
         try {
@@ -581,41 +558,24 @@ public final class WhisperModel implements AutoCloseable {
         TranscriptionResult[] chunkResults = new TranscriptionResult[actualChunks];
         chunkResults[0] = transcribeDetailed(chunks.get(0), sampleRate);
 
-        // 剩余分片：并行转录。共享本实例的 encoder/decoder session（ORT session 线程安全，
-        // 支持并发 Run），避免 fork worker 复制完整模型导致原生内存 N 倍膨胀。
-        int nThreads = whisperWorkers(actualChunks - 1);
-        ExecutorService pool = Executors.newFixedThreadPool(nThreads);
-        java.util.List<java.util.concurrent.Future<?>> futures = new java.util.ArrayList<>();
+        // 剩余分片：串行转录，共享本实例同一组 encoder/decoder session。
+        // 单 worker 串行执行：避免多线程并发 transcribeDetailed 时每个线程各占一份
+        // workspace 加剧原生内存占用，而 ONNX 推理内部（intra-op）已多线程并行。
         for (int i = 1; i < actualChunks; i++) {
-            final int idx = i;
-            final float[] chunkAudio = chunks.get(i);
-            futures.add(pool.submit(() -> {
-                long t0 = System.currentTimeMillis();
-                log.info("分片 [{}/{}]: offset={}ms, samples={} (thread={})",
-                        idx + 1, actualChunks, chunkOffsets.get(idx), chunkAudio.length,
-                        Thread.currentThread().getName());
-                try {
-                    TranscriptionResult r = transcribeDetailed(chunkAudio, sampleRate);
-                    long elapsed = System.currentTimeMillis() - t0;
-                    log.info("分片 [{}/{}] 完成: {}s (segments={}, words={})",
-                            idx + 1, actualChunks, elapsed / 1000,
-                            r.segments().size(),
-                            r.segments().stream().mapToInt(s -> s.words().size()).sum());
-                    chunkResults[idx] = r;
-                } catch (Exception e) {
-                    throw new RuntimeException("分片 " + idx + " 转录失败", e);
-                }
-            }));
-        }
-        pool.shutdown();
-        try {
-            pool.awaitTermination(30, TimeUnit.MINUTES);
-            for (var f : futures) f.get();
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new OrtException("分片转录被中断");
-        } catch (java.util.concurrent.ExecutionException e) {
-            throw new OrtException("分片转录失败: " + e.getCause().getMessage());
+            long t0 = System.currentTimeMillis();
+            log.info("分片 [{}/{}]: offset={}ms, samples={}",
+                    i + 1, actualChunks, chunkOffsets.get(i), chunks.get(i).length);
+            try {
+                TranscriptionResult r = transcribeDetailed(chunks.get(i), sampleRate);
+                long elapsed = System.currentTimeMillis() - t0;
+                log.info("分片 [{}/{}] 完成: {}s (segments={}, words={})",
+                        i + 1, actualChunks, elapsed / 1000,
+                        r.segments().size(),
+                        r.segments().stream().mapToInt(s -> s.words().size()).sum());
+                chunkResults[i] = r;
+            } catch (Exception e) {
+                throw new RuntimeException("分片 " + i + " 转录失败", e);
+            }
         }
 
         // 诊断：每个分片的原始转录结果
@@ -684,24 +644,7 @@ public final class WhisperModel implements AutoCloseable {
         }
     }
 
-    /**
-     * 并行分片 worker 数。
-     * <p>
-     * 通过环境变量 {@code WHISPER_MAX_WORKERS} 配置（默认 2）。
-     * 默认值刻意较小：分片共享同一组 ONNX session，worker 数多只会加剧原生内存占用
-     * 而不会带来线性加速（ONNX 推理内部已多线程）。
-     */
-    private static int whisperWorkers(int max) {
-        int workers = 8;
-        String env = System.getenv("WHISPER_MAX_WORKERS");
-        if (env != null && !env.isBlank()) {
-            try {
-                workers = Integer.parseInt(env.trim());
-            } catch (NumberFormatException ignored) {
-            }
-        }
-        return Math.max(1, Math.min(max, workers));
-    }
+    
 
     /**
      * 保证所有分片不超过 {@link #MAX_CHUNK_SEC}。

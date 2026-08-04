@@ -59,8 +59,9 @@ public final class AudioSeparator implements AutoCloseable {
      * 单块时长（秒），超过此长度则分块处理。
      * 分块时长直接决定单块峰值内存（STFT/推理平面/istft 均随块长线性缩放）：
      * 600s 块长峰值约 2.4GB，容器内存受限时会被 OOM-kill；300s 峰值约 1.2GB。
+     * 180s 块长进一步降低单块峰值，避免 44.1kHz 长音频在 -Xmx4g 下堆 OOM。
      */
-    private static final int CHUNK_DURATION_SEC = 300;
+    private static final int CHUNK_DURATION_SEC = 180;
     /** 块间交叉淡入淡出时长（秒） */
     private static final int CROSSFADE_SEC = 15;
 
