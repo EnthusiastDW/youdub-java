@@ -1727,18 +1727,21 @@ public final class WhisperModel implements AutoCloseable {
                     retained.add(kv);
                 }
 
-                // 关闭未被保留候选引用的本轮产物与上轮 KV（frozenResult 保留到最后）
+                // 关闭未被保留候选引用的本轮产物与上轮 KV（frozenResult 保留到最后）。
+                // 同一 Result 可能被多个 beam 共享引用（beamKvs/nextKvs 中重复出现），
+                // 必须先去重再关闭，否则同一 Result 被 close 多次触发 ORT 的
+                // "Closing an already closed Result" 警告。
+                java.util.Set<OrtSession.Result> toClose =
+                        java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
                 for (OrtSession.Result r : produced.values()) {
-                    if (!retained.contains(r)) {
-                        safeClose(r);
-                        opened.remove(r);
-                    }
+                    if (!retained.contains(r)) toClose.add(r);
                 }
                 for (OrtSession.Result r : beamKvs) {
-                    if (r != frozenResult && !retained.contains(r)) {
-                        safeClose(r);
-                        opened.remove(r);
-                    }
+                    if (r != frozenResult && !retained.contains(r)) toClose.add(r);
+                }
+                for (OrtSession.Result r : toClose) {
+                    safeClose(r);
+                    opened.remove(r);
                 }
 
                 beamTokens = nextTokens;
