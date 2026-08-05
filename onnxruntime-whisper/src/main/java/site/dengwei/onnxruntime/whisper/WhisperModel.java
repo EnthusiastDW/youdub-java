@@ -1577,6 +1577,272 @@ public final class WhisperModel implements AutoCloseable {
 
     private int[] runDecoderBeamSearch(float[] encoderState, int beamSize, float temperature,
                                        int[] initTokens, long[] budget) throws OrtException {
+        if (usePastCache) {
+            return runDecoderBeamSearchCached(encoderState, beamSize, temperature, initTokens, budget);
+        }
+        return runDecoderBeamSearchFull(encoderState, beamSize, temperature, initTokens, budget);
+    }
+
+    /**
+     * KV-cache 版 beam search：每个 beam 独立维护 decoder KV（增量前向，每步只输入 1 个新 token），
+     * encoder KV 冻结共享。相比 {@link #runDecoderBeamSearchFull}（每 beam 每步全量重算整个序列，
+     * self-attention O(n^2)），生成阶段每步只需 1 次增量前向，仅首个 beam 步做 1 次全量前向。
+     * 仅 merged decoder（usePastCache=true）可用时启用。
+     */
+    private int[] runDecoderBeamSearchCached(float[] encoderState, int beamSize, float temperature,
+                                             int[] initTokens, long[] budget) throws OrtException {
+        int maxLen = config.maxTargetPositions();
+        int initLen = initTokens.length;
+        boolean diag = firstDiag;
+        boolean progressLog = !diag;
+
+        FloatBuffer encBuf = FloatBuffer.wrap(encoderState);
+        int srcLen = encoderState.length / config.dModel();
+        long[] encShape = {1, srcLen, config.dModel()};
+
+        java.util.List<int[]> beamTokens = new java.util.ArrayList<>();
+        java.util.List<Float> beamScores = new java.util.ArrayList<>();
+        java.util.List<Boolean> beamFinished = new java.util.ArrayList<>();
+        java.util.List<OrtSession.Result> beamKvs = new java.util.ArrayList<>();
+        java.util.List<OrtSession.Result> opened = new java.util.ArrayList<>();
+
+        OrtSession.Result frozenResult = null;
+        try {
+            // 首步：所有 beam 初始相同，全量前向一次，冻结 encoder KV 并产出初始 decoder KV
+            long[] initIds = new long[initTokens.length];
+            for (int i = 0; i < initTokens.length; i++) initIds[i] = initTokens[i];
+            Map<String, OnnxTensorLike> inputs = new LinkedHashMap<>();
+            inputs.put(decoderInputIdsName, OnnxTensor.createTensor(env,
+                    LongBuffer.wrap(initIds), new long[]{1, initIds.length}));
+            inputs.put(decoderEncoderStateName, OnnxTensor.createTensor(env, encBuf.duplicate(), encShape));
+            java.util.List<OnnxTensor> emptyPastTensors = new java.util.ArrayList<>();
+            if (useCacheBranchName != null) {
+                inputs.put(useCacheBranchName, OnnxTensor.createTensor(env, new boolean[]{false}));
+                int numHeads = config.decoderAttentionHeads();
+                int headDim = config.dModel() / numHeads;
+                long[] emptyShape = {1, numHeads, 0, headDim};
+                for (String pastName : pastInputNames) {
+                    OnnxTensor emptyTensor = OnnxTensor.createTensor(env, FloatBuffer.allocate(0), emptyShape);
+                    inputs.put(pastName, emptyTensor);
+                    emptyPastTensors.add(emptyTensor);
+                }
+            }
+            if (--budget[0] < 0) throw new DecodeBudgetExceeded();
+            frozenResult = decoderSession.run(inputs);
+            opened.add(frozenResult);
+            closeOwnedInputs(inputs);
+            for (OnnxTensor t : emptyPastTensors) safeClose(t);
+
+            float[] firstLogits = extractLastLogits(frozenResult, initLen);
+            int[] firstTop = topKTokens(firstLogits, beamSize, true, temperature);
+            if (firstTop.length == 0) {
+                log.warn("beam search 首步无可用候选（全部被抑制），返回空结果");
+                return new int[0];
+            }
+            for (int token : firstTop) {
+                int[] extended = Arrays.copyOf(initTokens, initLen + 1);
+                extended[initLen] = token;
+                beamTokens.add(extended);
+                beamScores.add(logSoftmax(firstLogits, token, temperature));
+                beamFinished.add(token == eotToken);
+                beamKvs.add(frozenResult);
+            }
+            if (progressLog) {
+                int active = 0;
+                for (boolean f : beamFinished) if (!f) active++;
+                log.info("beam search 进度: temp={}, step={}, 活跃beam={}, 剩余预算={}",
+                        temperature, 0, active, Math.max(0, budget[0]));
+            }
+            if (beamFinished.stream().allMatch(f -> f)) {
+                return selectBestBeam(beamTokens, beamScores, beamFinished, initLen);
+            }
+
+            for (int pos = initLen + 1; pos < maxLen; pos++) {
+                java.util.List<BeamCandidate> candidates = new java.util.ArrayList<>();
+                java.util.Map<Integer, OrtSession.Result> produced = new java.util.HashMap<>();
+
+                for (int b = 0; b < beamTokens.size(); b++) {
+                    if (beamFinished.get(b)) continue;
+                    int[] seq = beamTokens.get(b);
+                    long lastToken = seq[seq.length - 1];
+
+                    // 增量前向：1 个新 token + 该 beam 的 decoder KV + 冻结 encoder KV
+                    Map<String, OnnxTensorLike> nextInputs = new LinkedHashMap<>();
+                    nextInputs.put(decoderInputIdsName, OnnxTensor.createTensor(env,
+                            LongBuffer.wrap(new long[]{lastToken}), new long[]{1, 1}));
+                    nextInputs.put(decoderEncoderStateName, OnnxTensor.createTensor(env,
+                            encBuf.duplicate(), encShape));
+                    if (useCacheBranchName != null) {
+                        nextInputs.put(useCacheBranchName, OnnxTensor.createTensor(env, new boolean[]{true}));
+                    }
+                    for (String pastName : pastInputNames) {
+                        if (pastName.contains(".encoder.")) {
+                            nextInputs.put(pastName, (OnnxTensor) frozenResult.get(
+                                    pastName.replace("past_key_values", "present")).orElseThrow());
+                        } else {
+                            nextInputs.put(pastName, (OnnxTensor) beamKvs.get(b).get(
+                                    pastName.replace("past_key_values", "present")).orElseThrow());
+                        }
+                    }
+                    if (--budget[0] < 0) throw new DecodeBudgetExceeded();
+                    OrtSession.Result newResult = decoderSession.run(nextInputs);
+                    opened.add(newResult);
+                    produced.put(b, newResult);
+                    closeOwnedInputs(nextInputs);
+
+                    float[] logits = extractLastLogits(newResult, 1);
+                    java.util.ArrayDeque<Integer> beamRecent = buildRecentTokens(seq, initLen, repeatWindow);
+                    if (repeatPenalty > 0 && !beamRecent.isEmpty()) {
+                        applyRepetitionPenalty(logits, beamRecent, repeatPenalty);
+                    }
+                    int[] top = topKTokens(logits, beamSize, false, temperature);
+                    for (int token : top) {
+                        float logProb = logSoftmax(logits, token, temperature);
+                        candidates.add(new BeamCandidate(b, token, beamScores.get(b) + logProb));
+                    }
+                }
+
+                if (candidates.isEmpty()) break;
+                candidates.sort((a, b) -> Float.compare(b.score, a.score));
+
+                int keep = Math.min(beamSize, candidates.size());
+                java.util.List<int[]> nextTokens = new java.util.ArrayList<>();
+                java.util.List<Float> nextScores = new java.util.ArrayList<>();
+                java.util.List<Boolean> nextFinished = new java.util.ArrayList<>();
+                java.util.List<OrtSession.Result> nextKvs = new java.util.ArrayList<>();
+                java.util.Set<OrtSession.Result> retained =
+                        java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+                for (int ci = 0; ci < keep; ci++) {
+                    BeamCandidate c = candidates.get(ci);
+                    int[] src = beamTokens.get(c.beamIdx);
+                    int[] extended = Arrays.copyOf(src, src.length + 1);
+                    extended[src.length] = c.tokenId;
+                    nextTokens.add(extended);
+                    nextScores.add(c.score);
+                    nextFinished.add(c.tokenId == eotToken);
+                    // 本轮前向过的 beam 用新 KV；未前向的（上轮已 finished）沿用旧 KV
+                    OrtSession.Result kv = produced.get(c.beamIdx);
+                    if (kv == null) kv = beamKvs.get(c.beamIdx);
+                    nextKvs.add(kv);
+                    retained.add(kv);
+                }
+
+                // 关闭未被保留候选引用的本轮产物与上轮 KV（frozenResult 保留到最后）
+                for (OrtSession.Result r : produced.values()) {
+                    if (!retained.contains(r)) {
+                        safeClose(r);
+                        opened.remove(r);
+                    }
+                }
+                for (OrtSession.Result r : beamKvs) {
+                    if (r != frozenResult && !retained.contains(r)) {
+                        safeClose(r);
+                        opened.remove(r);
+                    }
+                }
+
+                beamTokens = nextTokens;
+                beamScores = nextScores;
+                beamFinished = nextFinished;
+                beamKvs = nextKvs;
+
+                int bestB = 0;
+                float bestBScore = Float.NEGATIVE_INFINITY;
+                for (int b = 0; b < beamTokens.size(); b++) {
+                    if (!beamFinished.get(b) && beamScores.get(b) > bestBScore) {
+                        bestBScore = beamScores.get(b);
+                        bestB = b;
+                    }
+                }
+                if (detectLoopStart(beamTokens.get(bestB), initLen) >= 0) {
+                    if (diag) {
+                        log.info("beam 检测到重复循环, 提前终止 @ step {}", pos - initLen);
+                    }
+                    break;
+                }
+
+                if (progressLog && (pos - initLen) % 20 == 0) {
+                    int activeBeams = 0;
+                    for (boolean f : beamFinished) if (!f) activeBeams++;
+                    log.info("beam search 进度: temp={}, step={}, 活跃beam={}, 剩余预算={}",
+                            temperature, pos - initLen, activeBeams,
+                            Math.max(0, budget[0]));
+                }
+
+                if (beamFinished.stream().allMatch(f -> f)) break;
+            }
+
+            if (diag) {
+                firstDiag = false;
+                for (int b = 0; b < beamTokens.size(); b++) {
+                    int[] t = beamTokens.get(b);
+                    int eotAt = -1;
+                    for (int i = initLen; i < t.length; i++) if (t[i] == eotToken) { eotAt = i; break; }
+                    String text = tokenizer.decode(eotAt >= 0
+                            ? java.util.Arrays.copyOfRange(t, initLen, eotAt)
+                            : java.util.Arrays.copyOfRange(t, initLen, t.length));
+                    log.info("诊断 beam[{}] final: score={} text=\"{}\"", b,
+                            String.format("%.2f", beamScores.get(b)),
+                            text.length() > 60 ? text.substring(0, 60) + "..." : text);
+                }
+            }
+
+            return selectBestBeam(beamTokens, beamScores, beamFinished, initLen);
+        } finally {
+            for (OrtSession.Result r : opened) {
+                if (r != null) safeClose(r);
+            }
+        }
+    }
+
+    /**
+     * 从 KV-cache 前向结果中提取最后一个位置（seqLen-1）的 logits 向量。
+     * seqLen=1 时即该增量步的预测分布。
+     */
+    private float[] extractLastLogits(OrtSession.Result result, int seqLen) throws OrtException {
+        OnnxTensor logitsTensor = (OnnxTensor) result.get(decoderLogitsName).orElseThrow();
+        float[] fullLogits = logitsTensor.getFloatBuffer().array();
+        int vocabSize = config.vocabSize();
+        int offset = (seqLen - 1) * vocabSize;
+        return Arrays.copyOfRange(fullLogits, offset, offset + vocabSize);
+    }
+
+    /** 选择最优 beam：优先已结束（命中 EOT）的 beam，否则取长度归一化分数最高者。 */
+    private int[] selectBestBeam(java.util.List<int[]> beamTokens, java.util.List<Float> beamScores,
+                                 java.util.List<Boolean> beamFinished, int initLen) {
+        double lengthPenalty = 0.5;
+        int bestIdx = 0;
+        float bestScore = Float.NEGATIVE_INFINITY;
+        for (int i = 0; i < beamTokens.size(); i++) {
+            if (!beamFinished.get(i)) continue;
+            int genLen = beamTokens.get(i).length - initLen;
+            float normScore = beamScores.get(i) / (float) Math.pow(Math.max(genLen, 1), lengthPenalty);
+            if (normScore > bestScore) {
+                bestScore = normScore;
+                bestIdx = i;
+            }
+        }
+        if (bestScore == Float.NEGATIVE_INFINITY) {
+            for (int i = 0; i < beamTokens.size(); i++) {
+                int genLen = beamTokens.get(i).length - initLen;
+                float normScore = beamScores.get(i) / (float) Math.pow(Math.max(genLen, 1), lengthPenalty);
+                if (normScore > bestScore) {
+                    bestScore = normScore;
+                    bestIdx = i;
+                }
+            }
+        }
+        int[] tokens = beamTokens.get(bestIdx);
+        int start = initLen;
+        int end = tokens.length;
+        for (int i = start; i < tokens.length; i++) {
+            if (tokens[i] == eotToken) { end = i; break; }
+        }
+        return java.util.Arrays.copyOfRange(tokens, start, end);
+    }
+
+    private int[] runDecoderBeamSearchFull(float[] encoderState, int beamSize, float temperature,
+                                           int[] initTokens, long[] budget) throws OrtException {
         int maxLen = config.maxTargetPositions();
         int initLen = initTokens.length;
         boolean diag = firstDiag;
