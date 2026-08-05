@@ -945,8 +945,9 @@ public final class WhisperModel implements AutoCloseable {
     /** 贪心解码 decoder 调用预算（maxTargetPositions=448 + 余量）。 */
     private static final long MAX_GREEDY_CALLS = 500;
     /** 温度回退阶段 beam search 总 decoder 调用预算。
-     *  防止单分片在重复循环无法被检测到时卡死数分钟。约等于 2 次满长 beam。 */
-    private static final long MAX_BEAM_CALLS = 4000;
+     *  防止单分片在重复循环无法被检测到时卡死数小时（4000 次全量前向在 8 核
+     *  CPU 上约 100 分钟且完全静默）。800 ≈ 1.7 次满长 beam，最坏 ~20 分钟。 */
+    private static final long MAX_BEAM_CALLS = 800;
 
     /** 解码预算耗尽时抛出，由 {@link #runDecoder} 捕获并返回当前最优结果。 */
     private static final class DecodeBudgetExceeded extends RuntimeException {}
@@ -1053,8 +1054,9 @@ public final class WhisperModel implements AutoCloseable {
             return greedyTokens;
         }
 
-        log.info("贪心解码不达标 (quality={} compRatio={}), 回退到 beam search",
-                String.format("%.2f", greedyQuality), String.format("%.2f", greedyCompRatio));
+        log.info("贪心解码不达标 (quality={} compRatio={}), 回退到 beam search (预算={})",
+                String.format("%.2f", greedyQuality), String.format("%.2f", greedyCompRatio),
+                MAX_BEAM_CALLS);
 
         // 第二轮：beam search + 全温度回退。带总 decoder 调用预算，
         // 预算耗尽立即停止（返回当前最优），杜绝单分片卡死数分钟。
@@ -1065,9 +1067,12 @@ public final class WhisperModel implements AutoCloseable {
         for (float temp : TEMPERATURES) {
             int[] tokens;
             try {
+                log.info("beam search 开始: temp={}, 剩余预算={}", temp, beamBudget[0]);
                 tokens = runDecoderBeamSearch(encoderState, BEAM_SIZE, temp, initTokens, beamBudget);
+                log.info("beam search 完成: temp={}, 剩余预算={}", temp, beamBudget[0]);
             } catch (DecodeBudgetExceeded e) {
-                log.warn("beam search 预算耗尽 (temp={}), 停止温度回退", temp);
+                log.warn("beam search 预算耗尽 (temp={}, 剩余预算={}), 停止温度回退",
+                        temp, Math.max(0, beamBudget[0]));
                 break;
             }
 
@@ -1552,6 +1557,9 @@ public final class WhisperModel implements AutoCloseable {
         int maxLen = config.maxTargetPositions();
         int initLen = initTokens.length;
         boolean diag = firstDiag;
+        // 回退 beam search 的周期进度日志：非首分片（diag=false）也打印，
+        // 避免"回退后数十分钟静默无输出"被误判为假死。
+        boolean progressLog = !diag;
 
         // beam 状态：tokens、累积分数、是否已结束
         java.util.List<int[]> beamTokens = new java.util.ArrayList<>();
@@ -1632,6 +1640,15 @@ public final class WhisperModel implements AutoCloseable {
                     log.info("诊断 beam[{}] step {}: token={} score={}",
                             b, pos - initLen, last, String.format("%.2f", beamScores.get(b)));
                 }
+            }
+
+            // 回退 beam 周期进度：每 20 步报一次，证明任务仍在推进
+            if (progressLog && (pos - initLen) % 20 == 0) {
+                int activeBeams = 0;
+                for (boolean f : beamFinished) if (!f) activeBeams++;
+                log.info("beam search 进度: temp={}, step={}, 活跃beam={}, 剩余预算={}",
+                        temperature, pos - initLen, activeBeams,
+                        Math.max(0, budget[0]));
             }
 
             if (beamFinished.stream().allMatch(f -> f)) break;
