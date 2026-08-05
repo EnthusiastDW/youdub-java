@@ -31,11 +31,16 @@ public final class WhisperModels {
             "whisper-large-v3", "whisper-large-v3-ONNX"
     );
 
-    /** Whisper 模型需下载的文件列表。ONNX 文件在 {@code onnx/} 子目录下。 */
+    /** Whisper 模型需下载的文件列表。ONNX 文件在 {@code onnx/} 子目录下。
+     *  quantized(int8) 变体为优先选择（内存最小且 IO 保持 float32），
+     *  fp32 变体作为回退（WhisperConfig 按优先级自动选择已存在文件）。 */
     private static final String[][] WHISPER_FILES = {
             {"config.json",                     "/raw/main/config.json"},
             {"generation_config.json",          "/raw/main/generation_config.json"},
+            {"encoder_model_quantized.onnx",    "/resolve/main/onnx/encoder_model_quantized.onnx"},
             {"encoder_model.onnx",              "/resolve/main/onnx/encoder_model.onnx"},
+            {"decoder_model_quantized.onnx",    "/resolve/main/onnx/decoder_model_quantized.onnx"},
+            {"decoder_model_merged_quantized.onnx", "/resolve/main/onnx/decoder_model_merged_quantized.onnx"},
             {"decoder_model.onnx",              "/resolve/main/onnx/decoder_model.onnx"},
             {"decoder_model_merged.onnx",       "/resolve/main/onnx/decoder_model_merged.onnx"},
             {"vocab.json",                      "/raw/main/vocab.json"},

@@ -106,14 +106,15 @@ public final class WhisperConfig {
         this.beginSuppressTokens = parseIdArray(json.optJSONArray("begin_suppress_tokens"));
         this.suppressTokens = parseIdArray(json.optJSONArray("suppress_tokens"));
 
-        this.encoderModelPath = modelDir.resolve("encoder_model.onnx");
-        // fp16 decoder 优先（内存减半），回退 fp32。
-        // decoder_model_merged.onnx（含 KV-cache）在 ORT 1.22+ 下可用（1.20 会挂起，
-        // 现已升级）。merged 由 WhisperModel 按需加载；标准 decoder 仍作为回退。
-        Path fp16Path = modelDir.resolve("decoder_model_fp16.onnx");
-        this.decoderModelPath = Files.exists(fp16Path) ? fp16Path
-                : modelDir.resolve("decoder_model.onnx");
-        this.decoderMergedPath = modelDir.resolve("decoder_model_merged.onnx");
+        // encoder/decoder 模型按精度优先选择：quantized(int8) → fp16 → fp32。
+        // int8 权重内存最小且 IO 仍为 float32（ORT CPU 上无需改 tensor 类型）；
+        // fp16 次之；fp32 为最终回退。merged decoder（含 KV-cache）同规则。
+        this.encoderModelPath = firstExisting(modelDir, "encoder_model_quantized.onnx",
+                "encoder_model_fp16.onnx", "encoder_model.onnx");
+        this.decoderModelPath = firstExisting(modelDir, "decoder_model_quantized.onnx",
+                "decoder_model_fp16.onnx", "decoder_model.onnx");
+        this.decoderMergedPath = firstExisting(modelDir, "decoder_model_merged_quantized.onnx",
+                "decoder_model_merged_fp16.onnx", "decoder_model_merged.onnx");
         this.vocabPath        = modelDir.resolve("vocab.json");
         this.mergesPath       = modelDir.resolve("merges.txt");
 
@@ -215,5 +216,13 @@ public final class WhisperConfig {
         int[] result = new int[arr.length()];
         for (int i = 0; i < arr.length(); i++) result[i] = arr.getInt(i);
         return result;
+    }
+
+    private static Path firstExisting(Path dir, String... candidates) {
+        for (String name : candidates) {
+            Path p = dir.resolve(name);
+            if (Files.exists(p)) return p;
+        }
+        return dir.resolve(candidates[candidates.length - 1]);
     }
 }

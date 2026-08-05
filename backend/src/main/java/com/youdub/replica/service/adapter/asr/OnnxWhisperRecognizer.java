@@ -20,6 +20,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.Semaphore;
 
 import static com.youdub.replica.service.adapter.AdapterConstants.WHISPER_ONNX;
 
@@ -51,6 +52,26 @@ public class OnnxWhisperRecognizer implements SpeechRecognizer {
     /** 强制断句时，句内间隔达到该阈值才视为"自然断点" */
     private static final long MIN_INTERNAL_GAP_MS = 150;
 
+    /**
+     * 并发转录上限。ONNX Whisper 模型常驻内存巨大（medium.en 约 5.7GB），
+     * 多任务并发转录会叠加 native 内存直接触发 OOM。用信号量在 Spring 层强制串行，
+     * 与 PipelineOrchestrator 的 stageGates 互为兜底（防止配置被调大后失控）。
+     * 通过环境变量 {@code WHISPER_MAX_CONCURRENT} 配置，默认 1。
+     */
+    private final Semaphore transcribeGate = new Semaphore(maxConcurrentTranscribes());
+
+    private static int maxConcurrentTranscribes() {
+        String env = System.getenv("WHISPER_MAX_CONCURRENT");
+        if (env != null && !env.isBlank()) {
+            try {
+                return Math.max(1, Integer.parseInt(env.trim()));
+            } catch (NumberFormatException e) {
+                // 非法值回退默认
+            }
+        }
+        return 1;
+    }
+
     private final ObjectMapper objectMapper;
 
     // 懒加载 WhisperModel，不同语言重新创建
@@ -70,6 +91,22 @@ public class OnnxWhisperRecognizer implements SpeechRecognizer {
             log.info("ASR 结果已保存过，跳过：{}", asrFile);
             return;
         }
+
+        try {
+            transcribeGate.acquire();
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("等待 Whisper 并发许可被中断", e);
+        }
+        try {
+            transcribeInternal(task, audioPath, outputDir, language);
+        } finally {
+            transcribeGate.release();
+        }
+    }
+
+    private void transcribeInternal(Task task, Path audioPath, Path outputDir, String language) throws Exception {
+        Path asrFile = outputDir.resolve("asr.json");
 
         // 读取音频（保持原始采样率，WhisperModel 内部由 MelSpectrogram 重采样到 16kHz）
         WavAudio wav = WavAudio.read(audioPath);

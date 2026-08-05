@@ -903,14 +903,14 @@ public final class WhisperModel implements AutoCloseable {
             try { decoderSession.close(); } catch (Exception e) { /* ignore */ }
             decoderSession = null;
         }
-        Path mergedPath = modelDir.resolve("decoder_model_merged.onnx");
+        Path mergedPath = config.decoderMergedPath();
         if (Files.exists(mergedPath)) {
             try {
                 decoderSession = loadSession(mergedPath);
-                log.info("reload: 加载 decoder_model_merged.onnx 成功");
+                log.info("reload: 加载 {} 成功", mergedPath.getFileName());
                 return;
             } catch (OrtException e) {
-                log.warn("reload: decoder_model_merged.onnx 加载失败 ({}), 回退到标准解码器", e.getMessage());
+                log.warn("reload: {} 加载失败 ({}), 回退到标准解码器", mergedPath.getFileName(), e.getMessage());
             }
         }
         decoderSession = loadSession(config.decoderModelPath());
