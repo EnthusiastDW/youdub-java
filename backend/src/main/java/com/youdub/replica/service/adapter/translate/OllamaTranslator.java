@@ -9,7 +9,6 @@ import com.youdub.replica.model.entity.Task;
 import com.youdub.replica.service.SettingsService;
 
 import com.youdub.replica.util.HttpUtil;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
@@ -17,6 +16,7 @@ import org.springframework.stereotype.Component;
 import static com.youdub.replica.service.adapter.AdapterConstants.OLLAMA;
 
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -38,15 +38,26 @@ import java.util.concurrent.atomic.AtomicInteger;
  */
 @Slf4j
 @Component(OLLAMA)
-@RequiredArgsConstructor
 public class OllamaTranslator extends AbstractTranslator {
 
     private final OkHttpClient httpClient;
     private final ObjectMapper objectMapper;
     private final SettingsService settingsService;
-
-    @Qualifier("virtualExecutor")
     private final ExecutorService virtualExecutor;
+
+    public OllamaTranslator(OkHttpClient httpClient, ObjectMapper objectMapper,
+                            SettingsService settingsService,
+                            @Qualifier("virtualExecutor") ExecutorService virtualExecutor) {
+        // LLM 非流式推理（全文预处理/摘要）可能远超全局 10min read / 30min call，
+        // 派生共享连接池/线程池的长超时 client。
+        this.httpClient = httpClient.newBuilder()
+                .readTimeout(Duration.ofMinutes(60))
+                .callTimeout(Duration.ofMinutes(120))
+                .build();
+        this.objectMapper = objectMapper;
+        this.settingsService = settingsService;
+        this.virtualExecutor = virtualExecutor;
+    }
 
     private static final MediaType JSON_MEDIA_TYPE = MediaType.parse("application/json; charset=utf-8");
 

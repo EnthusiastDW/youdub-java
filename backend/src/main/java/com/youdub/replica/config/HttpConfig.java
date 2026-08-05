@@ -21,6 +21,9 @@ import java.util.Set;
  * <p>
  * 使用自定义 SocketFactory 启用 TCP keepalive，在长时间无数据流时探测连接活性，
  * 避免中间设备（docker-proxy、NAT、防火墙）静默断开连接后客户端无限等待。
+ * <p>
+ * 长耗时的 LLM 调用（如翻译全文预处理）如需更长超时，调用方可通过
+ * {@code newBuilder().readTimeout(...)} 从本 bean 派生，共享连接池/线程池。
  */
 @Configuration
 public class HttpConfig {
