@@ -29,10 +29,11 @@
 
         <!-- ONNX Runtime Java API（GPU 版内置 CPU+GPU backend，运行时自动检测 CUDA） -->
         <!-- Maven Central artifactId 是 onnxruntime_gpu（下划线），不是 onnxruntime-gpu -->
+        <!-- 1.22.0：修复 merged decoder (optimum::if 条件图) 在 CPU 上挂起的问题，KV-cache 可用 -->
         <dependency>
             <groupId>com.microsoft.onnxruntime</groupId>
             <artifactId>onnxruntime_gpu</artifactId>
-            <version>1.20.0</version>
+            <version>1.22.0</version>
         </dependency>
 
         <!-- FFT 变换（STFT，Whisper mel 频谱需要） -->

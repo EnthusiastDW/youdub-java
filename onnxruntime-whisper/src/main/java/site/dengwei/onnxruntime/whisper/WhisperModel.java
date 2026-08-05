@@ -170,11 +170,17 @@ public final class WhisperModel implements AutoCloseable {
 
         try {
             this.encoderSession = loadSession(config.encoderModelPath());
-            // 只加载标准解码器（fp16/fp32）。
-            // 不加载 decoder_model_merged.onnx：其含 optimum::if 条件图，在 ORT Java 1.20
-            // 下加载/推理可能挂起（此前实测过），KV-cache 加速以稳定性为代价，已弃用。
-            this.decoderSession = loadSession(config.decoderModelPath());
-            log.info("使用标准解码器: {}", config.decoderModelPath().getFileName());
+            // 优先加载 merged decoder（含 KV-cache，ORT 1.22+ 可用），
+            // 不存在时回退标准 decoder（无 KV-cache，性能慢 ~14 倍）。
+            Path merged = config.decoderMergedPath();
+            if (merged != null && Files.exists(merged)) {
+                this.decoderSession = loadSession(merged);
+                log.info("使用 merged decoder (KV-cache): {}", merged.getFileName());
+            } else {
+                this.decoderSession = loadSession(config.decoderModelPath());
+                log.warn("merged decoder 不存在，回退标准 decoder（无 KV-cache）: {}",
+                        config.decoderModelPath().getFileName());
+            }
 
             this.encoderInputName = discoverInputName(encoderSession, "input_features", "mel");
             this.encoderOutputName = discoverOutputName(encoderSession, "last_hidden_state", "encoder_output");
@@ -1172,13 +1178,18 @@ public final class WhisperModel implements AutoCloseable {
         int srcLen = encoderState.length / config.dModel();
         long[] encShape = {1, srcLen, config.dModel()};
 
+        // frozenResult: 首步 result，其 encoder KV 冻结复用到所有后续步（必须保持打开）。
+        // prevResult: 上一步 result，提供每步更新的 decoder KV。
+        OrtSession.Result frozenResult = null;
         OrtSession.Result prevResult = null;
 
         // 重复惩罚滑动窗口
         java.util.ArrayDeque<Integer> recentTokens = new java.util.ArrayDeque<>(repeatWindow);
 
         try {
-            // 第一步：完整初始序列 + 空 past（seqLen=0）+ use_cache_branch=true
+            // 首步：use_cache_branch=false 走全量路径（不能 true+空 past，
+            // 那样 cross-attn 的 encoder KV 为空，logits 数值错误，实测 diff~5.7）。
+            // 全量首步同时产出正确的 encoder KV（冻结复用）与 decoder KV（每步更新）。
             long[] initIds = new long[initTokens.length];
             for (int i = 0; i < initTokens.length; i++) initIds[i] = initTokens[i];
 
@@ -1188,10 +1199,10 @@ public final class WhisperModel implements AutoCloseable {
             inputs.put(decoderEncoderStateName, OnnxTensor.createTensor(env,
                     encBuf.duplicate(), encShape));
 
-            // 空 past tensors：shape [1, num_heads, 0, head_dim]，让模型走 cache 路径但从头计算
+            // 空 past tensors：shape [1, num_heads, 0, head_dim]
             java.util.List<OnnxTensor> emptyPastTensors = new java.util.ArrayList<>();
             if (useCacheBranchName != null) {
-                inputs.put(useCacheBranchName, OnnxTensor.createTensor(env, new boolean[]{true}));
+                inputs.put(useCacheBranchName, OnnxTensor.createTensor(env, new boolean[]{false}));
                 int numHeads = config.decoderAttentionHeads();
                 int headDim = config.dModel() / numHeads;
                 long[] emptyShape = {1, numHeads, 0, headDim};
@@ -1205,6 +1216,7 @@ public final class WhisperModel implements AutoCloseable {
 
             if (--budget[0] < 0) throw new DecodeBudgetExceeded();
             prevResult = decoderSession.run(inputs);
+            frozenResult = prevResult;
             closeOwnedInputs(inputs);
             for (OnnxTensor t : emptyPastTensors) safeClose(t);
 
@@ -1215,7 +1227,10 @@ public final class WhisperModel implements AutoCloseable {
             generated.add(token);
             addRecentToken(recentTokens, token, repeatWindow);
 
-            // 后续步：只传新 token + past（从 prevResult 的 present 输出获取）
+            // 后续步：只传新 token + past（从 prevResult 的 present 输出获取）。
+            // encoder KV 冻结：全部来自 frozenResult（首步全量路径的产物），
+            // 不可用 cache 分支输出的 present.*.encoder.*（坏 shape (0,...)，
+            // 回填会导致 cross-attn MatMul 广播失败）。decoder KV 每步从 prevResult 更新。
             int maxSteps = Math.min(config.maxTargetPositions() - initTokens.length, 448);
             for (int step = 1; step < maxSteps; step++) {
                 long[] ids = new long[]{token};
@@ -1229,17 +1244,24 @@ public final class WhisperModel implements AutoCloseable {
                     nextInputs.put(useCacheBranchName, OnnxTensor.createTensor(env, new boolean[]{true}));
                 }
 
-                // past inputs: 从 prevResult 获取 present 输出（按名称匹配，非索引）
-                for (String presentName : presentOutputNames) {
-                    String pastName = presentName.replace("present", "past_key_values");
-                    nextInputs.put(pastName,
-                            (OnnxTensor) prevResult.get(presentName).orElseThrow());
+                // past inputs：全部 past 输入都需提供。
+                // encoder.* 从 frozenResult（首步）取，decoder.* 从 prevResult（上一步）取。
+                for (String pastName : pastInputNames) {
+                    if (pastName.contains(".encoder.")) {
+                        nextInputs.put(pastName,
+                                (OnnxTensor) frozenResult.get(
+                                        pastName.replace("past_key_values", "present")).orElseThrow());
+                    } else {
+                        nextInputs.put(pastName,
+                                (OnnxTensor) prevResult.get(
+                                        pastName.replace("past_key_values", "present")).orElseThrow());
+                    }
                 }
 
                 if (--budget[0] < 0) throw new DecodeBudgetExceeded();
                 OrtSession.Result newResult = decoderSession.run(nextInputs);
 
-                closeResult(prevResult);      // 关闭旧 Result（含旧 present values）
+                if (prevResult != frozenResult) closeResult(prevResult); // 关闭旧 Result
                 closeOwnedInputs(nextInputs); // 关闭新创建的 input_ids/enc tensors
                 prevResult = newResult;
 
@@ -1253,7 +1275,8 @@ public final class WhisperModel implements AutoCloseable {
 
             return generated.stream().mapToInt(Integer::intValue).toArray();
         } finally {
-            closeResult(prevResult);
+            if (prevResult != frozenResult) closeResult(prevResult);
+            closeResult(frozenResult);
         }
     }
 

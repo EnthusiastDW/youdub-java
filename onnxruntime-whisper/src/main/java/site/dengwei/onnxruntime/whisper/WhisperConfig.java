@@ -42,6 +42,7 @@ public final class WhisperConfig {
 
     private final Path encoderModelPath;
     private final Path decoderModelPath;
+    private final Path decoderMergedPath;
     private final Path vocabPath;
     private final Path mergesPath;
 
@@ -107,10 +108,12 @@ public final class WhisperConfig {
 
         this.encoderModelPath = modelDir.resolve("encoder_model.onnx");
         // fp16 decoder 优先（内存减半），回退 fp32。
-        // decoder_model_merged.onnx（含 KV-cache）在 ORT Java 1.20 下不可用，跳过。
+        // decoder_model_merged.onnx（含 KV-cache）在 ORT 1.22+ 下可用（1.20 会挂起，
+        // 现已升级）。merged 由 WhisperModel 按需加载；标准 decoder 仍作为回退。
         Path fp16Path = modelDir.resolve("decoder_model_fp16.onnx");
         this.decoderModelPath = Files.exists(fp16Path) ? fp16Path
                 : modelDir.resolve("decoder_model.onnx");
+        this.decoderMergedPath = modelDir.resolve("decoder_model_merged.onnx");
         this.vocabPath        = modelDir.resolve("vocab.json");
         this.mergesPath       = modelDir.resolve("merges.txt");
 
@@ -203,6 +206,7 @@ public final class WhisperConfig {
 
     public Path encoderModelPath()        { return encoderModelPath; }
     public Path decoderModelPath()        { return decoderModelPath; }
+    public Path decoderMergedPath()       { return decoderMergedPath; }
     public Path vocabPath()               { return vocabPath; }
     public Path mergesPath()              { return mergesPath; }
 
