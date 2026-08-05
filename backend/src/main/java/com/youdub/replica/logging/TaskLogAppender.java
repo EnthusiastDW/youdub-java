@@ -27,7 +27,7 @@ import java.util.Map;
 public class TaskLogAppender extends AppenderBase<ILoggingEvent> {
 
     private static final DateTimeFormatter TIME_FMT =
-            DateTimeFormatter.ofPattern("HH:mm:ss").withZone(ZoneId.systemDefault());
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss.SSS").withZone(ZoneId.systemDefault());
 
     private Path logDir;
 
@@ -55,9 +55,12 @@ public class TaskLogAppender extends AppenderBase<ILoggingEvent> {
             Path logFile = logDir.resolve("task-" + taskId + ".log");
 
             String timestamp = TIME_FMT.format(Instant.ofEpochMilli(event.getTimeStamp()));
-            String line = String.format("[%s] [%-5s] %s%s",
+            String location = resolveLocation(event);
+            String line = String.format("[%s] [%-5s] [%s] [%s] %s%s",
                     timestamp,
                     event.getLevel().levelStr,
+                    event.getThreadName(),
+                    location,
                     event.getFormattedMessage(),
                     System.lineSeparator());
 
@@ -66,5 +69,19 @@ public class TaskLogAppender extends AppenderBase<ILoggingEvent> {
         } catch (IOException e) {
             addError("Failed to write task log for taskId=" + taskId, e);
         }
+    }
+
+    /**
+     * 解析「文件名:行号」用于日志定位。调用方数据在事件上被 logback 缓存
+     * （控制台 pattern 含 %file/%line 时会预先提取），此处复用不产生额外开销。
+     */
+    private static String resolveLocation(ILoggingEvent event) {
+        StackTraceElement[] callerData = event.getCallerData();
+        if (callerData == null || callerData.length == 0) {
+            return "?:?";
+        }
+        StackTraceElement frame = callerData[0];
+        String fileName = frame.getFileName();
+        return (fileName != null ? fileName : "?") + ":" + frame.getLineNumber();
     }
 }
