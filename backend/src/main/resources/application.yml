@@ -102,7 +102,7 @@ app:
     concurrency:
       download: 2
       separate: 1
-      asr: 2
+      asr: 1
       asr_correct: 2
       asr_fix: 4
       translate: 2

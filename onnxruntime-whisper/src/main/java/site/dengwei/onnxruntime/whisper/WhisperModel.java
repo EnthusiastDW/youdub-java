@@ -1721,10 +1721,27 @@ public final class WhisperModel implements AutoCloseable {
 
     private static OrtSession loadSession(Path modelPath) throws OrtException {
         OrtSession.SessionOptions opts = new OrtSession.SessionOptions();
-        opts.setIntraOpNumThreads(2);
+        opts.setIntraOpNumThreads(defaultNumThreads());
         opts.setCPUArenaAllocator(false);
         opts.setMemoryPatternOptimization(false);
         return OrtEnvironment.getEnvironment().createSession(modelPath.toString(), opts);
+    }
+
+    /**
+     * CPU 推理线程数：优先读 ONNX_NUM_THREADS 环境变量，缺省用全部可用核。
+     * 与 MDX-NET 分离器（MdxNetModel.defaultNumThreads）读取同一变量；
+     * 此前硬编码 2 线程导致 8 核机器只用到 1/4 算力。
+     */
+    private static int defaultNumThreads() {
+        String env = System.getenv("ONNX_NUM_THREADS");
+        if (env != null && !env.isBlank()) {
+            try {
+                return Math.max(1, Integer.parseInt(env.trim()));
+            } catch (NumberFormatException e) {
+                log.warn("ONNX_NUM_THREADS 格式无效: {}, 使用默认值", env);
+            }
+        }
+        return Math.max(1, Runtime.getRuntime().availableProcessors());
     }
 
     private static String discoverInputName(OrtSession session, String... candidates)
