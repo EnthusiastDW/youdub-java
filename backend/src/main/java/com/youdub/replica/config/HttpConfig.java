@@ -33,9 +33,9 @@ public class HttpConfig {
         return new OkHttpClient.Builder()
                 .protocols(List.of(Protocol.HTTP_1_1))
                 .connectTimeout(Duration.ofSeconds(30))
-                .readTimeout(Duration.ofMinutes(10))   // 响应字节间最大空闲时间
+                .readTimeout(Duration.ZERO)   // 响应字节间最大空闲时间
                 .writeTimeout(Duration.ofMinutes(30))
-                .callTimeout(Duration.ofMinutes(30))    // 单次调用总预算，防"挂起不返回"
+                .callTimeout(Duration.ZERO)    // 单次调用总预算，防"挂起不返回"
                 .retryOnConnectionFailure(false)
                 .socketFactory(new KeepAliveSocketFactory())
                 .build();
