@@ -206,7 +206,7 @@ python server.py
 | `TRANSLATE_MODEL` | `gpt-4o-mini` | 翻译模型 |
 | `TTS_PROVIDER` | `voxcpm` | TTS 提供商：`voxcpm` / `edge-tts` / `openai-tts` |
 | `APP_SEPARATE_PROVIDER` | `onnx` | 人声分离方案：`ffmpeg-simple` / `demucs` / `onnx` |
-| `APP_ASR_PROVIDER` | `whisper-api` | ASR 方案：`whisper-api` / `whisper-cpp` |
+| `APP_ASR_PROVIDER` | `whisper-cpp` | ASR 方案：`whisper-cpp` / `whisper-api` |
 | `VOXCPM_SERVICE_URL` | `http://python-services:8001` | VoxCPM 服务地址 |
 
 完整配置项见 [backend/src/main/resources/application.yml](backend/src/main/resources/application.yml)。

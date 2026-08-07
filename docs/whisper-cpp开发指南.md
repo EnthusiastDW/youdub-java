@@ -167,3 +167,63 @@ AMD 显卡的"余热利用"：
 [ ] 编写 FFmpeg 脚本，将测试视频转为 16kHz WAV。
 [ ] 启动 Server 模式，用 Postman/Python 发送请求验证 JSON 返回。
 [ ] 调整线程数 -t，观察任务管理器，找到 CPU 占用与速度的最佳平衡点。
+
+---
+
+📌 七、 实际实施记录（2026-08 于 youdub-java 仓库）
+
+本文档前半部分为通用选型指南；以下为在本仓库（Java/Spring Boot + Docker）中落地 whisper-cpp 的真实方案与踩坑记录。
+
+### 7.1 集成方式（与上文推荐不同：选子进程而非 Server 模式）
+
+本仓库 ASR 阶段使用 **whisper-cli 子进程**（非 HTTP Server / C API），原因：
+
+- ASR 并发锁已由 `PipelineOrchestrator`（pipeline.asr 并发=1）+ `WHISPER_CPP_MAX_CONCURRENT=1` 保证串行，常驻 Server 收益有限。
+- 子进程天然故障隔离：whisper.cpp 崩溃不会影响 JVM。
+- 模型懒下载逻辑与 whisper-onnx 对齐，镜像不随模型增大。
+
+调用链：`WhisperCppRecognizer` → `CommandRunner` 执行 `whisper-cli` → 解析 `-ojf` 词级 JSON。
+
+### 7.2 构建：静态链接（关键修复）
+
+**坑**：Linux 下 whisper.cpp 默认 `BUILD_SHARED_LIBS=ON`（与 MINGW 不同），产物动态链接 `libwhisper.so.1`，基础镜像中缺失导致 `whisper-cli: error while loading shared libraries`。
+
+**修复**：Dockerfile whisper-build 阶段加 `-DBUILD_SHARED_LIBS=OFF`，产物为 2.8MB 单静态二进制，直接 COPY 进基础镜像。
+
+### 7.3 超时与线程
+
+- **超时**：`WhisperCppRecognizer` 原实现把 `timeoutMs=0` 回退为硬性 600s，导致 10min 分片在 8 线程 CPU 上超时（每片实际 15-16min）。修复为 `timeoutMs=0` 时传 `0L`（无限等待）。
+- **线程**：`threads` 默认 4→8（匹配服务器 8 物理线程）。
+
+### 7.4 控制 token 污染（重要坑）
+
+**现象**：`-ojf` 输出的 tokens 文本含 `[_BEG_]` 和 `[_TT_nnn]`（注意**带前导空格**，如 `" [_BEG_]"`）。未过滤时真实任务产出 548 utterances 中有 376 个 `[_TT_]`、73 个 `[_BEG_]`，文本被污染。
+
+**修复**：`isWhisperCppControlToken()` —— `text.trim()` 后匹配 `[_BEG_]` 或正则 `[_TT_\d+]`，在 token 展平阶段过滤。单测：`WhisperCppRecognizerTest`（4 个用例）。
+
+**效果**：同一任务重跑后 utterances 548→477，翻译句数 335→316，零 control token。
+
+### 7.5 服务器基准数据（真实任务 27min 音频，E3-1231 v3 / 8 线程）
+
+| Provider | 模型 | ASR 耗时 | RTF | 质量 |
+|---|---|---|---|---|
+| whisper-onnx | medium.en (244M) | 50m46s | 1.88x | 一般（误识别多） |
+| **whisper-cpp（默认）** | large-v3-turbo Q5_0 (574M) | 57m23s | 2.11x | 好（术语/专名准确） |
+
+- whisper-cpp 较 ONNX 慢约 13%，但模型大 2.3 倍，识别质量显著更高 → **默认 provider 定为 whisper-cpp**（ONNX 保留为降级选项）。
+- 单片段（180s 音频，无并发干扰）实测 288s，RTF 1.6x。
+- 长音频分片：FFmpeg 预切 10min/片 + 逐片 `whisper-cli -ojf`，片间时间戳通过分片偏移校正。
+
+### 7.6 模型下载（服务器网络受限场景）
+
+- huggingface.co 直连超时，需走代理：`-x http://dengwei.local:7890`。
+- 模型路径：`/app/data/whisper-models/`（挂载 `/mnt/e/youdub-data/whisper-models/`）。
+  - `ggml-large-v3-turbo-q5_0.bin`（574MB）
+  - `ggml-silero-v6.2.0.bin`（885KB，VAD）
+
+### 7.7 部署清单
+
+- `backend/Dockerfile`：whisper-build 阶段（whisper.cpp v1.9.2 tag，`-DBUILD_SHARED_LIBS=OFF`）。
+- `application.yml`：`asr.provider: whisper-cpp`（默认）；`whisper-cpp.threads: 8`。
+- SQLite `settings` 表 `asr.provider` 键可在运行时覆盖默认值（优先级高于 yml）。
+- ASR 配置项：`model` / `vad-model` / `vad` / `threads` / `beam-size`（settings 页可改）。

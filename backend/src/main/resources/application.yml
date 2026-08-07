@@ -34,7 +34,7 @@ app:
     proxy: http://dengwei.local:7890
 
   asr:
-    provider: whisper-api
+    provider: whisper-cpp
     whisper-api:
       base-url: http://192.168.1.2:8001
       url: http://192.168.1.2:8001/v1/audio/transcriptions
