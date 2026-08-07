@@ -34,6 +34,11 @@ const PROVIDER_FIELDS: Record<string, Record<string, FieldDef[]>> = {
     ],
     "whisper-cpp": [
       { key: "model", type: "text" },
+      { key: "vad", type: "boolean" },
+      { key: "threads", type: "number" },
+      { key: "beamSize", type: "number" },
+      { key: "prompt", type: "text" },
+      { key: "chunkMinutes", type: "number" },
     ],
     "whisper-onnx": [],
   },

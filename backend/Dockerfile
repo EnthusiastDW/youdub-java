@@ -11,8 +11,28 @@ COPY . .
 RUN --mount=type=cache,target=/root/.m2/repository \
     mvn -s backend/settings.xml -pl backend -am package -DskipTests -B
 
+# ── whisper.cpp 编译阶段（whisper-cli 打进 base 层）─────────
+FROM ubuntu:22.04 AS whisper-build
+WORKDIR /src
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        git \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 --branch v1.9.2 \
+        https://github.com/ggml-org/whisper.cpp.git
+RUN cmake -B build -S whisper.cpp \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DWHISPER_BUILD_EXAMPLES=ON \
+        -DWHISPER_BUILD_SERVER=OFF \
+        -DWHISPER_BUILD_TESTS=OFF \
+    && cmake --build build --config Release -j$(nproc) --target whisper-cli
+
 # ── 基础工具层（层缓存持久化，除非改动 apt/pip 命令） ────
 FROM eclipse-temurin:21-jre AS youdub-backend-base
+
+COPY --from=whisper-build /src/build/bin/whisper-cli /usr/local/bin/whisper-cli
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && \
