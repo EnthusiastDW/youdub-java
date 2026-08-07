@@ -1,5 +1,6 @@
 package com.youdub.replica.service.adapter.asr;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -59,8 +60,12 @@ public class OpenAiAsrCorrector implements AsrCorrector {
 
     /** 每个批次的最大字符数（英文 ~4 字符/token ≈ 3000 tokens），防止 API 上下文超限 */
     private static final int BATCH_CHAR_LIMIT = 12000;
-    /** 每批次最大输出 token；纠错改为 diff-only 后输出很小，4096 足够 */
-    private static final int MAX_OUTPUT_TOKENS = 4096;
+    /**
+     * 每批次最大输出 token。prompt 要求每条修正返回完整句子（非 diff），
+     * 165 条批次的完整输出可达数千 token，4096 偏低会触发 finish_reason=length 截断。
+     * 16384 对整批全句输出留足余量。
+     */
+    private static final int MAX_OUTPUT_TOKENS = 16384;
     /** 修正文本与原文的单词重叠率下限，低于该值视为改写而非纠错，丢弃 */
     private static final double OVERLAP_MIN_RATIO = 0.5;
 
@@ -301,22 +306,38 @@ public class OpenAiAsrCorrector implements AsrCorrector {
             }
 
             JsonNode root = objectMapper.readTree(body);
-            String content = root.path("choices").path(0).path("message").path("content").asText("").trim();
+            JsonNode choice = root.path("choices").path(0);
+            String content = choice.path("message").path("content").asText("").trim();
 
             if (content.isEmpty()) {
                 throw new AiChatRetry.AiRetryableException("AI 返回空内容");
             }
-            if (AiChatRetry.isRefusal(content)) {
-                throw new AiChatRetry.AiRetryableException("AI 拒绝回答：" + truncate(content, 100));
+            if ("length".equals(choice.path("finish_reason").asText(""))) {
+                throw new AiChatRetry.AiRetryableException("AI 输出被 max_tokens 截断 (finish_reason=length)");
             }
 
+            // 先提取并解析 JSON，再做拒绝判定：合法的 corrections JSON 不可能是拒绝，
+            // 且 JSON 内嵌的转写文本可能包含 "i'm sorry" 等短语，直接子串匹配会误报
             String json = extractJson(content);
             if (json == null) {
+                if (AiChatRetry.isRefusal(content, objectMapper)) {
+                    throw new AiChatRetry.AiRetryableException("AI 拒绝回答：" + truncate(content, 100));
+                }
                 throw new AiChatRetry.AiRetryableException("AI 返回非 JSON：" + truncate(content, 100));
             }
 
-            JsonNode parsed = objectMapper.readTree(json);
+            JsonNode parsed;
+            try {
+                parsed = objectMapper.readTree(json);
+            } catch (JsonProcessingException e) {
+                // 截断/损坏的 JSON 按可重试的 AI 响应问题上报，而不是被当成网络错误
+                throw new AiChatRetry.AiRetryableException(
+                        "AI 返回 JSON 解析失败（可能被截断）：" + truncate(json, 100), e);
+            }
             if (!parsed.has("corrections") && !parsed.has("utterances")) {
+                if (AiChatRetry.isRefusal(content, objectMapper)) {
+                    throw new AiChatRetry.AiRetryableException("AI 拒绝回答：" + truncate(content, 100));
+                }
                 throw new AiChatRetry.AiRetryableException("AI 返回 JSON 缺少 corrections/utterances 数组");
             }
 

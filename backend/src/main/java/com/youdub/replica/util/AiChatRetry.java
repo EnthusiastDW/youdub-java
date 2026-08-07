@@ -61,9 +61,38 @@ public final class AiChatRetry {
 
     /**
      * 判断 LLM 返回内容是否为拒绝回答。
+     * <p>
+     * 结构化 JSON 输出（以 {@code {} 或 {@code [} 开头）不可能是拒绝回答，直接返回 false。
+     * 否则对全文做大小写不敏感的子串匹配。原因：ASR 纠错/翻译要求 LLM 返回 JSON，
+     * 其内嵌的转写/译文文本可能包含 "i'm sorry"、"cannot provide" 等短语，
+     * 全文本子串匹配会把合法 JSON 误判为拒绝。
      */
     public static boolean isRefusal(String content) {
+        return isRefusal(content, null);
+    }
+
+    /**
+     * 判断 LLM 返回内容是否为拒绝回答（JSON 感知版本）。
+     * <p>
+     * 有 {@link ObjectMapper} 时优先尝试解析：能解析为合法 JSON 的结构化输出
+     * 不可能是拒绝回答，返回 false；解析失败（非纯 JSON，如拒绝散文）再走短语匹配。
+     *
+     * @param objectMapper 可用的 ObjectMapper，为 null 时退化为 {@link #isRefusal(String)}
+     */
+    public static boolean isRefusal(String content, ObjectMapper objectMapper) {
         if (content == null) return false;
+        String trimmed = content.trim();
+        if (trimmed.isEmpty()) return false;
+        if (objectMapper != null) {
+            try {
+                objectMapper.readTree(trimmed);
+                return false; // 合法 JSON（结构化输出）不可能是拒绝
+            } catch (Exception ignored) {
+                // 非纯 JSON，继续短语匹配
+            }
+        } else if (trimmed.startsWith("{") || trimmed.startsWith("[")) {
+            return false; // 结构化 JSON 开头的输出不可能是拒绝
+        }
         String lower = content.toLowerCase();
         return REFUSAL_PHRASES.stream().anyMatch(lower::contains);
     }
@@ -217,14 +246,16 @@ public final class AiChatRetry {
 
             if (code == 200) {
                 JsonNode root = objectMapper.readTree(body);
-                String content = root.path("choices")
-                        .path(0).path("message").path("content")
-                        .asText("").trim();
+                JsonNode choice = root.path("choices").path(0);
+                String content = choice.path("message").path("content").asText("").trim();
 
                 if (content.isEmpty()) {
                     throw new AiRetryableException("AI 返回空内容");
                 }
-                if (isRefusal(content)) {
+                if ("length".equals(choice.path("finish_reason").asText(""))) {
+                    throw new AiRetryableException("AI 输出被 max_tokens 截断 (finish_reason=length)");
+                }
+                if (isRefusal(content, objectMapper)) {
                     throw new AiRetryableException("AI 拒绝回答：" + truncate(content, 100));
                 }
                 return content;
