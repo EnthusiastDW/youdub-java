@@ -357,7 +357,12 @@ public class WhisperCppRecognizer implements SpeechRecognizer {
                     long from = tok.path("offsets").path("from").asLong(-1);
                     long to = tok.path("offsets").path("to").asLong(-1);
                     if (from >= 0 && to >= from) {
-                        allWords.add(new TokenWord(tok.path("text").asText(""), from, to));
+                        String text = tok.path("text").asText("");
+                        // 剥离 whisper.cpp 控制 token（[_BEG_] / [_TT_nnn] 等），不进入 ASR 文本
+                        if (isWhisperCppControlToken(text)) {
+                            continue;
+                        }
+                        allWords.add(new TokenWord(text, from, to));
                     }
                 }
             } else {
@@ -425,6 +430,22 @@ public class WhisperCppRecognizer implements SpeechRecognizer {
         return last == '.' || last == '!' || last == '?'
                 || last == '。' || last == '！' || last == '？'
                 || last == '\n';
+    }
+
+    /** whisper.cpp 控制 token（[_BEG_] / [_TT_nnn] 等），不出现在转录文本中 */
+    private static boolean isWhisperCppControlToken(String text) {
+        if (text == null) {
+            return false;
+        }
+        String t = text.trim();
+        if ("[_BEG_]".equals(t)) {
+            return true;
+        }
+        if (t.startsWith("[_TT_") && t.endsWith("]")) {
+            String num = t.substring(5, t.length() - 1);
+            return !num.isEmpty() && num.chars().allMatch(Character::isDigit);
+        }
+        return false;
     }
 
     private static boolean isClauseEnd(String token) {
