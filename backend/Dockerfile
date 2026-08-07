@@ -24,6 +24,7 @@ RUN git clone --depth 1 --branch v1.9.2 \
         https://github.com/ggml-org/whisper.cpp.git
 RUN cmake -B build -S whisper.cpp \
         -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_SHARED_LIBS=OFF \
         -DWHISPER_BUILD_EXAMPLES=ON \
         -DWHISPER_BUILD_SERVER=OFF \
         -DWHISPER_BUILD_TESTS=OFF \
