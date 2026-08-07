@@ -60,7 +60,7 @@ public class AppProperties {
             private String vadModel;
             private String vadModelPath;
             private boolean vad = true;
-            private int threads = 4;
+            private int threads = 8;
             private int beamSize = 5;
             private String prompt;
             private int chunkMinutes = 10;

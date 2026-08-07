@@ -275,7 +275,7 @@ public class WhisperCppRecognizer implements SpeechRecognizer {
         command.add("-np");
 
         log.info("whisper.cpp 执行分片识别：task={}, chunk={}", task.getId(), wav.getFileName());
-        long cmdTimeout = cfg.getTimeoutMs() > 0 ? cfg.getTimeoutMs() : 600_000L;
+        long cmdTimeout = cfg.getTimeoutMs() > 0 ? cfg.getTimeoutMs() : 0L;
         CommandRunner.run(Command.builder()
                 .add(command)
                 .timeout(cmdTimeout)
