@@ -5,6 +5,7 @@ import com.youdub.replica.dto.OpenAiModelsRequest;
 import com.youdub.replica.dto.SettingsRequest;
 import com.youdub.replica.dto.SettingsResponse;
 import com.youdub.replica.service.SettingsService;
+import com.youdub.replica.service.adapter.asr.WhisperCppModels;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -44,5 +45,10 @@ public class SettingsController {
     public Map<String, List<String>> listEdgeTtsVoices() {
         List<String> voices = settingsService.getEdgeTtsVoices();
         return Map.of("voices", voices);
+    }
+
+    @GetMapping("/whisper-cpp/models")
+    public Map<String, List<String>> listWhisperCppModels() {
+        return Map.of("models", WhisperCppModels.AVAILABLE_WHISPER_MODELS);
     }
 }

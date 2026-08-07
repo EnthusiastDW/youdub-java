@@ -6,6 +6,7 @@ import site.dengwei.onnxruntime.util.Models;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 
 /**
  * whisper.cpp 模型文件管理（GGML 格式）。
@@ -25,6 +26,20 @@ public final class WhisperCppModels {
     public static final String WHISPER_MODEL = "ggml-large-v3-turbo-q5_0.bin";
     /** Silero-VAD 模型（小文件） */
     public static final String VAD_MODEL = "ggml-silero-v6.2.0.bin";
+
+    /**
+     * 可选转写模型清单（供前端下拉框选择）。
+     * 按速度→质量排序：tiny < base < small < medium < large-v3-turbo < large-v3。
+     * 均存在于 HF ggerganov/whisper.cpp 仓库，可经 ensureWhisperModel 懒下载。
+     */
+    public static final List<String> AVAILABLE_WHISPER_MODELS = List.of(
+            "ggml-tiny.en-q5_1.bin",
+            "ggml-base.en-q5_1.bin",
+            "ggml-small.en-q5_1.bin",
+            "ggml-medium.q5_0.bin",
+            "ggml-large-v3-turbo-q5_0.bin",
+            "ggml-large-v3-q5_0.bin"
+    );
 
     private WhisperCppModels() {
     }

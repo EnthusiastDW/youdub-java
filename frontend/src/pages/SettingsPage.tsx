@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useI18n } from "@/i18n/index";
-import { getSettings, saveSettings, getEdgeTtsVoices } from "@/api/client";
+import { getSettings, saveSettings, getEdgeTtsVoices, getWhisperCppModels } from "@/api/client";
 import { formatDateTime, formatFileSize } from "@/lib/utils";
 import type { ProvidersData, Settings, SettingsRequest } from "@/types";
 
@@ -33,7 +33,7 @@ const PROVIDER_FIELDS: Record<string, Record<string, FieldDef[]>> = {
       { key: "model", type: "text" },
     ],
     "whisper-cpp": [
-      { key: "model", type: "text" },
+      { key: "model", type: "select" },
       { key: "vad", type: "boolean" },
       { key: "threads", type: "number" },
       { key: "beamSize", type: "number" },
@@ -278,6 +278,9 @@ export default function SettingsPage() {
   // Edge TTS voice options
   const [edgeTtsVoices, setEdgeTtsVoices] = useState<string[]>([]);
 
+  // whisper.cpp model options
+  const [whisperCppModels, setWhisperCppModels] = useState<string[]>([]);
+
   // Provider config values (key format: "step.provider.field")
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   // ref 始终指向最新 configValues，避免 handleSave 闭包拿到旧值
@@ -368,6 +371,23 @@ export default function SettingsPage() {
     })();
     return () => { mounted = false; };
   }, [ttsProvider]);
+
+  // Fetch whisper.cpp model options when the ASR provider is whisper-cpp
+  useEffect(() => {
+    if (asrProvider !== "whisper-cpp") return;
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await getWhisperCppModels();
+        if (mounted) {
+          setWhisperCppModels(data.models);
+        }
+      } catch {
+        // keep empty list so UI falls back gracefully
+      }
+    })();
+    return () => { mounted = false; };
+  }, [asrProvider]);
 
   const handleConfigChange = (key: string, value: string) => {
     setConfigValues((prev) => ({ ...prev, [key]: value }));
@@ -499,6 +519,9 @@ export default function SettingsPage() {
             onProviderChange={setAsrProvider}
             configValues={configValues}
             onConfigChange={handleConfigChange}
+            selectOptions={{
+              "asr.whisper-cpp.model": whisperCppModels,
+            }}
             t={t.settings}
           />
         </div>
