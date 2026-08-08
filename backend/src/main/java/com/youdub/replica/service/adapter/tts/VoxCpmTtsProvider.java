@@ -12,6 +12,7 @@ import okhttp3.*;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -147,12 +148,7 @@ public class VoxCpmTtsProvider implements TtsProvider {
                                 .post(RequestBody.create(bodyBuilder.toByteArray(), MediaType.parse("multipart/form-data; boundary=" + boundary)))
                                 .build();
 
-                        Response response = HttpUtil.sendInterruptible(httpClient, request);
-                        byte[] audioData = response.body() != null ? response.body().bytes() : new byte[0];
-                        if (response.code() != 200) {
-                            String errorBody = new String(audioData, java.nio.charset.StandardCharsets.UTF_8);
-                            throw new RuntimeException("VoxCPM API 调用失败 [" + response.code() + "]: " + errorBody);
-                        }
+                        byte[] audioData = sendWithRetry(voxcpmUrl, bodyBuilder.toByteArray(), boundary);
                         Files.write(outputFile, audioData);
 
                         int done = completed.incrementAndGet();
@@ -166,7 +162,9 @@ public class VoxCpmTtsProvider implements TtsProvider {
                     Thread.currentThread().interrupt();
                     throw new RuntimeException("TTS 被中断", e);
                 } catch (Exception e) {
-                    throw new RuntimeException("VoxCPM TTS 失败：" + item.text, e);
+                    log.warn("VoxCPM TTS 合成失败：task={}, index={}, cause={}: {}", task.getId(), item.index,
+                            e.getClass().getSimpleName(), rootCauseMessage(e));
+                    throw new RuntimeException("VoxCPM TTS 失败（" + e.getClass().getSimpleName() + "）：" + item.text, e);
                 }
             });
             futures.add(future);
@@ -191,4 +189,43 @@ public class VoxCpmTtsProvider implements TtsProvider {
     }
 
     private record TtsItem(int index, String text, String speaker, int vocalIdx) {}
+
+    /**
+     * 发送 TTS 请求，对连接级错误（Broken pipe / SocketException 等）重试一次。
+     * 服务端在请求体传输阶段断开连接（如 uvicorn 重启）时，请求未被处理，重试安全。
+     */
+    private byte[] sendWithRetry(String url, byte[] body, String boundary) throws IOException, InterruptedException {
+        IOException lastIoError = null;
+        for (int attempt = 1; attempt <= 2; attempt++) {
+            try {
+                Request request = new Request.Builder()
+                        .url(url)
+                        .header("Content-Type", "multipart/form-data; boundary=" + boundary)
+                        .post(RequestBody.create(body, MediaType.parse("multipart/form-data; boundary=" + boundary)))
+                        .build();
+                Response response = HttpUtil.sendInterruptible(httpClient, request);
+                byte[] audioData = response.body() != null ? response.body().bytes() : new byte[0];
+                if (response.code() != 200) {
+                    String errorBody = new String(audioData, java.nio.charset.StandardCharsets.UTF_8);
+                    throw new RuntimeException("VoxCPM API 调用失败 [" + response.code() + "]: " + errorBody);
+                }
+                return audioData;
+            } catch (IOException e) {
+                lastIoError = e;
+                if (attempt < 2) {
+                    log.warn("VoxCPM TTS 连接中断（{}），第 {} 次重试", e.getClass().getSimpleName(), attempt);
+                }
+            }
+        }
+        throw lastIoError;
+    }
+
+    private static String rootCauseMessage(Throwable t) {
+        Throwable cur = t;
+        while (cur.getCause() != null && cur.getCause() != cur) {
+            cur = cur.getCause();
+        }
+        String msg = cur.getMessage();
+        return msg == null || msg.isBlank() ? cur.getClass().getSimpleName() : msg;
+    }
 }
