@@ -35,14 +35,29 @@ RUN cmake -B build -S whisper.cpp \
 # 注意：voxcpm2-cli 自 b262 起才合并进仓库，v1.0.22 及其之前均无此目标
 FROM ubuntu:22.04 AS voxcpm-build
 WORKDIR /src
+# 可选：构建代理（如 http://dengwei.local:7890）。服务器侧经代理访问 GitHub 更稳，
+# 传入方式：docker compose build --build-arg GIT_PROXY=http://dengwei.local:7890 backend
+ARG GIT_PROXY=""
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         cmake \
         git \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-RUN git clone --depth 1 --branch b262 \
-        https://github.com/tc-mb/llama.cpp-omni.git
+# 大仓库克隆必须：HTTP/1.1（避免 HTTP/2 CANCEL/early EOF）+ blob:none（按需拉取，
+# 拆小传输单元）+ 代理（可选）；失败自动重试 3 次
+RUN if [ -n "$GIT_PROXY" ]; then \
+        git config --global http.proxy "$GIT_PROXY" && \
+        git config --global https.proxy "$GIT_PROXY"; \
+    fi && \
+    for i in 1 2 3; do \
+        rm -rf llama.cpp-omni && \
+        git -c http.version=HTTP/1.1 clone --depth 1 --filter=blob:none \
+            --single-branch --branch b262 \
+            https://github.com/tc-mb/llama.cpp-omni.git && break; \
+        echo "clone attempt $i failed, retrying..." && sleep 5; \
+    done && \
+    test -f llama.cpp-omni/tools/omni/voxcpm2/voxcpm2_cli.cpp
 # GGML 默认 CPU 后端；静态链接保证产物可在 JRE 基础镜像中直接运行
 # LLAMA_OPENSSL=OFF：构建镜像未安装 libssl-dev，且 voxcpm2-cli 不需要 HTTPS
 RUN cmake -B build -S llama.cpp-omni \

@@ -80,6 +80,8 @@ services:
     build:
       context: .
       dockerfile: backend/Dockerfile
+      args:
+        GIT_PROXY: ${GIT_PROXY:-}
     container_name: youdub-backend
     ports:
       - "8000:8000"
