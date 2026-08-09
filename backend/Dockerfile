@@ -30,10 +30,36 @@ RUN cmake -B build -S whisper.cpp \
         -DWHISPER_BUILD_TESTS=OFF \
     && cmake --build build --config Release -j$(nproc) --target whisper-cli
 
+# ── VoxCPM2 编译阶段（voxcpm2-cli 打进 base 层）────────────
+# llama.cpp-omni：官方推荐的 VoxCPM2 C++ 推理引擎（CPU/Metal/CUDA/Vulkan）
+# 注意：voxcpm2-cli 自 b262 起才合并进仓库，v1.0.22 及其之前均无此目标
+FROM ubuntu:22.04 AS voxcpm-build
+WORKDIR /src
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        build-essential \
+        cmake \
+        git \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 --branch b262 \
+        https://github.com/tc-mb/llama.cpp-omni.git
+# GGML 默认 CPU 后端；静态链接保证产物可在 JRE 基础镜像中直接运行
+# LLAMA_OPENSSL=OFF：构建镜像未安装 libssl-dev，且 voxcpm2-cli 不需要 HTTPS
+RUN cmake -B build -S llama.cpp-omni \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DBUILD_SHARED_LIBS=OFF \
+        -DLLAMA_CURL=OFF \
+        -DLLAMA_OPENSSL=OFF \
+        -DLLAMA_BUILD_TESTS=OFF \
+        -DLLAMA_BUILD_EXAMPLES=OFF \
+        -DLLAMA_BUILD_SERVER=OFF \
+    && cmake --build build --config Release -j$(nproc) --target voxcpm2-cli
+
 # ── 基础工具层（层缓存持久化，除非改动 apt/pip 命令） ────
 FROM eclipse-temurin:21-jre AS youdub-backend-base
 
 COPY --from=whisper-build /src/build/bin/whisper-cli /usr/local/bin/whisper-cli
+COPY --from=voxcpm-build /src/build/bin/voxcpm2-cli /usr/local/bin/voxcpm2-cli
 
 RUN --mount=type=cache,target=/var/cache/apt,sharing=locked \
     apt-get update && \

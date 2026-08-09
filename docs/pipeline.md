@@ -228,20 +228,31 @@ end   = end_time + 160ms              // 结束 padding
 
 ## 阶段 9：tts（语音合成）
 
-**适配器**: `VoxCpmTtsProvider` / `OpenAiTtsProvider` / `EdgeTtsProvider`
+**适配器**: `VoxCpmTtsProvider` / `VoxCpmCppTtsProvider` / `OpenAiTtsProvider` / `EdgeTtsProvider`
 
 | 项目 | 内容 |
 |------|------|
 | **输入** | `metadata/translation.{lang}.json`、`segments/vocals/XXXX.wav`（作为参考音频） |
 | **输出** | `segments/tts/XXXX.wav`（与 translation 非空条目一一对应） |
-| **操作** | 遍历 translation 中的非空 `dst` 条目，对每句话调用 TTS API 生成配音音频。 |
+| **操作** | 遍历 translation 中的非空 `dst` 条目，对每句话调用 TTS 生成配音音频。 |
 
-**参考音频策略**（VoxCPM 声音克隆）:
+**TTS 方案对比**:
+
+| 方案 | 引擎 | 调用方式 | 声音克隆 | 特点 |
+|------|------|---------|---------|------|
+| `voxcpm` | VoxCPM (Python FastAPI) | HTTP `/v1/tts` | ✅ | 需 python-services 容器在线 |
+| `voxcpm-cpp` | VoxCPM2 (llama.cpp-omni `voxcpm2-cli`) | 本机子进程 | ✅（`-r` 参考音频） | 无需 Python 服务，模型 GGUF 懒下载，CPU 推理 |
+| `edge-tts` | edge-tts (子进程) | 本机子进程 | ❌ | 微软在线音色，最轻量 |
+| `openai-tts` | OpenAI TTS API | HTTP | ❌ | 需 API Key |
+
+**参考音频策略**（VoxCPM / VoxCPM2 C++ 声音克隆）:
 
 | 策略 | 说明 |
 |------|------|
 | **之前** | 每句话使用 `vocals/{index}.wav` 作为参考 → 音色不一致 |
 | **现在** | 按 speaker 分组，同一 speaker 的所有句子共用第一个 vocal 片段作为固定参考 → 音色一致 |
+
+> 注：`VoxCpmCppTtsProvider` 与 `VoxCpmTtsProvider` 代码实现一致，使用**逐句对齐的 `vocals/{vocalIdx}.wav` 作为 `-r` 参考音频**（vocalIdx 按翻译条目序号追踪，含无声段偏移），保证每条译文克隆到对应的原始说话人音色。
 
 **编号说明**: TTS 文件编号与 `vocals/` 目录编号**不对齐** —— TTS 只对有译文的非空条目生成文件（编号按非空条目顺序），而 `vocals/` 包含所有段。VoxCPM 的参考音频查找使用 speaker 分组固定索引而非 TTS 文件编号。
 

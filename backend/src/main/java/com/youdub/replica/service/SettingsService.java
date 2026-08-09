@@ -47,6 +47,7 @@ public class SettingsService {
         PROVIDER_CATEGORY.put(OPENAI_ASR_CORRECTOR, "asr-corrector");
         PROVIDER_CATEGORY.put(EDGE_TTS, "tts");
         PROVIDER_CATEGORY.put(VOXCPM, "tts");
+        PROVIDER_CATEGORY.put(VOXCPM_CPP, "tts");
         PROVIDER_CATEGORY.put(OPENAI_TTS, "tts");
         PROVIDER_CATEGORY.put(OPENAI, "translate");
         PROVIDER_CATEGORY.put(OLLAMA, "translate");
@@ -66,6 +67,7 @@ public class SettingsService {
         DEFAULT_GETTER.put(OPENAI_ASR_CORRECTOR, ap -> ap.getAsrCorrector().getOpenaiAsrCorrector());
         DEFAULT_GETTER.put(EDGE_TTS, ap -> ap.getTts().getEdgeTts());
         DEFAULT_GETTER.put(VOXCPM, ap -> ap.getTts().getVoxcpm());
+        DEFAULT_GETTER.put(VOXCPM_CPP, ap -> ap.getTts().getVoxcpmCpp());
         DEFAULT_GETTER.put(OPENAI_TTS, ap -> ap.getTts().getOpenaiTts());
         DEFAULT_GETTER.put(OPENAI, ap -> ap.getTranslate().getOpenai());
         DEFAULT_GETTER.put(OLLAMA, ap -> ap.getTranslate().getOllama());

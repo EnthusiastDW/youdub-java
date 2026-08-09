@@ -210,6 +210,10 @@ export function getWhisperCppModels() {
   return request<{ models: string[] }>("/api/settings/whisper-cpp/models");
 }
 
+export function getVoxCpmCppModels() {
+  return request<{ models: string[] }>("/api/settings/voxcpm-cpp/models");
+}
+
 export function getHealth() {
   return request<HealthResponse>("/api/health");
 }

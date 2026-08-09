@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useI18n } from "@/i18n/index";
-import { getSettings, saveSettings, getEdgeTtsVoices, getWhisperCppModels } from "@/api/client";
+import { getSettings, saveSettings, getEdgeTtsVoices, getWhisperCppModels, getVoxCpmCppModels } from "@/api/client";
 import { formatDateTime, formatFileSize } from "@/lib/utils";
 import type { ProvidersData, Settings, SettingsRequest } from "@/types";
 
@@ -55,6 +55,13 @@ const PROVIDER_FIELDS: Record<string, Record<string, FieldDef[]>> = {
     ],
     voxcpm: [
       { key: "serviceUrl", type: "text" },
+    ],
+    "voxcpm-cpp": [
+      { key: "baseLmModel", type: "select" },
+      { key: "acousticModel", type: "text" },
+      { key: "cfgValue", type: "number" },
+      { key: "timesteps", type: "number" },
+      { key: "seed", type: "number" },
     ],
   },
   translate: {
@@ -281,6 +288,9 @@ export default function SettingsPage() {
   // whisper.cpp model options
   const [whisperCppModels, setWhisperCppModels] = useState<string[]>([]);
 
+  // voxcpm-cpp BaseLM model options
+  const [voxCpmCppModels, setVoxCpmCppModels] = useState<string[]>([]);
+
   // Provider config values (key format: "step.provider.field")
   const [configValues, setConfigValues] = useState<Record<string, string>>({});
   // ref 始终指向最新 configValues，避免 handleSave 闭包拿到旧值
@@ -388,6 +398,23 @@ export default function SettingsPage() {
     })();
     return () => { mounted = false; };
   }, [asrProvider]);
+
+  // Fetch voxcpm2 BaseLM model options when the TTS provider is voxcpm-cpp
+  useEffect(() => {
+    if (ttsProvider !== "voxcpm-cpp") return;
+    let mounted = true;
+    (async () => {
+      try {
+        const data = await getVoxCpmCppModels();
+        if (mounted) {
+          setVoxCpmCppModels(data.models);
+        }
+      } catch {
+        // keep empty list so UI falls back gracefully
+      }
+    })();
+    return () => { mounted = false; };
+  }, [ttsProvider]);
 
   const handleConfigChange = (key: string, value: string) => {
     setConfigValues((prev) => ({ ...prev, [key]: value }));
@@ -563,6 +590,7 @@ export default function SettingsPage() {
             onConfigChange={handleConfigChange}
             selectOptions={{
               "tts.edge-tts.voice": edgeTtsVoices,
+              "tts.voxcpm-cpp.baseLmModel": voxCpmCppModels,
             }}
             t={t.settings}
           />

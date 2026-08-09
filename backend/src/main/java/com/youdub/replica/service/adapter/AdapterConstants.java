@@ -23,6 +23,8 @@ public final class AdapterConstants {
     public static final String EDGE_TTS = "edge-tts";
     /** VoxCPM 语音合成（HTTP API） */
     public static final String VOXCPM = "voxcpm";
+    /** VoxCPM2 C++ 语音合成（voxcpm2-cli 子进程，llama.cpp-omni） */
+    public static final String VOXCPM_CPP = "voxcpm-cpp";
     /** OpenAI TTS 语音合成 */
     public static final String OPENAI_TTS = "openai-tts";
 

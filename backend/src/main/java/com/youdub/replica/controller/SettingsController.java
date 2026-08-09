@@ -6,6 +6,7 @@ import com.youdub.replica.dto.SettingsRequest;
 import com.youdub.replica.dto.SettingsResponse;
 import com.youdub.replica.service.SettingsService;
 import com.youdub.replica.service.adapter.asr.WhisperCppModels;
+import com.youdub.replica.service.adapter.tts.VoxCpmCppModels;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.web.bind.annotation.*;
@@ -50,5 +51,10 @@ public class SettingsController {
     @GetMapping("/whisper-cpp/models")
     public Map<String, List<String>> listWhisperCppModels() {
         return Map.of("models", WhisperCppModels.AVAILABLE_WHISPER_MODELS);
+    }
+
+    @GetMapping("/voxcpm-cpp/models")
+    public Map<String, List<String>> listVoxCpmCppModels() {
+        return Map.of("models", VoxCpmCppModels.AVAILABLE_BASE_LM_MODELS);
     }
 }

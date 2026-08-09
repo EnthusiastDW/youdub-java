@@ -64,6 +64,16 @@ app:
       voice: alloy
     voxcpm:
       service-url: http://192.168.1.2:8001/v1/tts
+    voxcpm-cpp:
+      path: voxcpm2-cli
+      model-dir: ${APP_TTS_VOXCPM_CPP_MODEL_DIR:data/voxcpm-models}
+      base-lm-model: VoxCPM2-BaseLM-Q8_0.gguf
+      acoustic-model: VoxCPM2-Acoustic-F16.gguf
+      cfg-value: 2.0
+      timesteps: 10
+      seed: 42
+      timeout-ms: 600000
+      concurrency: 1
 
   translate:
     provider: openai

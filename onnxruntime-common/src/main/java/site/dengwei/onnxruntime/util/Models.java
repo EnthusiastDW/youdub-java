@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardCopyOption;
 import java.time.Duration;
+import java.util.Optional;
 
 /**
  * HTTP 下载和模型路径解析工具。
@@ -43,7 +44,7 @@ public final class Models {
         return builder.build();
     }
 
-    private static java.util.Optional<ProxySelector> resolveProxy() {
+    private static Optional<ProxySelector> resolveProxy() {
         // 1. 系统属性（优先级最高）
         String host = System.getProperty("http.proxyHost");
         String portStr = System.getProperty("http.proxyPort");
@@ -53,7 +54,7 @@ public final class Models {
                 try { port = Integer.parseInt(portStr); } catch (NumberFormatException ignored) {}
             }
             log.info("使用系统属性代理: {}:{}", host, port);
-            return java.util.Optional.of(ProxySelector.of(new InetSocketAddress(host, port)));
+            return Optional.of(ProxySelector.of(new InetSocketAddress(host, port)));
         }
         // 2. 环境变量（次优先）
         String env = System.getenv("HTTPS_PROXY");
@@ -65,14 +66,14 @@ public final class Models {
                 int envPort = uri.getPort() > 0 ? uri.getPort() : 7890;
                 if (envHost != null) {
                     log.info("使用环境变量代理: {}:{}", envHost, envPort);
-                    return java.util.Optional.of(ProxySelector.of(new InetSocketAddress(envHost, envPort)));
+                    return Optional.of(ProxySelector.of(new InetSocketAddress(envHost, envPort)));
                 }
             } catch (Exception e) {
                 log.warn("解析代理环境变量失败: {}", env);
             }
         }
         // 3. 无代理
-        return java.util.Optional.empty();
+        return Optional.empty();
     }
 
     private Models() {}

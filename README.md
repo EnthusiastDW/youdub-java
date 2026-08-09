@@ -40,7 +40,7 @@ YouDub Replica 是一个视频自动配音管线系统。给定一个视频（Yo
 | **构建工具** | pip / conda | Maven + Docker Compose |
 | **ASR** | faster-whisper（Python 进程内） | Whisper API（HTTP，可对接 OpenAI 或自建 faster-whisper 服务）|
 | **人声分离** | Demucs（Python 进程内） | 3 种方案可选：FFmpeg(轻量) / Demucs子进程 / ONNX Runtime 原生 |
-| **TTS** | VoxCPM（Python 进程内） | 3 种方案可选：VoxCPM(HTTP) / Edge-TTS(子进程) / OpenAI TTS(API) |
+| **TTS** | VoxCPM（Python 进程内） | 4 种方案可选：VoxCPM(HTTP) / VoxCPM2 C++(子进程) / Edge-TTS(子进程) / OpenAI TTS(API) |
 | **翻译** | OpenAI / 本地 LLM | OpenAI Chat API / Ollama（可插拔适配器） |
 | **运行模式** | 单一 Python 进程 | 多容器微服务（Java 后端 + Python 服务 + 前端） |
 | **失败恢复** | 有限支持 | 逐阶段状态持久化 + 启动恢复 + 手动模式（每阶段暂停确认）|
@@ -101,7 +101,7 @@ private final Map<String, TtsProvider> ttsProviders; // key: bean name
 | ASR | `SpeechRecognizer` | `WhisperApiRecognizer`（OpenAI 兼容 API，需开启 `word_timestamps=1`）、`WhisperCppRecognizer`（whisper.cpp 子进程）|
 | 句子修正 | `UtteranceProcessor` | 单词级重分段（需 word_timestamps）/ 从句合并 / 时间 padding 三级降级 |
 | 翻译 | `Translator` | `OpenAiTranslator`（OpenAI Chat API）、`OllamaTranslator`（本地 Ollama）|
-| TTS | `TtsProvider` | `VoxCpmTtsProvider`（VoxCPM API）、`EdgeTtsProvider`（edge-tts 子进程）、`OpenAiTtsProvider`（OpenAI TTS API）|
+| TTS | `TtsProvider` | `VoxCpmTtsProvider`（VoxCPM API）、`VoxCpmCppTtsProvider`（VoxCPM2 C++ voxcpm2-cli 子进程）、`EdgeTtsProvider`（edge-tts 子进程）、`OpenAiTtsProvider`（OpenAI TTS API）|
 | 音频处理 | `AudioProcessor` | `FfmpegAudioProcessor`（FFmpeg 子进程）|
 | 视频合成 | `VideoProcessor` | `FfmpegVideoProcessor`（FFmpeg 子进程）|
 
@@ -204,7 +204,7 @@ python server.py
 |---------|--------|------|
 | `OPENAI_API_KEY` | — | OpenAI API Key（翻译用，必填）|
 | `TRANSLATE_MODEL` | `gpt-4o-mini` | 翻译模型 |
-| `TTS_PROVIDER` | `voxcpm` | TTS 提供商：`voxcpm` / `edge-tts` / `openai-tts` |
+| `TTS_PROVIDER` | `voxcpm` | TTS 提供商：`voxcpm` / `voxcpm-cpp` / `edge-tts` / `openai-tts` |
 | `APP_SEPARATE_PROVIDER` | `onnx` | 人声分离方案：`ffmpeg-simple` / `demucs` / `onnx` |
 | `APP_ASR_PROVIDER` | `whisper-cpp` | ASR 方案：`whisper-cpp` / `whisper-api` |
 | `VOXCPM_SERVICE_URL` | `http://python-services:8001` | VoxCPM 服务地址 |
@@ -231,7 +231,7 @@ youdub-java/
 │   │   │   ├── separate/             # 人声分离（FFmpeg, Demucs, ONNX）
 │   │   │   ├── asr/                  # 语音识别（Whisper API, whisper.cpp）
 │   │   │   ├── translate/            # 翻译（OpenAI, Ollama）
-│   │   │   ├── tts/                  # TTS（VoxCPM, Edge-TTS, OpenAI TTS）
+│   │   │   ├── tts/                  # TTS（VoxCPM, VoxCPM2 C++, Edge-TTS, OpenAI TTS）
 │   │   │   ├── audio/                # 音频处理（FFmpeg 切分/混合）
 │   │   │   └── video/                # 视频合成（FFmpeg 字幕+混音+编码）
 │   │   ├── service/                  # 核心服务（TaskService, PipelineOrchestrator, WorkerService）
@@ -248,7 +248,9 @@ youdub-java/
 │       ├── pages/                    # 页面
 │       └── types/                    # TypeScript 类型
 ├── docs/
-│   └── pipeline.md                   # 管线各阶段详细文档
+│   ├── pipeline.md                   # 管线各阶段详细文档
+│   ├── whisper-cpp开发指南.md         # whisper.cpp 集成指南（ASR）
+│   └── voxcpm-cpp开发指南.md          # VoxCPM2 C++ 集成指南（TTS）
 ├── docker-compose.yml                # 主编排文件（3 个容器）
 └── .env.example                      # 环境变量模板
 ```

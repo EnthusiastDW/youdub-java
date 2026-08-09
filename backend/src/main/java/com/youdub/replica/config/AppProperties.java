@@ -92,6 +92,7 @@ public class AppProperties {
         private EdgeTts edgeTts = new EdgeTts();
         private OpenaiTts openaiTts = new OpenaiTts();
         private Voxcpm voxcpm = new Voxcpm();
+        private VoxcpmCpp voxcpmCpp = new VoxcpmCpp();
 
         @Data
         public static class EdgeTts {
@@ -110,6 +111,19 @@ public class AppProperties {
         @Data
         public static class Voxcpm {
             private String serviceUrl;
+        }
+
+        @Data
+        public static class VoxcpmCpp {
+            private String path;
+            private String modelDir;
+            private String baseLmModel;
+            private String acousticModel;
+            private double cfgValue;
+            private int timesteps;
+            private int seed;
+            private long timeoutMs;
+            private int concurrency;
         }
     }
 
