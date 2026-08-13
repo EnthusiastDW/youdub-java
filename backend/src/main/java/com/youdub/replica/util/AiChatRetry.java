@@ -271,9 +271,9 @@ public final class AiChatRetry {
 
     // ========== 内部工具 ==========
 
-    /** 判断 HTTP 状态码是否应重试（429 限流、5xx 服务端错误）。 */
+    /** 判断 HTTP 状态码是否应重试（408 请求超时、425 过早、429 限流、5xx 服务端错误）。 */
     private static boolean isHttpRetryable(int statusCode) {
-        return statusCode == 429 || statusCode >= 500;
+        return statusCode == 408 || statusCode == 425 || statusCode == 429 || statusCode >= 500;
     }
 
     /**

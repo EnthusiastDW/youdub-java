@@ -1961,42 +1961,10 @@ public final class WhisperModel implements AutoCloseable {
             }
         }
 
-        // 选最优 beam：优先选已结束的，否则选分数最高的
-        // 使用长度归一化防止偏向短序列（对齐 faster-whisper）
-        double lengthPenalty = 0.5;
-        int bestIdx = 0;
-        float bestScore = Float.NEGATIVE_INFINITY;
-        for (int i = 0; i < beamTokens.size(); i++) {
-            if (!beamFinished.get(i)) continue;
-            int genLen = beamTokens.get(i).length - initLen;
-            float normScore = beamScores.get(i) / (float) Math.pow(Math.max(genLen, 1), lengthPenalty);
-            if (normScore > bestScore) {
-                bestScore = normScore;
-                bestIdx = i;
-            }
-        }
-        if (bestScore == Float.NEGATIVE_INFINITY) {
-            for (int i = 0; i < beamTokens.size(); i++) {
-                int genLen = beamTokens.get(i).length - initLen;
-                float normScore = beamScores.get(i) / (float) Math.pow(Math.max(genLen, 1), lengthPenalty);
-                if (normScore > bestScore) {
-                    bestScore = normScore;
-                    bestIdx = i;
-                }
-            }
-        }
-
-        int[] tokens = beamTokens.get(bestIdx);
-        int start = initLen;
-        int end = tokens.length;
-        for (int i = start; i < tokens.length; i++) {
-            if (tokens[i] == eotToken) { end = i; break; }
-        }
-        return java.util.Arrays.copyOfRange(tokens, start, end);
+        return selectBestBeam(beamTokens, beamScores, beamFinished, initLen);
     }
 
-    // ──────────────────── VAD 滤波 / 静音分片 ────────────────────
-    // 方法已提取至 WhisperVad.java
+    // ──────────────────────────── 辅助方法 ────────────────────────────
 
     private static void safeClose(AutoCloseable c) {
         if (c != null) {

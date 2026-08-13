@@ -52,6 +52,9 @@ public class WhisperCppRecognizer implements SpeechRecognizer {
     /** whisper-cli 输出 JSON 文件后缀（-ojf 输出 {outputBase}.json） */
     private static final String JSON_SUFFIX = ".json";
 
+    /** 默认模型目录（相对工作目录；Docker 挂载 /app/data/whisper-models） */
+    private static final String DEFAULT_MODEL_DIR = "data/whisper-models";
+
     /**
      * 并发转录上限。whisper-cli 每次加载 ~574MB 模型，多任务并发会叠加内存。
      * 信号量在 Spring 层强制串行，与 PipelineOrchestrator 的 stageGates 互为兜底。
@@ -103,7 +106,7 @@ public class WhisperCppRecognizer implements SpeechRecognizer {
     private void transcribeInternal(Task task, Path audioPath, Path outputDir, String language) throws Exception {
         Path asrFile = outputDir.resolve("asr.json");
         AppProperties.Asr.WhisperCpp cfg = settingsService.getProviderConfig(WHISPER_CPP, AppProperties.Asr.WhisperCpp.class);
-        Path modelDir = Paths.get("data", "whisper-models").toAbsolutePath();
+        Path modelDir = resolveModelDir(cfg);
         Path modelPath = resolveModelFile(cfg, modelDir);
         Path vadModelPath = cfg.isVad() ? resolveVadModelFile(cfg, modelDir) : null;
 
@@ -150,6 +153,14 @@ public class WhisperCppRecognizer implements SpeechRecognizer {
     }
 
     // ────────────────────────────── 模型解析 ──────────────────────────────
+
+    private Path resolveModelDir(AppProperties.Asr.WhisperCpp cfg) {
+        String modelDir = cfg.getModelDir();
+        if (modelDir == null || modelDir.isBlank()) {
+            modelDir = DEFAULT_MODEL_DIR;
+        }
+        return Paths.get(modelDir).toAbsolutePath();
+    }
 
     private Path resolveModelFile(AppProperties.Asr.WhisperCpp cfg, Path modelDir) throws IOException {
         if (cfg.getModelPath() != null && !cfg.getModelPath().isBlank()) {

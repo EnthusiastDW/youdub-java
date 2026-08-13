@@ -201,16 +201,26 @@ public class VoxCpmCppTtsProvider implements TtsProvider {
         command.add("-o");
         command.add(outputFile.toString());
         command.add("--cfg");
-        command.add(String.valueOf(config.getCfgValue() > 0 ? config.getCfgValue() : DEFAULT_CFG_VALUE));
+        command.add(positiveArg(config.getCfgValue(), DEFAULT_CFG_VALUE));
         command.add("--timesteps");
-        command.add(String.valueOf(config.getTimesteps() > 0 ? config.getTimesteps() : DEFAULT_TIMESTEPS));
+        command.add(positiveArg(config.getTimesteps(), DEFAULT_TIMESTEPS));
         command.add("--seed");
-        command.add(String.valueOf(config.getSeed() >= 0 ? config.getSeed() : DEFAULT_SEED));
+        command.add(nonNegativeArg(config.getSeed(), DEFAULT_SEED));
         // 后端容器无 GPU，强制 CPU 后端
         command.add("--cpu");
         command.add(baseLmPath.toString());
         command.add(acousticPath.toString());
         return command;
+    }
+
+    /** 仅接受正数（cfg/timesteps 为 0 无意义），无效时回退默认值。 */
+    private static String positiveArg(double value, double fallback) {
+        return String.valueOf(value > 0 ? value : fallback);
+    }
+
+    /** 接受 0（seed=0 合法），仅负数视为无效并回退默认值。 */
+    private static String nonNegativeArg(int value, int fallback) {
+        return String.valueOf(value >= 0 ? value : fallback);
     }
 
     private Path resolveModelDir(AppProperties.Tts.VoxcpmCpp config) {

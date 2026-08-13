@@ -22,6 +22,8 @@ public final class VoxCpmCppModels {
 
     /** BaseLM 推荐量化权重（约 1.6GB） */
     public static final String BASE_LM_MODEL = "VoxCPM2-BaseLM-Q8_0.gguf";
+    /** BaseLM 高精度权重（约 3.0GB，更慢） */
+    public static final String BASE_LM_MODEL_F16 = "VoxCPM2-BaseLM-F16.gguf";
     /** Acoustic 权重（约 1.7GB） */
     public static final String ACOUSTIC_MODEL = "VoxCPM2-Acoustic-F16.gguf";
 
@@ -30,8 +32,8 @@ public final class VoxCpmCppModels {
      * 均存在于 HF DennisHuang648/VoxCPM2-GGUF 仓库，可经 ensureBaseLmModel 懒下载。
      */
     public static final List<String> AVAILABLE_BASE_LM_MODELS = List.of(
-            "VoxCPM2-BaseLM-Q8_0.gguf",
-            "VoxCPM2-BaseLM-F16.gguf"
+            BASE_LM_MODEL,
+            BASE_LM_MODEL_F16
     );
 
     private VoxCpmCppModels() {

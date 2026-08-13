@@ -55,6 +55,7 @@ public class AppProperties {
 
         @Data
         public static class WhisperCpp {
+            private String modelDir;
             private String model;
             private String modelPath;
             private String vadModel;

@@ -373,28 +373,65 @@ public class OpenAiAsrCorrector implements AsrCorrector {
     }
 
     /**
-     * 修正文本与原文的单词重叠率（小写、忽略标点）。大小写变化（VEC→Vec）和
+     * 修正文本与原文的重叠率（小写、忽略标点）。大小写变化（VEC→Vec）和
      * 末尾术语替换（Intuiterator→IntoIterator）不影响命中，整句改写则命中率骤降。
+     * <p>
+     * 分词策略：拉丁字符按词切分，中日韩统一表意文字（CJK）按单字切分，
+     * 避免整句中文被 `[^a-z0-9]+` 误判为单个 token 导致重叠率失真。
      */
     private static double wordOverlapRatio(String original, String corrected) {
         Set<String> correctedTokens = tokenize(corrected);
-        String[] originalTokens = original.toLowerCase().split("[^a-z0-9]+");
-        int total = 0;
+        List<String> originalTokens = tokenizeList(original);
+        int total = originalTokens.size();
+        if (total == 0) return 1.0;
         int matched = 0;
         for (String t : originalTokens) {
-            if (t.isEmpty()) continue;
-            total++;
             if (correctedTokens.contains(t)) matched++;
         }
-        return total == 0 ? 1.0 : (double) matched / total;
+        return (double) matched / total;
     }
 
     private static Set<String> tokenize(String text) {
-        Set<String> tokens = new HashSet<>();
-        for (String t : text.toLowerCase().split("[^a-z0-9]+")) {
-            if (!t.isEmpty()) tokens.add(t);
+        return new HashSet<>(tokenizeList(text));
+    }
+
+    /** 拉丁词按空白/非字母数字切分；CJK 字符逐字输出（无词边界可依赖）。 */
+    private static List<String> tokenizeList(String text) {
+        List<String> tokens = new ArrayList<>();
+        StringBuilder latin = new StringBuilder();
+        for (int i = 0; i < text.length(); i++) {
+            char c = Character.toLowerCase(text.charAt(i));
+            if (isLatinTokenChar(c)) {
+                latin.append(c);
+            } else {
+                if (latin.length() > 0) {
+                    tokens.add(latin.toString());
+                    latin.setLength(0);
+                }
+                if (isCjk(c)) {
+                    tokens.add(String.valueOf(c));
+                }
+            }
+        }
+        if (latin.length() > 0) {
+            tokens.add(latin.toString());
         }
         return tokens;
+    }
+
+    private static boolean isLatinTokenChar(char c) {
+        return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+    }
+
+    private static boolean isCjk(char c) {
+        Character.UnicodeBlock b = Character.UnicodeBlock.of(c);
+        return b == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS
+                || b == Character.UnicodeBlock.CJK_UNIFIED_IDEOGRAPHS_EXTENSION_A
+                || b == Character.UnicodeBlock.CJK_COMPATIBILITY_IDEOGRAPHS
+                || b == Character.UnicodeBlock.CJK_SYMBOLS_AND_PUNCTUATION
+                || b == Character.UnicodeBlock.HIRAGANA
+                || b == Character.UnicodeBlock.KATAKANA
+                || b == Character.UnicodeBlock.HANGUL_SYLLABLES;
     }
 
     private record UtteranceItem(int id, String text) {
