@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -36,6 +37,10 @@ import static com.youdub.replica.service.adapter.AdapterConstants.OPENAI_ASR_COR
  * <p>
  * 读取 ASR 转写结果，将完整转录文本作为上下文发给 LLM，
  * 让 LLM 根据全文语境自动纠正领域特定术语的误识别。
+ * <p>
+ * 纠错采用<b>最小编辑</b>契约：LLM 只返回 from→to 词对 + 置信度（而非重写整句），
+ * 由本类在 Java 侧应用替换，从结构上保证不改坏整句；按 ASR 语言选择
+ * 英文（发音相似）或中文（同音字/近音字）提示词分支。
  * <p>
  * 配置为空时回退到翻译服务的 API Key / Chat URL / 模型配置。
  * 重试策略：最多 3 次（可配置），拒绝/空/非 JSON 响应均视为无效。
@@ -61,13 +66,19 @@ public class OpenAiAsrCorrector implements AsrCorrector {
     /** 每个批次的最大字符数（英文 ~4 字符/token ≈ 3000 tokens），防止 API 上下文超限 */
     private static final int BATCH_CHAR_LIMIT = 12000;
     /**
-     * 每批次最大输出 token。prompt 要求每条修正返回完整句子（非 diff），
-     * 165 条批次的完整输出可达数千 token，4096 偏低会触发 finish_reason=length 截断。
-     * 16384 对整批全句输出留足余量。
+     * 每批次最大输出 token。提示词要求返回最小编辑（from→to 词对）而非完整句子，
+     * 输出量很小，4096 留足余量（每批几十条编辑远达不到）。
      */
-    private static final int MAX_OUTPUT_TOKENS = 16384;
-    /** 修正文本与原文的单词重叠率下限，低于该值视为改写而非纠错，丢弃 */
+    private static final int MAX_OUTPUT_TOKENS = 4096;
+    /** 修正文本与原文的单词重叠率下限，低于该值视为改写而非纠错，丢弃（旧整句格式兼容用） */
     private static final double OVERLAP_MIN_RATIO = 0.5;
+    /**
+     * 编辑置信度下限。LLM 对每条编辑返回 confidence (0~1)，
+     * 低于该值的编辑视为"模型不确定"，丢弃不应用。
+     */
+    private static final double MIN_CONFIDENCE = 0.6;
+    /** 编辑缺失 confidence 字段时的默认置信度（视为确定） */
+    private static final double DEFAULT_CONFIDENCE = 1.0;
 
     @Override
     public void correct(Task task, Path asrPath, Path outputDir) throws Exception {
@@ -107,7 +118,7 @@ public class OpenAiAsrCorrector implements AsrCorrector {
 
         var resolved = resolveConfig();
         String topic = readTopic(outputDir);
-        String systemPrompt = buildSystemPrompt(topic);
+        String systemPrompt = buildSystemPrompt(topic, task.getAsrLanguage());
 
         // 将 utterances 按字符数分批处理，避免 API 上下文超限
         List<List<UtteranceItem>> batches = splitIntoBatches(items);
@@ -134,7 +145,7 @@ public class OpenAiAsrCorrector implements AsrCorrector {
                     """ + contextWindow + """
                     ---
 
-                    Correct the utterances below. Return ONLY the ones you changed, each with its FULL corrected sentence text:
+                    Correct the utterances below. Return ONLY the ones you changed, each as a MINIMAL EDIT (from → to) with its confidence:
                     """ + batchUtterancesJson;
             ObjectNode requestBody = objectMapper.createObjectNode();
             requestBody.put("model", resolved.model());
@@ -148,38 +159,11 @@ public class OpenAiAsrCorrector implements AsrCorrector {
             String correctedJson = callAsrApi(resolved.apiKey(), resolved.chatUrl(), resolved.model(), requestBody);
             JsonNode correctedRoot = objectMapper.readTree(correctedJson);
 
-            // 优先解析 diff-only 格式 {"corrections":[...]}，兼容旧 {"utterances":[...]}
-            JsonNode correctedUtterances = correctedRoot.path("corrections");
-            if (!correctedUtterances.isArray()) {
-                correctedUtterances = correctedRoot.path("utterances");
-            }
-            if (!correctedUtterances.isArray()) {
-                throw new RuntimeException("LLM 返回格式错误：缺少 corrections/utterances 数组，实际=" + correctedRoot);
-            }
             Map<Integer, String> originals = new HashMap<>();
             for (UtteranceItem item : batch) originals.put(item.id, item.text);
-            for (JsonNode cu : correctedUtterances) {
-                int id = cu.path("id").asInt(-1);
-                String text = cu.path("text").asText("").trim();
-                if (id < 0 || text.isBlank()) continue;
-                String orig = originals.get(id);
-                if (orig == null) {
-                    log.warn("ASR 修正 id={} 不在当前批次，忽略", id);
-                    continue;
-                }
-                if (text.length() < orig.length() * 0.8) {
-                    log.warn("ASR 修正文本过短，丢弃：'{}' → '{}' ({} vs {} chars)",
-                            orig, text, text.length(), orig.length());
-                    continue;
-                }
-                double overlap = wordOverlapRatio(orig, text);
-                if (overlap < OVERLAP_MIN_RATIO) {
-                    log.warn("ASR 修正内容不重叠，丢弃：'{}' → '{}' (重叠 {}%)",
-                            orig, text, Math.round(overlap * 100));
-                    continue;
-                }
-                corrections.put(id, text);
-            }
+            // 优先解析新格式 edits（from→to 最小编辑），兼容旧整句 text 格式
+            Map<Integer, String> batchCorrections = parseCorrections(correctedRoot, originals);
+            corrections.putAll(batchCorrections);
 
             // 本批次结束后立即打印不一致的纠错结果
             for (UtteranceItem item : batch) {
@@ -225,40 +209,78 @@ public class OpenAiAsrCorrector implements AsrCorrector {
                 task.getId(), items.size(), correctedCount, correctedFile);
     }
 
-    private String buildSystemPrompt(String topic) {
+    /**
+     * 构建纠错系统提示词。按 ASR 语言选择英文/中文分支：
+     * 英文内容强调"发音相似"（英文同音/近似词），中文内容强调"同音字/近音字"，
+     * 两者都要求返回最小编辑（from→to）而非整句，避免模型重写整句导致整句失败。
+     */
+    private String buildSystemPrompt(String topic, String language) {
         String topicLine = (topic != null && !topic.isBlank())
                 ? "\nVideo topic: " + topic
                 : "\nThe video topic is not provided; infer domain terms from the context sentences.";
+        if (language != null && language.toLowerCase(Locale.ROOT).startsWith("zh")) {
+            return buildChinesePrompt(topicLine);
+        }
+        return buildEnglishPrompt(topicLine);
+    }
+
+    private String buildEnglishPrompt(String topicLine) {
         return """
                 You are a speech recognition correction assistant for a video dubbing pipeline. The video's transcription was produced by an ASR engine that occasionally mishears words into phonetically-similar but wrong ones. Fix ONLY those misrecognitions.
                 """ + topicLine + """
 
                 Rules:
-                1. Change a word ONLY if the original and the correction SOUND similar (e.g. 'kub ernetes' and 'Kubernetes' sound alike). If they don't sound similar, it is NOT an ASR error.
+                1. Change a word ONLY if the original and the correction SOUND similar (e.g. 'trade' and 'trait' sound alike). If they don't sound similar, it is NOT an ASR error.
                 2. For domain or technical terms, resolve phonetically-similar variants to the correct spelling, guided by the video topic and the context sentences (e.g. 'intuitorator' → 'IntoIterator' in a Rust tutorial, 'cubelet' → 'kubelet' in a Kubernetes talk). Use your knowledge of the domain.
                 3. Keep original grammar, style, punctuation, and sentence structure unchanged. Never rephrase or polish.
                 4. Do NOT swap a word just because it makes more sense in context; the change must be phonetically justified.
-                5. When unsure, leave the utterance unchanged and omit it from the output.
+                5. When unsure, omit that utterance entirely from the output.
                 6. Do NOT correct words that are already spelled correctly (no capitalization-only or grammar fixes).
-                7. CRITICAL: each "text" in your output must be the ENTIRE corrected utterance — the full sentence, identical to the original except for the corrected word(s). NEVER return just the corrected word(s).
-                8. The correction is a MINIMAL EDIT: change ONLY the misheard word(s). Do NOT add, remove, reorder, or replace any other words. The corrected utterance must start and end with the same words as the original (unless one of those words is itself the error). NEVER write a new or explanatory sentence.
+                7. CRITICAL: report each correction as a MINIMAL EDIT (from → to), NOT as a full sentence. 'from' must be an exact substring of the original utterance, and should include enough surrounding words to appear EXACTLY ONCE in that utterance (e.g. 'the intoIterator trade' → 'the IntoIterator trait'). Never invent text that is not in the original.
+                8. For every edit, provide a 'confidence' score from 0.0 to 1.0 reflecting how certain you are that it is a real ASR error.
 
-                Word-level corrections that sound similar (phonetically valid):
-                - 'kub ernetes' → 'Kubernetes'
-                - 'cubelet' → 'kubelet'
-                - 'trade' → 'trait'
-                - 'base sixty four' → 'base64'
+                Valid edits (sound similar):
+                - from: 'kub ernetes' → to: 'Kubernetes', confidence: 0.95
+                - from: 'cubelet' → to: 'kubelet', confidence: 0.95
+                - from: 'base sixty four' → to: 'base64', confidence: 0.9
 
-                Word-level corrections that are phonetically different (do NOT do these):
-                - 'holds' → 'dives' (different sound, context-based guess)
-                - 'Rusty' → 'Rust' (not a misrecognition)
-                - 'come' → 'came' (grammar fix, not ASR)
+                NOT valid (do NOT do these):
+                - from: 'holds' → to: 'dives' (different sound, context-based guess)
+                - from: 'Rusty' → to: 'Rust' (not a misrecognition)
+                - from: 'come' → to: 'came' (grammar fix, not ASR)
 
-                NOT a correction (do NOT replace the whole sentence). Original: "And finally, there is a single required method to implement called Intuitor." → CORRECT: "And finally, there is a single required method to implement called IntoIterator." → WRONG: "This just ensures consistency."
-
-                Return ONLY valid JSON (no markdown, no extra text). Include ONLY the utterances you changed. Each entry's "text" is the COMPLETE corrected sentence, e.g. if the original utterance id 5 was "The first line creates an iterator via the intoIterator trade." return:
-                {"corrections":[{"id":5,"text":"The first line creates an iterator via the IntoIterator trait."}]}
+                Return ONLY valid JSON (no markdown, no extra text). Include ONLY the utterances you changed. Each entry's 'edits' array contains the minimal from→to replacements, e.g.:
+                {"corrections":[{"id":5,"edits":[{"from":"the intoIterator trade","to":"the IntoIterator trait","confidence":0.95}]}]}
                 If nothing needs correcting, return {"corrections":[]}""";
+    }
+
+    private String buildChinesePrompt(String topicLine) {
+        return """
+                你是视频配音管线的语音识别纠错助手。转写文本由 ASR 引擎生成，偶尔会把词语听成发音相同或相近但错误的词（同音字/近音字）。只修正这类识别错误。
+                """ + topicLine + """
+
+                规则：
+                1. 只有当原文与修正词发音相同或相近（同音/近音）时才修改；发音差别大就不是 ASR 错误，不改。
+                2. 领域或技术术语按发音还原正确写法，结合视频主题和上下文句子判断。
+                3. 保持原有语法、风格、标点、句式结构不变，绝不重写或润色。
+                4. 不能仅因为语境更通顺就换词，修改必须有发音依据。
+                5. 不确定时，该句整句都不要出现在输出里。
+                6. 不要修正本来正确的词（不做纯标点、语法修正）。
+                7. 关键：每个修正报告为最小编辑（from → to），而不是整句。from 必须是原句的精确子串，并包含足够上下文使其在原句中只出现一次。不要编造原文里没有的文字。
+                8. 为每个编辑给出 0.0~1.0 的置信度 confidence，表示你对"这确实是 ASR 错误"的确信程度。
+
+                有效编辑（同音/近音）：
+                - from: "因该" → to: "应该", confidence: 0.98
+                - from: "让坐" → to: "让座", confidence: 0.97
+                - from: "高兴的跳起来" → to: "高兴地跳起来", confidence: 0.9
+
+                不要做（非修正）：
+                - 仅因语境通顺而换词（发音不匹配）
+                - 语法润色、标点美化、改写句子
+
+                只返回合法 JSON（无 markdown，无多余文字），只包含你修改的句子，例如：
+                {"corrections":[{"id":3,"edits":[{"from":"因该","to":"应该","confidence":0.98}]}]}
+                如果没有需要修正的，返回 {"corrections":[]}""";
     }
 
     private ResolvedConfig resolveConfig() {
@@ -370,6 +392,99 @@ public class OpenAiAsrCorrector implements AsrCorrector {
 
     private static String truncate(String text, int maxLen) {
         return text.length() <= maxLen ? text : text.substring(0, maxLen) + "...";
+    }
+
+    /**
+     * 解析 LLM 返回的纠错 JSON，产出 id → 修正后全文 的映射。
+     * <p>
+     * 优先解析新格式 {@code corrections[].edits[]}（from→to 最小编辑），
+     * 兼容旧格式 {@code corrections[].text}（整句文本，走重叠率护栏）。
+     *
+     * @param correctedRoot LLM 返回的 JSON 根节点
+     * @param originals     当前批次的 id → 原文 映射
+     * @return id → 修正后文本（未修正的 id 不出现）
+     */
+    static Map<Integer, String> parseCorrections(JsonNode correctedRoot, Map<Integer, String> originals) {
+        Map<Integer, String> corrections = new HashMap<>();
+        JsonNode correctedUtterances = correctedRoot.path("corrections");
+        if (!correctedUtterances.isArray()) {
+            correctedUtterances = correctedRoot.path("utterances");
+        }
+        if (!correctedUtterances.isArray()) {
+            throw new RuntimeException("LLM 返回格式错误：缺少 corrections/utterances 数组，实际=" + correctedRoot);
+        }
+        for (JsonNode cu : correctedUtterances) {
+            int id = cu.path("id").asInt(-1);
+            String orig = originals.get(id);
+            if (id < 0 || orig == null) {
+                log.warn("ASR 修正 id={} 不在当前批次，忽略", id);
+                continue;
+            }
+            JsonNode edits = cu.path("edits");
+            if (edits.isArray() && !edits.isEmpty()) {
+                String corrected = applyEdits(orig, edits);
+                if (corrected != null && !corrected.equals(orig)) {
+                    corrections.put(id, corrected);
+                }
+                continue;
+            }
+            // 旧格式兼容：LLM 返回整句文本，用长度 + 重叠率护栏过滤改写
+            String text = cu.path("text").asText("").trim();
+            if (text.isBlank()) continue;
+            if (text.length() < orig.length() * 0.8) {
+                log.warn("ASR 修正文本过短，丢弃：'{}' → '{}' ({} vs {} chars)",
+                        orig, text, text.length(), orig.length());
+                continue;
+            }
+            double overlap = wordOverlapRatio(orig, text);
+            if (overlap < OVERLAP_MIN_RATIO) {
+                log.warn("ASR 修正内容不重叠，丢弃：'{}' → '{}' (重叠 {}%)",
+                        orig, text, Math.round(overlap * 100));
+                continue;
+            }
+            corrections.put(id, text);
+        }
+        return corrections;
+    }
+
+    /**
+     * 将最小编辑列表应用到原文。
+     * <p>
+     * 编辑契约：{@code from} 必须是原文的精确子串且只出现一次（多次出现会误改，
+     * 跳过并要求模型用更长上下文短语），{@code confidence} 低于 {@link #MIN_CONFIDENCE}
+     * 的编辑丢弃。缺失 confidence 视为确定（{@link #DEFAULT_CONFIDENCE}）。
+     *
+     * @return 应用全部有效编辑后的文本；未应用任何编辑时返回 null
+     */
+    static String applyEdits(String original, JsonNode edits) {
+        String result = original;
+        boolean applied = false;
+        for (JsonNode edit : edits) {
+            String from = edit.path("from").asText("").trim();
+            String to = edit.path("to").asText("").trim();
+            double confidence = edit.path("confidence").asDouble(DEFAULT_CONFIDENCE);
+            if (from.isEmpty()) {
+                log.warn("编辑缺少 from 字段，跳过：{}", edit);
+                continue;
+            }
+            if (confidence < MIN_CONFIDENCE) {
+                log.warn("编辑置信度过低 ({} < {})，丢弃：'{}' → '{}'",
+                        confidence, MIN_CONFIDENCE, from, to);
+                continue;
+            }
+            int idx = result.indexOf(from);
+            if (idx < 0) {
+                log.warn("编辑的 from 不在原文中，跳过：'{}' → '{}'", from, to);
+                continue;
+            }
+            if (result.indexOf(from, idx + 1) >= 0) {
+                log.warn("编辑的 from 出现多次，为避免误改跳过：'{}'（请使用更长、唯一的上下文短语）", from);
+                continue;
+            }
+            result = result.substring(0, idx) + to + result.substring(idx + from.length());
+            applied = true;
+        }
+        return applied ? result : null;
     }
 
     /**
