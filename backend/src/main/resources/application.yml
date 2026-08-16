@@ -47,6 +47,12 @@ app:
       vad: true
       threads: 8
       beam-size: 5
+      no-context: true
+      vad-threshold: 0.3
+      vad-min-silence-ms: 200
+      entropy-thold: 2.6
+      logprob-thold: -1.25
+      preprocess: true
     whisper-onnx: {}
   asr-corrector:
     provider: openai-asr-corrector
@@ -54,15 +60,16 @@ app:
       enabled: false
 
   tts:
-    provider: voxcpm
+    provider: edge-tts
     edge-tts:
       path: edge-tts
-      voice: zh-CN-YunyangNeural
+      voice: zh-CN-XiaoxiaoNeural
     openai-tts:
       url: https://api.openai.com/v1/audio/speech
       api-key: skxxx
-      model: tts-1
+      model: gpt-4o-mini-tts
       voice: alloy
+      instructions: "Speak naturally and clearly, at a steady moderate pace suitable for video narration. Keep a calm, consistent tone throughout."
     voxcpm:
       service-url: http://192.168.1.2:8001/v1/tts
     voxcpm-cpp:
@@ -71,7 +78,7 @@ app:
       base-lm-model: VoxCPM2-BaseLM-Q8_0.gguf
       acoustic-model: VoxCPM2-Acoustic-F16.gguf
       cfg-value: 2.0
-      timesteps: 10
+      timesteps: 12
       seed: 42
       timeout-ms: 600000
       concurrency: 1

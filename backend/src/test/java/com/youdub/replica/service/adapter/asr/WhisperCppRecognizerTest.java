@@ -121,4 +121,31 @@ class WhisperCppRecognizerTest {
         for (var s : segments) segList.add((ObjectNode) s);
         return (ObjectNode) m.invoke(recognizer, segList, Path.of("/tmp/test.wav"));
     }
+
+    @Test
+    void preprocessArgs_enabled_returnsLoudnormAndHighpass() {
+        com.youdub.replica.config.AppProperties.Asr.WhisperCpp cfg =
+                new com.youdub.replica.config.AppProperties.Asr.WhisperCpp();
+        cfg.setPreprocess(true);
+        @SuppressWarnings("unchecked")
+        java.util.List<String> args = ReflectionTestUtils.invokeMethod(
+                recognizer, "preprocessArgs", cfg);
+        assertNotNull(args);
+        assertEquals(2, args.size());
+        assertEquals("-af", args.get(0));
+        assertTrue(args.get(1).startsWith("loudnorm=I=-16"));
+        assertTrue(args.get(1).contains("highpass=f=80"));
+    }
+
+    @Test
+    void preprocessArgs_disabled_returnsEmpty() {
+        com.youdub.replica.config.AppProperties.Asr.WhisperCpp cfg =
+                new com.youdub.replica.config.AppProperties.Asr.WhisperCpp();
+        cfg.setPreprocess(false);
+        @SuppressWarnings("unchecked")
+        java.util.List<String> args = ReflectionTestUtils.invokeMethod(
+                recognizer, "preprocessArgs", cfg);
+        assertNotNull(args);
+        assertTrue(args.isEmpty());
+    }
 }

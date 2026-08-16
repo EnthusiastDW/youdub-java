@@ -43,8 +43,12 @@ public class VoxCpmCppTtsProvider implements TtsProvider {
     private static final long DEFAULT_TIMEOUT_MS = 600_000L;
     private static final int DEFAULT_CONCURRENCY = 1;
     private static final double DEFAULT_CFG_VALUE = 2.0;
-    private static final int DEFAULT_TIMESTEPS = 10;
+    private static final int DEFAULT_TIMESTEPS = 12;
     private static final int DEFAULT_SEED = 42;
+
+    /** cfg 自适应分档的句长边界：短句提高引导强度保证清晰，长句降低避免伪影 */
+    private static final int SHORT_SENTENCE_CHARS = 40;
+    private static final int LONG_SENTENCE_CHARS = 120;
 
     private final ObjectMapper objectMapper;
     private final SettingsService settingsService;
@@ -201,7 +205,7 @@ public class VoxCpmCppTtsProvider implements TtsProvider {
         command.add("-o");
         command.add(outputFile.toString());
         command.add("--cfg");
-        command.add(positiveArg(config.getCfgValue(), DEFAULT_CFG_VALUE));
+        command.add(positiveArg(adaptiveCfg(item.text.length(), config.getCfgValue()), DEFAULT_CFG_VALUE));
         command.add("--timesteps");
         command.add(positiveArg(config.getTimesteps(), DEFAULT_TIMESTEPS));
         command.add("--seed");
@@ -216,6 +220,21 @@ public class VoxCpmCppTtsProvider implements TtsProvider {
     /** 仅接受正数（cfg/timesteps 为 0 无意义），无效时回退默认值。 */
     private static String positiveArg(double value, double fallback) {
         return String.valueOf(value > 0 ? value : fallback);
+    }
+
+    /**
+     * cfg 按句长自适应：短句（≤40 字符）提高引导强度保证发音清晰（2.5），
+     * 长句（≥120 字符）降低避免伪影/噪声（1.5），中间区间用配置值（2.0）。
+     * 以用户配置值为基准偏移，避免直接覆盖用户在设置页的偏好。
+     */
+    private static double adaptiveCfg(int textLength, double configured) {
+        if (textLength <= SHORT_SENTENCE_CHARS) {
+            return Math.min(configured + 0.5, 3.0);
+        }
+        if (textLength >= LONG_SENTENCE_CHARS) {
+            return Math.max(configured - 0.5, 1.0);
+        }
+        return configured;
     }
 
     /** 接受 0（seed=0 合法），仅负数视为无效并回退默认值。 */

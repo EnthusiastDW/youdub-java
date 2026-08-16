@@ -109,6 +109,10 @@ public class OpenAiTtsProvider implements TtsProvider {
                         requestBody.put("input", item.text);
                         requestBody.put("voice", useVoice);
                         requestBody.put("response_format", "wav");
+                        // gpt-4o-mini-tts 风格控制指令：稳定语速/语气，保证跨句一致
+                        if (config.getInstructions() != null && !config.getInstructions().isBlank()) {
+                            requestBody.put("instructions", config.getInstructions());
+                        }
 
                         Request request = new Request.Builder()
                                 .url(config.getUrl())

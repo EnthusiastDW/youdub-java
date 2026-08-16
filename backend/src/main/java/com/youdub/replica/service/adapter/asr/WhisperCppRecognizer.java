@@ -211,7 +211,7 @@ public class WhisperCppRecognizer implements SpeechRecognizer {
 
         if (durationSec <= chunkSec) {
             Path wav = outputDir.resolve("asr_16k.wav");
-            toMono16kWav(audioPath, wav, 0, (long) durationSec);
+            toMono16kWav(audioPath, wav, 0, (long) durationSec, cfg);
             chunkWavs.add(wav);
             chunkRanges.add(new long[]{0, (long) Math.ceil(durationSec) * 1000});
             log.info("whisper.cpp 音频时长 {}s ≤ {}min，单次识别", Math.round(durationSec), cfg.getChunkMinutes());
@@ -224,7 +224,7 @@ public class WhisperCppRecognizer implements SpeechRecognizer {
             long startSec = (long) (i * chunkSec);
             long durSec = (long) Math.min(chunkSec, Math.ceil(durationSec - startSec));
             Path wav = outputDir.resolve("asr_chunk_" + i + ".wav");
-            toMono16kWav(audioPath, wav, startSec, durSec);
+            toMono16kWav(audioPath, wav, startSec, durSec, cfg);
             chunkWavs.add(wav);
             chunkRanges.add(new long[]{startSec, durSec * 1000});
         }
@@ -232,20 +232,32 @@ public class WhisperCppRecognizer implements SpeechRecognizer {
 
     /**
      * FFmpeg 抽取音频片段并转 16kHz mono PCM WAV。
+     * 可选 loudnorm + highpass 预处理：统一响度（轻声段识别率提升）并滤除
+     * 80Hz 以下低频隆隆声。分片场景对每片独立归一化到同一目标响度。
      *
      * @param startSec 起始秒（0 表示从头）
      * @param durSec   时长秒
      */
-    private void toMono16kWav(Path input, Path output, long startSec, long durSec) throws Exception {
+    private void toMono16kWav(Path input, Path output, long startSec, long durSec,
+                              AppProperties.Asr.WhisperCpp cfg) throws Exception {
         CommandRunner.run(Command.builder()
                 .add("ffmpeg", "-y", "-loglevel", "error")
                 .add("-ss", String.valueOf(startSec))
                 .add("-t", String.valueOf(durSec))
                 .add("-i", input.toString())
+                .add(preprocessArgs(cfg))
                 .add("-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le")
                 .add(output.toString())
                 .timeout(300_000)
                 .build());
+    }
+
+    /** 预处理 filter：loudnorm（统一响度）+ highpass（滤低频隆隆声） */
+    private static List<String> preprocessArgs(AppProperties.Asr.WhisperCpp cfg) {
+        if (!cfg.isPreprocess()) {
+            return List.of();
+        }
+        return List.of("-af", "loudnorm=I=-16:TP=-1.5:LRA=11,highpass=f=80");
     }
 
     // ────────────────────────────── whisper-cli 调用 ──────────────────────────────
@@ -278,6 +290,25 @@ public class WhisperCppRecognizer implements SpeechRecognizer {
             command.add("--vad");
             command.add("-vm");
             command.add(vadModelPath.toString());
+            // 分离后的人声音频干净，调低阈值捕获轻声段；加大最小静音时长防止句中被切断
+            command.add("--vad-threshold");
+            command.add(String.valueOf(cfg.getVadThreshold() > 0 ? cfg.getVadThreshold() : 0.3));
+            command.add("--vad-min-silence-duration-ms");
+            command.add(String.valueOf(cfg.getVadMinSilenceMs() > 0 ? cfg.getVadMinSilenceMs() : 200));
+        }
+        if (cfg.isNoContext()) {
+            // 关闭跨段历史条件化，防止重复循环与幻觉（长音频的常见失败模式）
+            command.add("--no-context");
+        }
+        if (cfg.getEntropyThold() > 0) {
+            // 拒绝低熵（重复）输出，抑制静音处幻觉
+            command.add("--entropy-thold");
+            command.add(String.valueOf(cfg.getEntropyThold()));
+        }
+        if (cfg.getLogprobThold() < 0) {
+            // 拒绝低置信度片段
+            command.add("--logprob-thold");
+            command.add(String.valueOf(cfg.getLogprobThold()));
         }
         if (cfg.getPrompt() != null && !cfg.getPrompt().isBlank()) {
             command.add("--prompt");

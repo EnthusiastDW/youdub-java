@@ -66,6 +66,18 @@ public class AppProperties {
             private String prompt;
             private int chunkMinutes = 10;
             private int timeoutMs = 0;
+            /** 关闭跨段历史条件化（--no-context），防止重复循环与幻觉 */
+            private boolean noContext = true;
+            /** VAD 阈值（0~1），分离后的人声音频干净，调低以捕获轻声段 */
+            private double vadThreshold = 0.3;
+            /** VAD 最小静音时长（ms），防止句中被切断 */
+            private int vadMinSilenceMs = 200;
+            /** 熵阈值，拒绝低熵（重复）输出，抑制幻觉 */
+            private double entropyThold = 2.6;
+            /** 对数概率阈值，拒绝低置信度片段 */
+            private double logprobThold = -1.25;
+            /** 是否在喂给 whisper 前做 loudnorm + highpass 音频预处理 */
+            private boolean preprocess = true;
         }
 
         @Data
@@ -107,6 +119,8 @@ public class AppProperties {
             private String apiKey;
             private String model;
             private String voice;
+            /** gpt-4o-mini-tts 的风格控制指令（instructions），保证跨句音色/语速一致 */
+            private String instructions;
         }
 
         @Data

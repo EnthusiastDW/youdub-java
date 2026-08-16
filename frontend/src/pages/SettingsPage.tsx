@@ -277,7 +277,7 @@ export default function SettingsPage() {
 
   // Form state — provider selections
   const [translateProvider, setTranslateProvider] = useState("openai");
-  const [ttsProvider, setTtsProvider] = useState("voxcpm");
+  const [ttsProvider, setTtsProvider] = useState("edge-tts");
   const [asrProvider, setAsrProvider] = useState("whisper-cpp");
   const [separateProvider, setSeparateProvider] = useState("onnx");
   const [asrCorrectorProvider, setAsrCorrectorProvider] = useState("openai-asr-corrector");
@@ -326,7 +326,7 @@ export default function SettingsPage() {
 
         // Provider selections
         setTranslateProvider(data.providers?.translate?.current || "openai");
-        setTtsProvider(data.providers?.tts?.current || "voxcpm");
+        setTtsProvider(data.providers?.tts?.current || "edge-tts");
         setAsrProvider(data.providers?.asr?.current || "whisper-cpp");
         setSeparateProvider(data.providers?.separate?.current || "onnx");
         setAsrCorrectorProvider(data.providers?.asrCorrector?.current || "openai-asr-corrector");
