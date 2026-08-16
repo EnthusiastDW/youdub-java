@@ -297,8 +297,9 @@ public class WhisperCppRecognizer implements SpeechRecognizer {
             command.add(String.valueOf(cfg.getVadMinSilenceMs() > 0 ? cfg.getVadMinSilenceMs() : 200));
         }
         if (cfg.isNoContext()) {
-            // 关闭跨段历史条件化，防止重复循环与幻觉（长音频的常见失败模式）
-            command.add("--no-context");
+            // 关闭跨段历史条件化（--max-context 0 = 不携带上一段文本），防止重复循环与幻觉
+            command.add("--max-context");
+            command.add("0");
         }
         if (cfg.getEntropyThold() > 0) {
             // 拒绝低熵（重复）输出，抑制静音处幻觉
