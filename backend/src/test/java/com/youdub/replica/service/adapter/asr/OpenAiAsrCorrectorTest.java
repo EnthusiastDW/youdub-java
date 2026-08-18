@@ -94,6 +94,36 @@ class OpenAiAsrCorrectorTest {
     }
 
     @Test
+    void applyEdits_fromEqualsTo_meaninglessEditSkipped() throws Exception {
+        JsonNode edits = mapper.readTree("""
+                [{"from":"hello world","to":"hello world","confidence":0.99}]
+                """);
+        assertNull(OpenAiAsrCorrector.applyEdits("Hello world, this is a test.", edits));
+    }
+
+    @Test
+    void applyEdits_overlongFrom_wholeSentenceSkipped() throws Exception {
+        // 弱模型把整句塞进 from（超过 MAX_EDIT_FROM_CHARS=60 字符），应跳过防止误替换
+        String wholeSentence = "you check, now let 's start with, from the beginning, you get an understanding of where we 're going";
+        JsonNode edits = mapper.readTree("""
+                [{"from":"%s","to":"%s","confidence":0.99}]
+                """.formatted(wholeSentence, wholeSentence));
+        assertNull(OpenAiAsrCorrector.applyEdits(
+                "You check, now let 's start with, from the beginning, you get an understanding of where we 're going.", edits));
+    }
+
+    @Test
+    void applyEdits_shortContextualFrom_stillApplied() throws Exception {
+        // 带少量上下文词的 from（含空格、短于阈值）应正常应用
+        JsonNode edits = mapper.readTree("""
+                [{"from":"the intoIterator trade","to":"the IntoIterator trait","confidence":0.95}]
+                """);
+        String result = OpenAiAsrCorrector.applyEdits(
+                "The first line creates an iterator via the intoIterator trade.", edits);
+        assertEquals("The first line creates an iterator via the IntoIterator trait.", result);
+    }
+
+    @Test
     void applyEdits_mixedConfidence_appliesOnlyHighOnes() throws Exception {
         JsonNode edits = mapper.readTree("""
                 [{"from":"trade","to":"trait","confidence":0.9},

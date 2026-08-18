@@ -21,6 +21,7 @@ import org.springframework.stereotype.Component;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -56,6 +57,14 @@ public class OpenAiAsrCorrector implements AsrCorrector {
     private final ObjectMapper objectMapper;
     private final SettingsService settingsService;
 
+    /**
+     * 纠错专用 HTTP 客户端（从共享 bean 派生，复用连接池）。
+     * 共享 bean 的 readTimeout/callTimeout 为无限（翻译等长任务需要），
+     * 但纠错批次若遇到模型生成超长输出可能挂起，故此处加硬性超时，
+     * 让 AiChatRetry 的重试机制能真正触发（而不是无限等待）。
+     */
+    private volatile OkHttpClient timeoutHttpClient;
+
     private static final AiChatRetry.RetryConfig RETRY_CONFIG = AiChatRetry.RetryConfig.builder().build();
     /** LLM 温度参数，较低值使输出更确定 */
     private static final double TEMPERATURE = 0.1;
@@ -79,6 +88,11 @@ public class OpenAiAsrCorrector implements AsrCorrector {
     private static final double MIN_CONFIDENCE = 0.6;
     /** 编辑缺失 confidence 字段时的默认置信度（视为确定） */
     private static final double DEFAULT_CONFIDENCE = 1.0;
+    /**
+     * 编辑 from 的最大字符数。弱模型常把整句甚至长从句塞进 from，
+     * 超过该长度视为非"最小编辑"，丢弃以防误替换和输出体积爆炸。
+     */
+    private static final int MAX_EDIT_FROM_CHARS = 60;
 
     @Override
     public void correct(Task task, Path asrPath, Path outputDir) throws Exception {
@@ -236,7 +250,7 @@ public class OpenAiAsrCorrector implements AsrCorrector {
                 4. Do NOT swap a word just because it makes more sense in context; the change must be phonetically justified.
                 5. When unsure, omit that utterance entirely from the output.
                 6. Do NOT correct words that are already spelled correctly (no capitalization-only or grammar fixes).
-                7. CRITICAL: report each correction as a MINIMAL EDIT (from → to), NOT as a full sentence. 'from' must be an exact substring of the original utterance, and should include enough surrounding words to appear EXACTLY ONCE in that utterance (e.g. 'the intoIterator trade' → 'the IntoIterator trait'). Never invent text that is not in the original.
+                7. CRITICAL: report each correction as a MINIMAL EDIT (from → to), NOT as a full sentence. 'from' must be an exact substring of the original utterance — SHORT: typically 1 to 5 words, NEVER an entire sentence or clause. Add surrounding words ONLY when needed to disambiguate (e.g. 'the intoIterator trade' → 'the IntoIterator trait'). Never invent text that is not in the original.
                 8. For every edit, provide a 'confidence' score from 0.0 to 1.0 reflecting how certain you are that it is a real ASR error.
 
                 Valid edits (sound similar):
@@ -266,7 +280,7 @@ public class OpenAiAsrCorrector implements AsrCorrector {
                 4. 不能仅因为语境更通顺就换词，修改必须有发音依据。
                 5. 不确定时，该句整句都不要出现在输出里。
                 6. 不要修正本来正确的词（不做纯标点、语法修正）。
-                7. 关键：每个修正报告为最小编辑（from → to），而不是整句。from 必须是原句的精确子串，并包含足够上下文使其在原句中只出现一次。不要编造原文里没有的文字。
+                7. 关键：每个修正报告为最小编辑（from → to），而不是整句。from 必须是原句的精确子串，且尽量短（通常 1~5 个字），只有必要时才附带少量上下文词以消除歧义。绝不包含整句或长从句。不要编造原文里没有的文字。
                 8. 为每个编辑给出 0.0~1.0 的置信度 confidence，表示你对"这确实是 ASR 错误"的确信程度。
 
                 有效编辑（同音/近音）：
@@ -305,6 +319,27 @@ public class OpenAiAsrCorrector implements AsrCorrector {
         return "";
     }
 
+    /**
+     * 懒加载带超时的 HTTP 客户端。若模型生成长输出导致单次调用挂起，
+     * callTimeout 会强制中止并触发 AiChatRetry 重试；readTimeout 兜底字节间空闲。
+     */
+    private OkHttpClient timeoutHttpClient() {
+        OkHttpClient client = timeoutHttpClient;
+        if (client == null) {
+            synchronized (this) {
+                client = timeoutHttpClient;
+                if (client == null) {
+                    client = httpClient.newBuilder()
+                            .readTimeout(Duration.ofMinutes(2))
+                            .callTimeout(Duration.ofMinutes(5))
+                            .build();
+                    timeoutHttpClient = client;
+                }
+            }
+        }
+        return client;
+    }
+
     private String callAsrApi(String apiKey, String chatUrl, String model,
                                ObjectNode requestBody) throws Exception {
         return AiChatRetry.execute(() -> {
@@ -316,7 +351,7 @@ public class OpenAiAsrCorrector implements AsrCorrector {
                             objectMapper.writeValueAsString(requestBody), JSON_MEDIA_TYPE))
                     .build();
 
-            Response response = HttpUtil.sendInterruptible(httpClient, request);
+            Response response = HttpUtil.sendInterruptible(timeoutHttpClient(), request);
             int code = response.code();
             String body = response.body() != null ? response.body().string() : "";
 
@@ -453,6 +488,9 @@ public class OpenAiAsrCorrector implements AsrCorrector {
      * 编辑契约：{@code from} 必须是原文的精确子串且只出现一次（多次出现会误改，
      * 跳过并要求模型用更长上下文短语），{@code confidence} 低于 {@link #MIN_CONFIDENCE}
      * 的编辑丢弃。缺失 confidence 视为确定（{@link #DEFAULT_CONFIDENCE}）。
+     * <p>
+     * 防御性守卫：from 与 to 相同（无意义编辑）或 from 超长（弱模型常把整句当 from，
+     * 会导致输出体积爆炸和误替换）均跳过。
      *
      * @return 应用全部有效编辑后的文本；未应用任何编辑时返回 null
      */
@@ -465,6 +503,14 @@ public class OpenAiAsrCorrector implements AsrCorrector {
             double confidence = edit.path("confidence").asDouble(DEFAULT_CONFIDENCE);
             if (from.isEmpty()) {
                 log.warn("编辑缺少 from 字段，跳过：{}", edit);
+                continue;
+            }
+            if (from.equals(to)) {
+                log.warn("编辑 from 与 to 相同（无意义），跳过：'{}'", from);
+                continue;
+            }
+            if (from.length() > MAX_EDIT_FROM_CHARS) {
+                log.warn("编辑的 from 过长（{} 字符，疑似整句），跳过：'{}'", from.length(), truncate(from, 80));
                 continue;
             }
             if (confidence < MIN_CONFIDENCE) {
