@@ -75,6 +75,11 @@ public class OpenAiAsrCorrector implements AsrCorrector {
     /** 每个批次的最大字符数（英文 ~4 字符/token ≈ 3000 tokens），防止 API 上下文超限 */
     private static final int BATCH_CHAR_LIMIT = 12000;
     /**
+     * 每个批次的最大 utterance 条数。模型输出量与条数成正比（每条可能返回编辑），
+     * 条数过多会导致单次输出超限（finish_reason=length / API 超时），故按条数再切分。
+     */
+    private static final int MAX_BATCH_ITEMS = 60;
+    /**
      * 每批次最大输出 token。提示词要求返回最小编辑（from→to 词对）而非完整句子，
      * 输出量很小，4096 留足余量（每批几十条编辑远达不到）。
      */
@@ -599,7 +604,7 @@ public class OpenAiAsrCorrector implements AsrCorrector {
     }
 
     /**
-     * 将 utterances 按字符数分批，每批不超过 BATCH_CHAR_LIMIT。
+     * 将 utterances 分批，同时受 BATCH_CHAR_LIMIT（字符）和 MAX_BATCH_ITEMS（条数）约束。
      * 保证单条超长的 utterance 独立成批（不会跨批切断）。
      */
     private List<List<UtteranceItem>> splitIntoBatches(List<UtteranceItem> items) {
@@ -618,8 +623,9 @@ public class OpenAiAsrCorrector implements AsrCorrector {
                 currentChars = 0;
                 continue;
             }
-            // 加上这条会超限 → 先结算当前批，再开始新批
-            if (currentChars + itemChars > BATCH_CHAR_LIMIT && !currentBatch.isEmpty()) {
+            // 字符或条数任一超限 → 先结算当前批，再开始新批
+            if ((currentChars + itemChars > BATCH_CHAR_LIMIT
+                    || currentBatch.size() >= MAX_BATCH_ITEMS) && !currentBatch.isEmpty()) {
                 batches.add(currentBatch);
                 currentBatch = new ArrayList<>();
                 currentChars = 0;

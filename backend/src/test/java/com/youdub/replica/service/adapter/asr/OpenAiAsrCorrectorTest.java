@@ -271,4 +271,48 @@ class OpenAiAsrCorrectorTest {
         assertNotNull(prompt);
         assertTrue(prompt.contains("MINIMAL EDIT"));
     }
+
+    // ════════════════════════════════════════════════════════════
+    //  splitIntoBatches — 分批（字符 + 条数双约束）
+    // ════════════════════════════════════════════════════════════
+
+    /** 通过反射构造 OpenAiAsrCorrector 的私有 record UtteranceItem(id, text) */
+    private static Object newUtteranceItem(int id, String text) throws Exception {
+        var recordClass = Class.forName("com.youdub.replica.service.adapter.asr.OpenAiAsrCorrector$UtteranceItem");
+        var ctor = recordClass.getDeclaredConstructor(int.class, String.class);
+        ctor.setAccessible(true);
+        return ctor.newInstance(id, text);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void splitIntoBatches_itemCountCappedByMaxBatchItems() throws Exception {
+        // 100 条短 utterance（每条 20 字符），应被条数上限切成多批，每批 ≤ MAX_BATCH_ITEMS
+        var items = new java.util.ArrayList<Object>();
+        for (int i = 0; i < 100; i++) {
+            items.add(newUtteranceItem(i, "a".repeat(20)));
+        }
+        var batches = ReflectionTestUtils.invokeMethod(corrector, "splitIntoBatches", items);
+        assertNotNull(batches);
+        var batchList = (java.util.List<java.util.List<Object>>) batches;
+        assertTrue(batchList.size() >= 2, "100 条应被切成多批，实际 " + batchList.size());
+        for (var batch : batchList) {
+            assertTrue(batch.size() <= 60, "每批不超过 60 条，实际 " + batch.size());
+        }
+        int total = batchList.stream().mapToInt(java.util.List::size).sum();
+        assertEquals(100, total);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void splitIntoBatches_charLimitStillRespected() throws Exception {
+        // 2 条各 8000 字符，超过 12000 上限应分 2 批
+        var items = new java.util.ArrayList<Object>();
+        items.add(newUtteranceItem(0, "x".repeat(8000)));
+        items.add(newUtteranceItem(1, "y".repeat(8000)));
+        var batches = ReflectionTestUtils.invokeMethod(corrector, "splitIntoBatches", items);
+        assertNotNull(batches);
+        var batchList = (java.util.List<java.util.List<Object>>) batches;
+        assertEquals(2, batchList.size());
+    }
 }
