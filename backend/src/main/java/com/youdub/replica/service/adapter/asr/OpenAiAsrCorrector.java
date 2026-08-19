@@ -80,10 +80,10 @@ public class OpenAiAsrCorrector implements AsrCorrector {
      */
     private static final int MAX_BATCH_ITEMS = 60;
     /**
-     * 每批次最大输出 token。提示词要求返回最小编辑（from→to 词对）而非完整句子，
-     * 输出量很小，4096 留足余量（每批几十条编辑远达不到）。
+     * 每批次最大输出 token。提示词要求返回最小编辑（from→to 词对），
+     * Qwen3 系列模型最大响应长度为 8192 token，留足余量防 JSON 截断。
      */
-    private static final int MAX_OUTPUT_TOKENS = 4096;
+    private static final int MAX_OUTPUT_TOKENS = 8192;
     /** 修正文本与原文的单词重叠率下限，低于该值视为改写而非纠错，丢弃（旧整句格式兼容用） */
     private static final double OVERLAP_MIN_RATIO = 0.5;
     /**
@@ -170,6 +170,12 @@ public class OpenAiAsrCorrector implements AsrCorrector {
             requestBody.put("model", resolved.model());
             requestBody.put("temperature", TEMPERATURE);
             requestBody.put("max_tokens", MAX_OUTPUT_TOKENS);
+            // 强制合法 JSON 输出；Qwen3 默认开启思考模式会污染 JSON 并耗尽 max_tokens
+            // 导致响应被截断但 finish_reason 误报 stop，故显式关闭
+            ObjectNode responseFormat = objectMapper.createObjectNode();
+            responseFormat.put("type", "json_object");
+            requestBody.set("response_format", responseFormat);
+            requestBody.put("enable_thinking", false);
             ArrayNode messages = objectMapper.createArrayNode();
             messages.add(objectMapper.createObjectNode().put("role", "system").put("content", systemPrompt));
             messages.add(objectMapper.createObjectNode().put("role", "user").put("content", userPrompt));
@@ -325,8 +331,8 @@ public class OpenAiAsrCorrector implements AsrCorrector {
     }
 
     /**
-     * 懒加载带超时的 HTTP 客户端。若模型生成长输出导致单次调用挂起，
-     * callTimeout 会强制中止并触发 AiChatRetry 重试；readTimeout 兜底字节间空闲。
+     * 懒加载带超时的 HTTP 客户端。Qwen3-8B 思考模式开启时推理耗时长，
+     * 10 分钟超时兼顾"不误杀慢响应"与"不无限挂死"（重试机制兜底）。
      */
     private OkHttpClient timeoutHttpClient() {
         OkHttpClient client = timeoutHttpClient;
@@ -335,8 +341,8 @@ public class OpenAiAsrCorrector implements AsrCorrector {
                 client = timeoutHttpClient;
                 if (client == null) {
                     client = httpClient.newBuilder()
-                            .readTimeout(Duration.ofMinutes(2))
-                            .callTimeout(Duration.ofMinutes(5))
+                            .readTimeout(Duration.ofMinutes(10))
+                            .callTimeout(Duration.ofMinutes(10))
                             .build();
                     timeoutHttpClient = client;
                 }
