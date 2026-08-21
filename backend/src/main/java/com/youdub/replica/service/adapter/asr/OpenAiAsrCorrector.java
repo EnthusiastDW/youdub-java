@@ -502,6 +502,9 @@ public class OpenAiAsrCorrector implements AsrCorrector {
      * <p>
      * 防御性守卫：from 与 to 相同（无意义编辑）或 from 超长（弱模型常把整句当 from，
      * 会导致输出体积爆炸和误替换）均跳过。
+     * <p>
+     * 宽松匹配：精确子串找不到时，尝试"去掉空格/连字符后匹配"（如 {@code RA G}→{@code RAG}、
+     * {@code embed ding}→{@code embedding} 这类 ASR 词内误插空格的错误）。
      *
      * @return 应用全部有效编辑后的文本；未应用任何编辑时返回 null
      */
@@ -529,19 +532,104 @@ public class OpenAiAsrCorrector implements AsrCorrector {
                         confidence, MIN_CONFIDENCE, from, to);
                 continue;
             }
-            int idx = result.indexOf(from);
-            if (idx < 0) {
+            Replacement replacement = findReplacement(result, from);
+            if (replacement == null) {
                 log.warn("编辑的 from 不在原文中，跳过：'{}' → '{}'", from, to);
                 continue;
             }
-            if (result.indexOf(from, idx + 1) >= 0) {
-                log.warn("编辑的 from 出现多次，为避免误改跳过：'{}'（请使用更长、唯一的上下文短语）", from);
-                continue;
-            }
-            result = result.substring(0, idx) + to + result.substring(idx + from.length());
+            result = result.substring(0, replacement.startIdx())
+                    + to
+                    + result.substring(replacement.endIdx());
             applied = true;
         }
         return applied ? result : null;
+    }
+
+    /**
+     * 在文本中定位 from 的替换位置。
+     * <p>
+     * 优先精确子串匹配（唯一命中）；精确匹配不到时，尝试去掉所有空格/连字符后的
+     * 宽松匹配，定位原文中被空格拆开的对应区间。若 from 出现多次（无法判定改哪处），返回 null。
+     */
+    private static Replacement findReplacement(String text, String from) {
+        // 精确匹配
+        int idx = text.indexOf(from);
+        if (idx >= 0) {
+            if (text.indexOf(from, idx + 1) >= 0) {
+                return null; // 多次出现，避免误改
+            }
+            return new Replacement(idx, idx + from.length());
+        }
+
+        // 宽松匹配：去掉空格和连字符后比对（处理 ASR 词内误插空格，如 RA G / embed ding）
+        String compactFrom = compactWhitespace(from);
+        if (compactFrom.isEmpty() || compactFrom.length() < 2) {
+            return null; // 去掉空格后太短，宽松匹配无意义
+        }
+        List<int[]> matches = new ArrayList<>();
+        int scan = 0;
+        while (scan < text.length()) {
+            int[] range = compactMatchRange(text, compactFrom, scan);
+            if (range == null) break;
+            matches.add(range);
+            scan = range[1]; // 从匹配段末尾继续找下一处
+        }
+        if (matches.size() == 1) {
+            return new Replacement(matches.get(0)[0], matches.get(0)[1]);
+        }
+        if (matches.size() > 1) {
+            log.warn("编辑的 from '{}' 去掉空格后出现多次，为避免误改跳过", from);
+        }
+        return null;
+    }
+
+    /**
+     * 在 text 中查找 compact 串（忽略空格/连字符/制表符），返回 {startIdx, endIdx}（真实下标，含被跳过的分隔符）。
+     * 找不到返回 null。失配时回退到匹配首字符的后一个位置重新尝试（因为中间可能跳过了分隔符）。
+     */
+    private static int[] compactMatchRange(String text, String compact, int fromIndex) {
+        int compactPos = 0;
+        int matchStart = -1;
+        int matchEnd = -1;
+        for (int i = fromIndex; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (c == ' ' || c == '-' || c == '\t') {
+                continue;
+            }
+            if (Character.toLowerCase(c) != compact.charAt(compactPos)) {
+                if (compactPos > 0) {
+                    i = matchStart; // 回退到首字符，i++ 后从 matchStart+1 重新扫描
+                    compactPos = 0;
+                    matchStart = -1;
+                    matchEnd = -1;
+                    continue;
+                }
+                continue;
+            }
+            if (compactPos == 0) {
+                matchStart = i;
+            }
+            matchEnd = i + 1;
+            compactPos++;
+            if (compactPos == compact.length()) {
+                return new int[]{matchStart, matchEnd};
+            }
+        }
+        return null;
+    }
+
+    /** 去掉文本中的空格/连字符/制表符。 */
+    private static String compactWhitespace(String s) {
+        StringBuilder sb = new StringBuilder(s.length());
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (c != ' ' && c != '-' && c != '\t') sb.append(c);
+        }
+        return sb.toString();
+    }
+
+    /** 一次替换的位置区间 [startIdx, endIdx)（含被替换文本的起止）。 */
+    private record Replacement(int startIdx, int endIdx) {
     }
 
     /**

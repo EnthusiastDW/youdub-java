@@ -124,6 +124,59 @@ class OpenAiAsrCorrectorTest {
     }
 
     @Test
+    void applyEdits_internalSpaceMismatch_fallsBackToCompactMatch() throws Exception {
+        // 原文是 "RA G"（词内误插空格），from="RA G" 精确匹配不上时靠去空格宽松匹配定位
+        JsonNode edits = mapper.readTree("""
+                [{"from":"RA G","to":"RAG","confidence":0.95}]
+                """);
+        String result = OpenAiAsrCorrector.applyEdits(
+                "And then we go through the third module, which is RA G.", edits);
+        assertEquals("And then we go through the third module, which is RAG.", result);
+    }
+
+    @Test
+    void applyEdits_exactMatchPreferredOverCompact() throws Exception {
+        // 精确匹配存在时优先精确匹配（不误伤已有正确词）
+        JsonNode edits = mapper.readTree("""
+                [{"from":"embed ding","to":"embedding","confidence":0.95}]
+                """);
+        String result = OpenAiAsrCorrector.applyEdits(
+                "You can use embed ding search and embedding store.", edits);
+        // from "embed ding" 精确匹配第一处，只改它
+        assertEquals("You can use embedding search and embedding store.", result);
+    }
+
+    @Test
+    void applyEdits_compactMatchAppearsMultipleTimes_skipped() throws Exception {
+        // from="RA G" 在原文中无精确匹配，但去空格后 "RAG" 出现多次 → 无法判定改哪处，跳过
+        JsonNode edits = mapper.readTree("""
+                [{"from":"RA G","to":"RAG","confidence":0.95}]
+                """);
+        assertNull(OpenAiAsrCorrector.applyEdits(
+                "RAG is RAG and also RAG, all correct here.", edits));
+    }
+
+    @Test
+    void applyEdits_hyphenSpaceVariation_compactMatch() throws Exception {
+        // 原文含连字符 "embed-ding"，from="embed ding" → 宽松匹配（连字符也算分隔）并替换
+        JsonNode edits = mapper.readTree("""
+                [{"from":"embed ding","to":"embedding","confidence":0.9}]
+                """);
+        String result = OpenAiAsrCorrector.applyEdits(
+                "We use an embed-ding model here.", edits);
+        assertEquals("We use an embedding model here.", result);
+    }
+
+    @Test
+    void applyEdits_compactTooShort_skipped() throws Exception {
+        // from 去掉空格后只剩 1 字符，宽松匹配无意义 → 且精确匹配不到 → 返回 null
+        JsonNode edits = mapper.readTree("""
+                [{"from":"a b","to":"ab","confidence":0.95}]
+                """);
+        assertNull(OpenAiAsrCorrector.applyEdits("Hello x y world", edits));
+    }
+
+    @Test
     void applyEdits_mixedConfidence_appliesOnlyHighOnes() throws Exception {
         JsonNode edits = mapper.readTree("""
                 [{"from":"trade","to":"trait","confidence":0.9},
